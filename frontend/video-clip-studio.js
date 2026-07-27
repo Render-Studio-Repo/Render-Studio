@@ -118,6 +118,7 @@ export function mountVideoClipStudio(host, {
   getPreviewEl,
   getToken,
   getProjectId,
+  isFreeTrialCredits,
   onOutputBlob,
   onStatus,
   onRequestViewportRecord,
@@ -200,7 +201,7 @@ export function mountVideoClipStudio(host, {
         </div>
       </div>
 
-      <div class="vcs-assemble">
+      <div class="vcs-assemble" data-vcs-assemble-panel>
         <label class="vcs-label-field">
           <span>Assemble prompt</span>
           <textarea data-vcs-assemble-prompt rows="2" maxlength="400" placeholder="Example: Start with the 3D model tumble, then cut to the printed part in hand."></textarea>
@@ -230,6 +231,40 @@ export function mountVideoClipStudio(host, {
     },
     onStatus,
   });
+
+  function freeTrialBlocked() {
+    try {
+      return typeof isFreeTrialCredits === "function" ? !!isFreeTrialCredits() : !!isFreeTrialCredits;
+    } catch {
+      return false;
+    }
+  }
+
+  function syncAssembleAvailability() {
+    const blocked = freeTrialBlocked();
+    const panel = host.querySelector("[data-vcs-assemble-panel]");
+    const promptEl = host.querySelector("[data-vcs-assemble-prompt]");
+    const btn = host.querySelector("[data-vcs-assemble]");
+    const hint = host.querySelector("[data-vcs-assemble-hint]");
+    if (promptEl) {
+      promptEl.disabled = blocked;
+      promptEl.placeholder = blocked
+        ? "Assemble prompt isn’t available on free trial credits."
+        : "Example: Start with the 3D model tumble, then cut to the printed part in hand.";
+    }
+    if (btn) {
+      btn.disabled = blocked;
+      btn.title = blocked
+        ? "Buy credits or add your own API key to assemble clips for X."
+        : "";
+    }
+    if (hint) {
+      hint.textContent = blocked
+        ? "Free trial credits can’t use Assemble for X sharing. Use a single clip, or buy credits / add your own key."
+        : "Uses labels + order. Leave blank to keep timeline order.";
+    }
+    panel?.classList.toggle("vcs-assemble--blocked", blocked);
+  }
 
   function selected() {
     return clips.find((c) => c.id === selectedId) || null;
@@ -520,6 +555,14 @@ export function mountVideoClipStudio(host, {
   }
 
   async function assembleTimeline() {
+    if (freeTrialBlocked()) {
+      onStatus?.(
+        "Assemble prompt isn’t available on free trial credits. Buy credits or add your own key to assemble clips for X.",
+        true,
+      );
+      syncAssembleAvailability();
+      return;
+    }
     if (!clips.length) {
       onStatus?.("Add at least one clip first.", true);
       return;
@@ -647,6 +690,8 @@ export function mountVideoClipStudio(host, {
     }
   });
 
+  syncAssembleAvailability();
+
   host.querySelector("[data-vcs-file]")?.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -681,6 +726,7 @@ export function mountVideoClipStudio(host, {
     },
     addClip,
     getClips: () => clips.map((c) => ({ ...c })),
+    syncAssembleAvailability,
     getOutputBlob: () => effectsEditor?.getOutputBlob?.() || clips[0]?.blob || null,
     needsBake: () => effectsEditor?.needsBake?.() || false,
     ensureBaked: async () => {

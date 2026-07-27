@@ -1,6 +1,6 @@
 /** High-quality viewport video recording — expandable settings next to Screenshot. */
 
-import { mountVideoClipStudio } from "./video-clip-studio.js?v=20260727-clip-studio";
+import { mountVideoClipStudio } from "./video-clip-studio.js?v=20260727-no-assemble-trial";
 
 const LS_KEY = "render3d:viewportVideo:v1";
 
@@ -64,6 +64,7 @@ export function createViewportVideoRecorder({
   api,
   getToken,
   getProjectId,
+  isFreeTrialCredits,
 } = {}) {
   let prefs = readPrefs();
   let recorder = null;
@@ -392,6 +393,7 @@ export function createViewportVideoRecorder({
       getPreviewEl: () => shareModalEl?.querySelector(".viewport-video-share-preview"),
       getToken,
       getProjectId,
+      isFreeTrialCredits,
       onOutputBlob: (blob) => {
         if (blob) {
           lastBlob = blob;
@@ -833,6 +835,9 @@ export function createViewportVideoRecorder({
       });
     }
     setShareStatus(append ? "3D take added to timeline." : "");
+    try {
+      videoEditor?.syncAssembleAvailability?.();
+    } catch (_) {}
     modal.classList.remove("hidden");
     await refreshXStatus();
   }

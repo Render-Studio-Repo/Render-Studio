@@ -5377,6 +5377,20 @@ async def assemble_viewport_video(
     import subprocess
     import tempfile
 
+    # Free-trial shared credits cannot use assemble-for-X (multi-clip timeline).
+    try:
+        credits = ai_credit_service.status(user)
+        if credits.get("on_free_trial") or (credits.get("trial") or {}).get("on_free_trial"):
+            raise HTTPException(
+                403,
+                "Assemble prompt isn’t available on free trial credits. "
+                "Buy credits or add your own API key to assemble clips for X.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug("assemble free-trial check skipped", exc_info=True)
+
     form = await request.form()
     fmt = str(form.get("format") or "webm").strip().lower()
     if fmt not in {"webm", "mp4"}:
