@@ -407,6 +407,15 @@ def get_trial_pool_cents() -> int:
 
 
 def _company_trial_grants_since(conn, since_iso: str) -> int:
+    # Prefer Supabase ledger when connected (tamper-resistant weekly cap).
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        remote = sbsec.company_grants_since(since_iso)
+        if remote is not None:
+            return int(remote)
+    except Exception:
+        pass
     rows = conn.execute(
         """
         SELECT meta_json FROM ai_credit_transactions
@@ -435,10 +444,22 @@ def _enqueue_trial_waitlist(conn, user_id: str, ip: str | None) -> None:
         """,
         (user_id, (ip or None), _now()),
     )
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        sbsec.enqueue_waitlist(user_id, ip)
+    except Exception:
+        pass
 
 
 def _remove_trial_waitlist(conn, user_id: str) -> None:
     conn.execute("DELETE FROM ai_credit_trial_waitlist WHERE user_id = ?", (user_id,))
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        sbsec.remove_waitlist(user_id)
+    except Exception:
+        pass
 
 
 def _trial_last_activity_at(conn, user_id: str, granted_at: str) -> datetime:
@@ -533,6 +554,16 @@ def reclaim_idle_trial_credits(*, now: datetime | None = None) -> dict[str, Any]
             )
             pool_add += amount
             reclaimed_users.append({"user_id": uid, "amount_cents": amount})
+            try:
+                from backend.services import supabase_security_store as sbsec
+
+                sbsec.record_reclaim(
+                    user_id=uid,
+                    amount_cents=amount,
+                    meta={"idle_days": TRIAL_IDLE_RECLAIM_DAYS},
+                )
+            except Exception:
+                pass
 
         if pool_add:
             conn.execute(
@@ -543,6 +574,12 @@ def reclaim_idle_trial_credits(*, now: datetime | None = None) -> dict[str, Any]
                 """,
                 (pool_add, now.isoformat()),
             )
+            try:
+                from backend.services import supabase_security_store as sbsec
+
+                sbsec.add_pool_cents(pool_add)
+            except Exception:
+                pass
 
         # Fund waitlisted users from the pool ($10 each when available).
         while True:
@@ -609,6 +646,14 @@ def _grant_trial_to_user(
             return False
 
     if ip:
+        try:
+            from backend.services import supabase_security_store as sbsec
+
+            remote_owner = sbsec.ip_owner(ip)
+            if remote_owner and remote_owner != str(user_id):
+                return False
+        except Exception:
+            pass
         prior = conn.execute("SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?", (ip,)).fetchone()
         if prior and str(prior["user_id"]) != str(user_id):
             return False
@@ -699,6 +744,29 @@ def _grant_trial_to_user(
         (str(uuid.uuid4()), user_id, amount, balance, json.dumps(meta), now),
     )
     _remove_trial_waitlist(conn, user_id)
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        if ip:
+            sbsec.claim_ip(ip, user_id, granted_at=now)
+        if from_pool:
+            # Local pool already debited; mirror remote pool if it lagged.
+            remote = sbsec.get_pool_cents()
+            local_row = conn.execute(
+                "SELECT balance_cents FROM ai_credit_trial_pool WHERE id = 1"
+            ).fetchone()
+            local_bal = int((local_row["balance_cents"] if local_row else 0) or 0)
+            if remote is not None and remote != local_bal:
+                sbsec.add_pool_cents(local_bal - remote)
+        sbsec.record_grant(
+            user_id=user_id,
+            amount_cents=amount,
+            from_pool=bool(from_pool),
+            client_ip=ip,
+            meta=meta,
+        )
+    except Exception:
+        pass
     return True
 
 
@@ -708,6 +776,12 @@ def _claim_trial_ip_for_user(user_id: str, ip: str, *, granted_at: str | None = 
     if not user_id or not ip:
         return
     now = granted_at or _now()
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        sbsec.claim_ip(ip, user_id, granted_at=now)
+    except Exception:
+        pass
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
@@ -801,6 +875,20 @@ def grant_signup_trial_if_needed(
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with get_conn() as conn:
         _ensure_trial_pool(conn)
+        # Supabase IP ledger is authoritative when connected.
+        try:
+            from backend.services import supabase_security_store as sbsec
+
+            remote_owner = sbsec.ip_owner(ip)
+            if remote_owner and remote_owner != str(user["id"]):
+                info = _trial_info(account)
+                info["just_granted"] = False
+                info["blocked_ip"] = True
+                info["blocked_weekly_cap"] = False
+                info["blocked_reason"] = "Free trial credits were already claimed from this network."
+                return info
+        except Exception:
+            pass
         prior = conn.execute(
             "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
             (ip,),

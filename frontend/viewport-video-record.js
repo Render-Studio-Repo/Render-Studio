@@ -322,6 +322,13 @@ export function createViewportVideoRecorder({
         <p class="viewport-video-share-eyebrow">Video studio</p>
         <h2 class="app-dialog-title">Edit &amp; assemble clips</h2>
         <p class="muted small">Mix 3D takes, webcam, uploads, and phone clips — label them so assemble knows the cut.</p>
+        <section class="viewport-video-recent" data-video-recent hidden>
+          <div class="viewport-video-recent-head">
+            <h3>Recent in this project</h3>
+            <p class="muted small">Tap a clip to re-edit filters or Share to X again.</p>
+          </div>
+          <div class="viewport-video-recent-rail" data-video-recent-rail role="list"></div>
+        </section>
         <video class="viewport-video-share-preview" controls playsinline></video>
         <div data-video-editor-host></div>
         <label class="viewport-video-share-caption">
@@ -398,6 +405,7 @@ export function createViewportVideoRecorder({
         if (blob) {
           lastBlob = blob;
           sourceBlob = blob;
+          void saveClipToProject(blob, { label: "Edited clip" });
         }
       },
       onStatus: (msg, isError) => setShareStatus(msg, !!isError),

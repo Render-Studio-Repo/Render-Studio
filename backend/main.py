@@ -5227,6 +5227,99 @@ async def convert_viewport_video(
         )
 
 
+@app.get("/api/projects/{project_id}/videos")
+def list_project_videos(
+    project_id: str,
+    limit: int = Query(24, ge=1, le=48),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Recent viewport / studio clips saved for this project (re-edit + Share to X)."""
+    from backend.services import project_video_service
+
+    path = _require_project_read(user, project_id)
+    return {"videos": project_video_service.list_videos(path, project_id, limit=limit)}
+
+
+@app.post("/api/projects/{project_id}/videos")
+async def save_project_video(
+    project_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_video_service
+
+    path = _require_project_write(user, project_id)
+    form = await request.form()
+    upload = form.get("video")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(400, "Missing video file.")
+    raw = await upload.read()
+    label = str(form.get("label") or "").strip() or None
+    filename = str(getattr(upload, "filename", None) or "clip.webm")
+    mime = str(getattr(upload, "content_type", None) or "video/webm")
+    try:
+        item = project_video_service.save_video(
+            path,
+            project_id,
+            data=raw,
+            filename=filename,
+            mime=mime,
+            label=label,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"video": item}
+
+
+@app.get("/api/projects/{project_id}/videos/{video_id}")
+def get_project_video(
+    project_id: str,
+    video_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_video_service
+
+    path = _require_project_read(user, project_id)
+    found = project_video_service.get_video_file(path, video_id)
+    if not found:
+        raise HTTPException(404, "Video not found.")
+    file_path, item = found
+    return FileResponse(
+        file_path,
+        media_type=str(item.get("mime") or "video/webm"),
+        filename=str(item.get("filename") or file_path.name),
+    )
+
+
+@app.get("/api/projects/{project_id}/videos/{video_id}/poster")
+def get_project_video_poster(
+    project_id: str,
+    video_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_video_service
+
+    path = _require_project_read(user, project_id)
+    poster = project_video_service.get_poster_file(path, video_id)
+    if not poster:
+        raise HTTPException(404, "Poster not found.")
+    return FileResponse(poster, media_type="image/jpeg")
+
+
+@app.delete("/api/projects/{project_id}/videos/{video_id}")
+def delete_project_video(
+    project_id: str,
+    video_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import project_video_service
+
+    path = _require_project_write(user, project_id)
+    if not project_video_service.delete_video(path, video_id):
+        raise HTTPException(404, "Video not found.")
+    return {"ok": True}
+
+
 @app.post("/api/video/capture-sessions")
 def create_video_capture_session(
     body: dict[str, Any] | None = Body(default=None),
@@ -9786,6 +9879,12 @@ def admin_trial_credits(
         "duplicate_trial_ip_rows": int(ip_dupes or 0),
         "trial_grants_missing_ip": int(empty_ip_grants or 0),
     }
+    try:
+        from backend.services import supabase_security_store as sbsec
+
+        report["supabase"] = sbsec.ping()
+    except Exception as exc:
+        report["supabase"] = {"ok": False, "error": str(exc)[:200]}
     return report
 
 

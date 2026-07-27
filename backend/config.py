@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     capacity_alert_from: str = "info@render3d.app"
     capacity_alert_to: str = ""
 
+    # Supabase — server-only. Secret key must never ship to the browser.
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    supabase_secret_key: str = ""
+
     # Marketplace payments (Stripe Connect + Link)
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""
