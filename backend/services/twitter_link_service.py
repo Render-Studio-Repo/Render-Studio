@@ -647,30 +647,71 @@ def _auth_headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def _upload_video(user_id: str, video_path: Path) -> str:
-    creds = get_user_auth(user_id)
+def _x_error_detail(resp: Any, fallback: str) -> str:
+    """Surface useful X API errors (empty 403 bodies, credits, permissions)."""
+    status = int(getattr(resp, "status_code", 0) or 0)
+    text = (getattr(resp, "text", None) or "").strip()
+    if text:
+        try:
+            payload = resp.json() if hasattr(resp, "json") else json.loads(text)
+            detail = (
+                (payload.get("detail") if isinstance(payload, dict) else None)
+                or (payload.get("title") if isinstance(payload, dict) else None)
+                or text
+            )
+            text = str(detail)[:400]
+        except Exception:
+            text = text[:400]
+    if not text:
+        if status == 403:
+            text = (
+                "X returned 403 with no body (v1.1 media often blocked). "
+                "Use v2 media, set App permissions to Read and write, and ensure API credits."
+            )
+        elif status == 402:
+            text = "X API credits depleted — media upload requires available credits on your X developer plan."
+        else:
+            text = fallback
+    lower = text.lower()
+    if "credits" in lower or status == 402:
+        return (
+            "X media upload needs API credits on your X developer plan "
+            f"(HTTP {status}: {text}). Share via compose + attach still works."
+        )
+    if "oauth1" in lower and "permission" in lower:
+        return (
+            "X app permissions are Read-only. In the X Developer Portal set User authentication "
+            "to Read and write, then disconnect and Connect X again."
+        )
+    return f"{fallback} (HTTP {status}: {text})"
+
+
+def _upload_video_v2(creds: dict[str, Any], video_path: Path) -> str:
+    """Chunked upload via X API v2 media endpoints (works with OAuth1 or bearer)."""
     size = video_path.stat().st_size
-    if size <= 0:
-        raise RuntimeError("Video file is empty.")
-    if size > MAX_VIDEO_BYTES:
-        raise RuntimeError("Video is too large for X (max 512 MB).")
-
+    init_body = {
+        "media_type": "video/mp4",
+        "total_bytes": size,
+        "media_category": "tweet_video",
+    }
     if creds.get("mode") == "oauth1":
-        return _upload_video_v1_oauth1(creds["auth"], video_path)
-
-    access_token = str(creds.get("access_token") or "")
-    init = httpx.post(
-        MEDIA_INIT,
-        headers={**_auth_headers(access_token), "Content-Type": "application/json"},
-        json={
-            "media_type": "video/mp4",
-            "total_bytes": size,
-            "media_category": "tweet_video",
-        },
-        timeout=60,
-    )
+        init = requests.post(
+            MEDIA_INIT,
+            auth=creds["auth"],
+            json=init_body,
+            headers={"Content-Type": "application/json"},
+            timeout=60,
+        )
+    else:
+        access_token = str(creds.get("access_token") or "")
+        init = httpx.post(
+            MEDIA_INIT,
+            headers={**_auth_headers(access_token), "Content-Type": "application/json"},
+            json=init_body,
+            timeout=60,
+        )
     if init.status_code >= 400:
-        return _upload_video_v1_bearer(access_token, video_path)
+        raise RuntimeError(_x_error_detail(init, "X media INIT failed"))
     media_id = str((init.json() or {}).get("data", {}).get("id") or "").strip()
     if not media_id:
         raise RuntimeError("X media upload did not return a media id.")
@@ -681,32 +722,54 @@ def _upload_video(user_id: str, video_path: Path) -> str:
             chunk = fh.read(CHUNK_SIZE)
             if not chunk:
                 break
-            append = httpx.post(
-                f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/append",
-                headers=_auth_headers(access_token),
-                data={"segment_index": str(index)},
-                files={"media": (f"chunk{index}", chunk, "application/octet-stream")},
-                timeout=120,
-            )
+            append_url = f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/append"
+            if creds.get("mode") == "oauth1":
+                append = requests.post(
+                    append_url,
+                    auth=creds["auth"],
+                    data={"segment_index": str(index)},
+                    files={"media": (f"chunk{index}", chunk, "application/octet-stream")},
+                    timeout=120,
+                )
+            else:
+                append = httpx.post(
+                    append_url,
+                    headers=_auth_headers(str(creds.get("access_token") or "")),
+                    data={"segment_index": str(index)},
+                    files={"media": (f"chunk{index}", chunk, "application/octet-stream")},
+                    timeout=120,
+                )
             if append.status_code >= 400:
-                raise RuntimeError(f"X media append failed: {append.text[:300]}")
+                raise RuntimeError(_x_error_detail(append, "X media APPEND failed"))
             index += 1
 
-    finalize = httpx.post(
-        f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/finalize",
-        headers=_auth_headers(access_token),
-        timeout=60,
-    )
+    finalize_url = f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/finalize"
+    if creds.get("mode") == "oauth1":
+        finalize = requests.post(finalize_url, auth=creds["auth"], timeout=60)
+    else:
+        finalize = httpx.post(
+            finalize_url,
+            headers=_auth_headers(str(creds.get("access_token") or "")),
+            timeout=60,
+        )
     if finalize.status_code >= 400:
-        raise RuntimeError(f"X media finalize failed: {finalize.text[:300]}")
+        raise RuntimeError(_x_error_detail(finalize, "X media finalize failed"))
 
     for _ in range(60):
-        status = httpx.get(
-            MEDIA_STATUS,
-            params={"media_id": media_id, "command": "STATUS"},
-            headers=_auth_headers(access_token),
-            timeout=30,
-        )
+        if creds.get("mode") == "oauth1":
+            status = requests.get(
+                MEDIA_STATUS,
+                params={"media_id": media_id, "command": "STATUS"},
+                auth=creds["auth"],
+                timeout=30,
+            )
+        else:
+            status = httpx.get(
+                MEDIA_STATUS,
+                params={"media_id": media_id, "command": "STATUS"},
+                headers=_auth_headers(str(creds.get("access_token") or "")),
+                timeout=30,
+            )
         if status.status_code >= 400:
             break
         payload = status.json() or {}
@@ -720,6 +783,27 @@ def _upload_video(user_id: str, video_path: Path) -> str:
         wait = int(info.get("check_after_secs") or 2)
         time.sleep(max(1, min(wait, 5)))
     return media_id
+
+
+def _upload_video(user_id: str, video_path: Path) -> str:
+    creds = get_user_auth(user_id)
+    size = video_path.stat().st_size
+    if size <= 0:
+        raise RuntimeError("Video file is empty.")
+    if size > MAX_VIDEO_BYTES:
+        raise RuntimeError("Video is too large for X (max 512 MB).")
+
+    try:
+        return _upload_video_v2(creds, video_path)
+    except RuntimeError as exc:
+        msg = str(exc)
+        # Fall back to v1.1 only when v2 is unavailable (not credits/permissions).
+        if "credits" in msg.lower() or "permission" in msg.lower() or "Read-only" in msg:
+            raise
+        logger.warning("X v2 media upload failed, trying v1.1: %s", msg[:200])
+        if creds.get("mode") == "oauth1":
+            return _upload_video_v1_oauth1(creds["auth"], video_path)
+        return _upload_video_v1_bearer(str(creds.get("access_token") or ""), video_path)
 
 
 def _upload_video_v1_bearer(access_token: str, video_path: Path) -> str:
@@ -736,7 +820,7 @@ def _upload_video_v1_bearer(access_token: str, video_path: Path) -> str:
         timeout=60,
     )
     if init.status_code >= 400:
-        raise RuntimeError(f"X media INIT failed: {init.text[:300]}")
+        raise RuntimeError(_x_error_detail(init, "X media INIT failed"))
     media_id = str((init.json() or {}).get("media_id_string") or (init.json() or {}).get("media_id") or "")
     if not media_id:
         raise RuntimeError("X media INIT returned no media id.")
@@ -755,7 +839,7 @@ def _upload_video_v1_bearer(access_token: str, video_path: Path) -> str:
                 timeout=120,
             )
             if append.status_code >= 400:
-                raise RuntimeError(f"X media APPEND failed: {append.text[:300]}")
+                raise RuntimeError(_x_error_detail(append, "X media APPEND failed"))
             index += 1
 
     finalize = httpx.post(
@@ -765,7 +849,7 @@ def _upload_video_v1_bearer(access_token: str, video_path: Path) -> str:
         timeout=60,
     )
     if finalize.status_code >= 400:
-        raise RuntimeError(f"X media FINALIZE failed: {finalize.text[:300]}")
+        raise RuntimeError(_x_error_detail(finalize, "X media FINALIZE failed"))
     info = (finalize.json() or {}).get("processing_info") or {}
     for _ in range(60):
         state = str(info.get("state") or "").lower()
@@ -800,7 +884,7 @@ def _upload_video_v1_oauth1(auth: OAuth1, video_path: Path) -> str:
         timeout=60,
     )
     if init.status_code >= 400:
-        raise RuntimeError(f"X media INIT failed: {init.text[:300]}")
+        raise RuntimeError(_x_error_detail(init, "X media INIT failed"))
     media_id = str((init.json() or {}).get("media_id_string") or (init.json() or {}).get("media_id") or "")
     if not media_id:
         raise RuntimeError("X media INIT returned no media id.")
@@ -819,7 +903,7 @@ def _upload_video_v1_oauth1(auth: OAuth1, video_path: Path) -> str:
                 timeout=120,
             )
             if append.status_code >= 400:
-                raise RuntimeError(f"X media APPEND failed: {append.text[:300]}")
+                raise RuntimeError(_x_error_detail(append, "X media APPEND failed"))
             index += 1
 
     finalize = requests.post(
@@ -829,7 +913,7 @@ def _upload_video_v1_oauth1(auth: OAuth1, video_path: Path) -> str:
         timeout=60,
     )
     if finalize.status_code >= 400:
-        raise RuntimeError(f"X media FINALIZE failed: {finalize.text[:300]}")
+        raise RuntimeError(_x_error_detail(finalize, "X media FINALIZE failed"))
     info = (finalize.json() or {}).get("processing_info") or {}
     for _ in range(60):
         state = str(info.get("state") or "").lower()
@@ -869,7 +953,7 @@ def _tweet_with_media(user_id: str, media_id: str, caption: str) -> dict[str, An
             timeout=60,
         )
     if tweet.status_code >= 400:
-        raise RuntimeError(f"X post failed: {tweet.text[:400]}")
+        raise RuntimeError(_x_error_detail(tweet, "X post failed"))
     data = (tweet.json() or {}).get("data") or {}
     tweet_id = str(data.get("id") or "")
     account = linked_account(user_id) or {}
@@ -903,6 +987,66 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
     elif "gif" in mime:
         ext = "gif"
     creds = get_user_auth(user_id)
+    # Prefer v2 media (v1.1 upload often returns empty 403 for current X apps).
+    init_body = {
+        "media_type": mime if mime != "image/jpg" else "image/jpeg",
+        "total_bytes": len(image_bytes),
+        "media_category": "tweet_image",
+    }
+    if creds.get("mode") == "oauth1":
+        init = requests.post(
+            MEDIA_INIT,
+            auth=creds["auth"],
+            json=init_body,
+            headers={"Content-Type": "application/json"},
+            timeout=60,
+        )
+    else:
+        init = httpx.post(
+            MEDIA_INIT,
+            headers={**_auth_headers(str(creds.get("access_token") or "")), "Content-Type": "application/json"},
+            json=init_body,
+            timeout=60,
+        )
+    if init.status_code < 400:
+        media_id = str((init.json() or {}).get("data", {}).get("id") or "").strip()
+        if not media_id:
+            raise RuntimeError("X image upload did not return a media id.")
+        append_url = f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/append"
+        if creds.get("mode") == "oauth1":
+            append = requests.post(
+                append_url,
+                auth=creds["auth"],
+                data={"segment_index": "0"},
+                files={"media": (f"render3d.{ext}", image_bytes, "application/octet-stream")},
+                timeout=60,
+            )
+            finalize = requests.post(
+                f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/finalize",
+                auth=creds["auth"],
+                timeout=60,
+            )
+        else:
+            token = str(creds.get("access_token") or "")
+            append = httpx.post(
+                append_url,
+                headers=_auth_headers(token),
+                data={"segment_index": "0"},
+                files={"media": (f"render3d.{ext}", image_bytes, "application/octet-stream")},
+                timeout=60,
+            )
+            finalize = httpx.post(
+                f"{API_BASE}/media/upload/{urllib.parse.quote(media_id)}/finalize",
+                headers=_auth_headers(token),
+                timeout=60,
+            )
+        if append.status_code >= 400:
+            raise RuntimeError(_x_error_detail(append, "X image append failed"))
+        if finalize.status_code >= 400:
+            raise RuntimeError(_x_error_detail(finalize, "X image finalize failed"))
+        return media_id
+
+    # Fallback: simple v1.1 upload
     if creds.get("mode") == "oauth1":
         upload = requests.post(
             "https://upload.twitter.com/1.1/media/upload.json",
@@ -935,7 +1079,7 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
                 timeout=60,
             )
     if upload.status_code >= 400:
-        raise RuntimeError(f"X image upload failed: {upload.text[:300]}")
+        raise RuntimeError(_x_error_detail(upload, "X image upload failed"))
     media_id = str((upload.json() or {}).get("media_id_string") or (upload.json() or {}).get("media_id") or "")
     if not media_id:
         raise RuntimeError("X image upload returned no media id.")

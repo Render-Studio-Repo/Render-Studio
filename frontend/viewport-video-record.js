@@ -644,51 +644,66 @@ export function createViewportVideoRecorder({
     }
   }
 
+  function openXCompose(text) {
+    const caption = String(text || "Made in Render3D").trim().slice(0, 270);
+    const url = `https://x.com/intent/post?text=${encodeURIComponent(caption)}`;
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    if (!win) window.location.href = url;
+    return caption;
+  }
+
+  function downloadShareBlob(blob) {
+    const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `render3d-video-${stamp}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  async function shareVideoViaWebShare(blob, text) {
+    if (!blob || typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
+    try {
+      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+      const file = new File([blob], `render3d-video.${ext}`, { type: blob.type || `video/${ext}` });
+      if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
+      await navigator.share({ files: [file], text: text || "Made in Render3D", title: "Render3D" });
+      return true;
+    } catch (err) {
+      if (String(err?.name || "") === "AbortError") return true;
+      return false;
+    }
+  }
+
   async function postToX() {
     const blob = await resolveShareBlob();
-    if (!blob || !api) {
+    if (!blob) {
       setShareStatus("Nothing to post yet.", true);
       return;
     }
     const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Made in Render3D";
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
     if (postBtn) postBtn.disabled = true;
-    setShareStatus("Uploading to X… this can take a minute for longer clips.");
+    setShareStatus("Opening X compose…");
     try {
-      const form = new FormData();
-      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
-      form.append("video", blob, `render3d-video.${ext}`);
-      form.append("text", text);
-      const headers = {};
-      const token = getToken?.();
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch("/api/integrations/twitter/post-video", {
-        method: "POST",
-        headers,
-        body: form,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail = data?.detail || data?.message || res.statusText || "Post failed.";
-        if (res.status === 401) {
-          setShareStatus(String(detail), true);
-          await refreshXStatus();
-          return;
-        }
-        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      const shared = await shareVideoViaWebShare(blob, text);
+      if (shared) {
+        setShareStatus("Shared via your device share sheet.");
+        setStatus(true, "Shared viewport video.");
+        return;
       }
-      setShareStatus(data?.url ? `Posted — ${data.url}` : "Posted to X.");
-      setStatus(true, "Shared viewport video to X.");
-      if (data?.url) {
-        try {
-          window.open(data.url, "_blank", "noopener");
-        } catch (_) {}
-      }
+      openXCompose(text);
+      downloadShareBlob(blob);
+      setShareStatus("Opened X compose with your caption — attach the downloaded clip to the post.");
+      setStatus(true, "Opened X compose — attach the downloaded clip.");
     } catch (err) {
-      setShareStatus(err?.message || "Could not post to X.", true);
+      setShareStatus(err?.message || "Could not open X.", true);
     } finally {
       if (postBtn) postBtn.disabled = false;
-      await refreshXStatus();
     }
   }
 
