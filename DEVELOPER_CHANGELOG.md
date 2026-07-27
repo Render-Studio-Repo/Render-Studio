@@ -1,11 +1,14 @@
 # Developer Changelog
 
-<!-- simple-changelogs-signature agent="Cursor Grok 4.5" at="2026-07-27T04:26:55+00:00" -->
+<!-- simple-changelogs-signature agent="Cursor Grok 4.5" at="2026-07-27T05:10:00+00:00" -->
 
 > Maintainer history paired with the customer changelog. Prefer this file for architecture, OAuth/integrations, services, and ops. Same date headings and source window as CHANGELOG.md.
 
 ## 2026-07-27
 
+- Management Changelog tab: `GET /api/admin/changelog` reads repo `CHANGELOG.md`; admin-dashboard.js renders markdown in `#admin-section-changelog` (`?v=20260727-admin-changelog`).
+- Signup trial: `grant_signup_trial_if_needed` ($10), trial email, popup + `/api/user/ai-credits/trial-ack`; platform key labeled Render3D Key.
+- Share to X: `blobForXShare` prefers MP4 before compose/download.
 - Linked mobile-app-chrome.css; forced .mobile-corner-launchers / showcase bar display:none !important.
 - Menu tiles [data-mobile-app] wired via Render3DMobileStudio; low-profile hamburger until is-open.
 - Account menu Authorized apps card for X (/assets/brands/x-corp.svg) + Discord; shared connectXAccount helpers.

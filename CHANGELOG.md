@@ -1,12 +1,14 @@
 # Changelog
 
-<!-- simple-changelogs-signature agent="Cursor Grok 4.5" at="2026-07-27T04:26:55+00:00" -->
+<!-- simple-changelogs-signature agent="Cursor Grok 4.5" at="2026-07-27T05:10:00+00:00" -->
 
 > Comprehensive product history reconstructed from `ai-context/worklog.md` (2026-07-19 onward) and git non-backup commits / daily Auto-backup diffs (2026-06-19, 2026-07-06→17). Date headings are deployment/session milestones, not SemVer releases. Auto-backup-only days with no durable frontend/backend deltas are omitted. Some early Jul 6–15 items marked as baseline or uncertain in source notes are stated without inventing boundaries.
 
 ## 2026-07-27
 
-- Share to X opens a compose window with your caption filled and downloads the clip or screenshot to attach.
+- Management dashboard has a Changelog tab that shows the live `CHANGELOG.md` from the repo (Refresh reloads the latest copy).
+- New accounts get a one-time $10 Render3D Key trial with welcome popup and email; the shared key disappears when credits run out.
+- Share to X prepares an MP4 when needed, then opens compose with your caption and downloads the clip to attach.
 - Video studio supports multi-track clip editing with webcam, upload, and phone QR capture, plus Handy-oriented Bambu send on mobile.
 - Connect X (X Corp logo) from Account → Authorized apps and Preferences → Authorized apps, with connect/unlink status.
 - Mobile menu is a low-profile chip that expands into a navigable action grid; profile avatar stays top-right; four-corner overlay buttons stay hidden.

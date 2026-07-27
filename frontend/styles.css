@@ -35562,6 +35562,64 @@ body.feedback-page-dragging {
   margin-bottom: 6px;
 }
 
+.admin-panel--changelog {
+  margin-bottom: 16px;
+}
+
+.admin-changelog-body {
+  max-height: min(72vh, 920px);
+  overflow: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: thin;
+}
+
+.admin-changelog-title {
+  margin: 0 0 10px;
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.admin-changelog-day {
+  margin: 22px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(139, 148, 158, 0.22);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e6edf3;
+}
+
+.admin-changelog-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(88, 166, 255, 0.55);
+  border-radius: 0 10px 10px 0;
+  background: rgba(88, 166, 255, 0.06);
+  color: #9da7b3;
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.admin-changelog-list {
+  margin: 0 0 6px;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 8px;
+  color: #c9d1d9;
+  line-height: 1.5;
+}
+
+.admin-changelog-list li::marker {
+  color: #58a6ff;
+}
+
+.admin-changelog-body code {
+  font-size: 0.86em;
+  padding: 0.08em 0.35em;
+  border-radius: 6px;
+  background: rgba(110, 118, 129, 0.28);
+}
+
 .admin-agent-stats {
   display: flex;
   flex-wrap: wrap;

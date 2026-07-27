@@ -823,9 +823,77 @@ function renderUserLookup(users = []) {
   `;
 }
 
+function renderChangelogMarkdown(md) {
+  const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let inList = false;
+  const flushList = () => {
+    if (inList) {
+      out.push("</ul>");
+      inList = false;
+    }
+  };
+  const inline = (text) => escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (const raw of lines) {
+    const line = raw;
+    if (/^\s*<!--/.test(line) || /^\s*$/.test(line)) {
+      flushList();
+      continue;
+    }
+    if (/^#\s+/.test(line)) {
+      flushList();
+      out.push(`<h2 class="admin-changelog-title">${inline(line.replace(/^#\s+/, ""))}</h2>`);
+      continue;
+    }
+    if (/^##\s+/.test(line)) {
+      flushList();
+      out.push(`<h3 class="admin-changelog-day">${inline(line.replace(/^##\s+/, ""))}</h3>`);
+      continue;
+    }
+    if (/^>\s?/.test(line)) {
+      flushList();
+      out.push(`<p class="admin-changelog-note">${inline(line.replace(/^>\s?/, ""))}</p>`);
+      continue;
+    }
+    if (/^-\s+/.test(line)) {
+      if (!inList) {
+        out.push('<ul class="admin-changelog-list">');
+        inList = true;
+      }
+      out.push(`<li>${inline(line.replace(/^-\s+/, ""))}</li>`);
+      continue;
+    }
+    flushList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  flushList();
+  return out.join("\n") || '<p class="muted">Changelog is empty.</p>';
+}
+
+async function loadAdminChangelog(root) {
+  const body = root.querySelector("#admin-changelog-body");
+  const meta = root.querySelector("#admin-changelog-meta");
+  if (!body) return;
+  body.innerHTML = '<p class="muted small">Loading latest CHANGELOG.md…</p>';
+  if (meta) meta.textContent = "";
+  try {
+    const data = await api("/api/admin/changelog");
+    body.innerHTML = renderChangelogMarkdown(data.markdown || "");
+    if (meta) {
+      const when = data.mtime ? formatDate(data.mtime) : "—";
+      meta.textContent = `${data.path || "CHANGELOG.md"} · updated ${when}`;
+    }
+  } catch (err) {
+    body.innerHTML = `<p class="status error">${escapeHtml(err?.message || "Could not load changelog.")}</p>`;
+  }
+}
+
 function renderAdminViewToolbar() {
   const items = [
     ["overview", "Overview", "Stats and trends"],
+    ["changelog", "Changelog", "Latest product notes"],
     ["notifications", "Notifications", "Review one by one"],
     ["requests", "Requests", "Suggestions and bugs"],
     ["new-users", "New Users", "Signup alerts"],
@@ -862,6 +930,20 @@ function renderDashboard(root, data) {
         <p class="info-lead">Users, recent model activity, prompt history, and training-ready prompt↔model pairs across Render3D.</p>
       </div>
       <button type="button" class="btn secondary" id="admin-refresh">Refresh</button>
+    </section>
+
+    <section class="admin-panel admin-panel--changelog" id="admin-section-changelog" data-admin-section="changelog">
+      <div class="admin-agent-head">
+        <div>
+          <h3>Changelog</h3>
+          <p class="muted small admin-panel-hint">Live copy of <code>CHANGELOG.md</code> from the repo — same source as Simple Changelogs, not the public Updates page.</p>
+          <p class="muted small" id="admin-changelog-meta"></p>
+        </div>
+        <button type="button" class="btn secondary btn-compact" id="admin-changelog-refresh">Refresh</button>
+      </div>
+      <div id="admin-changelog-body" class="admin-changelog-body">
+        <p class="muted small">Loading latest CHANGELOG.md…</p>
+      </div>
     </section>
 
     <section class="admin-stats-grid">
@@ -1027,6 +1109,10 @@ function renderDashboard(root, data) {
   root.querySelector("#admin-new-user-refresh")?.addEventListener("click", () => {
     void loadNewUserAlerts(root);
   });
+  root.querySelector("#admin-changelog-refresh")?.addEventListener("click", () => {
+    void loadAdminChangelog(root);
+  });
+  void loadAdminChangelog(root);
   void loadRenderAgentActivity(root);
   void loadGettingStartedApprovals(root);
   void loadNewUserAlerts(root);

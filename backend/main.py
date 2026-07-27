@@ -6093,6 +6093,26 @@ def admin_management_summary(user: dict[str, Any] = Depends(get_current_user)):
     }
 
 
+@app.get("/api/admin/changelog")
+def admin_changelog(user: dict[str, Any] = Depends(get_current_user)):
+    """Latest customer CHANGELOG.md from the repo (Management → Changelog tab)."""
+    _require_a1projects_admin(user)
+    path = ROOT / "CHANGELOG.md"
+    if not path.is_file():
+        raise HTTPException(404, "CHANGELOG.md not found")
+    try:
+        markdown = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(500, f"Could not read CHANGELOG.md: {exc}") from exc
+    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+    return {
+        "markdown": markdown,
+        "path": "CHANGELOG.md",
+        "bytes": len(markdown.encode("utf-8")),
+        "mtime": mtime,
+    }
+
+
 @app.get("/api/admin/new-users")
 def admin_new_user_alerts(
     user: dict[str, Any] = Depends(get_current_user),

@@ -1,3 +1,10 @@
+## 2026-07-27 — Management Changelog tab
+
+- Added Management → **Changelog** tab showing live repo `CHANGELOG.md` via `GET /api/admin/changelog`.
+- Cache-bust `admin-dashboard.js` / `styles.css` `?v=20260727-admin-changelog`.
+
+---
+
 ## 2026-07-27 — Ship trial credits + X MP4 share
 
 - One-time $10 Render3D Key trial (`grant_signup_trial_if_needed`), trial email, welcome popup + `/api/user/ai-credits/trial-ack`.
