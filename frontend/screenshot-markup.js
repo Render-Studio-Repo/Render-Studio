@@ -297,7 +297,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
         </div>
         <label class="screenshot-markup-caption">
           <span>Caption</span>
-          <textarea data-shot-markup-text maxlength="270" rows="2" placeholder="Made in Render3D…"></textarea>
+          <textarea data-shot-markup-text maxlength="270" rows="2" placeholder="Render Studio"></textarea>
         </label>
         <p class="screenshot-markup-x-status muted small" data-shot-markup-x-status></p>
         <p class="screenshot-markup-status muted small" data-shot-markup-status role="status"></p>
@@ -654,8 +654,15 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
   }
 
   function openXCompose(text) {
-    const caption = String(text || "Captured in Render3D").trim().slice(0, 270);
-    const url = `https://x.com/intent/post?text=${encodeURIComponent(caption)}`;
+    // X cannot hyperlink arbitrary words; attach render3d.app via the url=
+    // intent param so "Render Studio" posts include a live link to the site.
+    const caption = String(text || "Render Studio").trim().slice(0, 270) || "Render Studio";
+    const params = new URLSearchParams();
+    params.set("text", caption);
+    if (!/render3d\.app/i.test(caption)) {
+      params.set("url", "https://render3d.app");
+    }
+    const url = `https://x.com/intent/post?${params.toString()}`;
     const win = window.open(url, "_blank", "noopener,noreferrer");
     if (!win) window.location.href = url;
     return caption;
@@ -676,7 +683,14 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     try {
       const file = new File([blob], "render3d-screenshot.png", { type: blob.type || "image/png" });
       if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
-      await navigator.share({ files: [file], text: text || "Captured in Render3D", title: "Render3D" });
+      const shareText = text || "Render Studio";
+      const payload = {
+        files: [file],
+        text: /render3d\.app/i.test(shareText) ? shareText : `${shareText}\nhttps://render3d.app`,
+        title: "Render Studio",
+      };
+      if (navigator.canShare && !navigator.canShare(payload)) return false;
+      await navigator.share(payload);
       return true;
     } catch (err) {
       if (String(err?.name || "") === "AbortError") return true;
@@ -689,7 +703,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
       setStatus("Opening X compose…");
       const dataUrl = await compositeMarkedPng();
       const blob = await (await fetch(dataUrl)).blob();
-      const caption = String(modalEl?.querySelector("[data-shot-markup-text]")?.value || "Captured in Render3D").trim() || "Captured in Render3D";
+      const caption = String(modalEl?.querySelector("[data-shot-markup-text]")?.value || "Render Studio").trim() || "Render Studio";
 
       const shared = await shareImageViaWebShare(blob, caption);
       if (shared) {
@@ -727,6 +741,8 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     redraw();
     const eyebrow = modalEl.querySelector(".screenshot-markup-eyebrow");
     if (eyebrow) eyebrow.textContent = modeLabel;
+    const caption = modalEl.querySelector("[data-shot-markup-text]");
+    if (caption && !caption.value.trim()) caption.value = "Render Studio";
     modalEl.classList.remove("hidden");
     void refreshXStatus();
   }

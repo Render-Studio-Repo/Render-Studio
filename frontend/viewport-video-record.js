@@ -325,7 +325,7 @@ export function createViewportVideoRecorder({
         <div data-video-editor-host></div>
         <label class="viewport-video-share-caption">
           <span>Caption (X)</span>
-          <textarea data-video-share-text maxlength="270" rows="3" placeholder="Made in Render3D…"></textarea>
+          <textarea data-video-share-text maxlength="270" rows="3" placeholder="Render Studio"></textarea>
         </label>
         <p class="viewport-video-share-x-status muted small" data-video-share-x-status></p>
         <p class="viewport-video-share-status muted small" data-video-share-status role="status"></p>
@@ -644,8 +644,15 @@ export function createViewportVideoRecorder({
   }
 
   function openXCompose(text) {
-    const caption = String(text || "Made in Render3D").trim().slice(0, 270);
-    const url = `https://x.com/intent/post?text=${encodeURIComponent(caption)}`;
+    // X cannot hyperlink arbitrary words; attach render3d.app via the url=
+    // intent param so "Render Studio" posts include a live link to the site.
+    const caption = String(text || "Render Studio").trim().slice(0, 270) || "Render Studio";
+    const params = new URLSearchParams();
+    params.set("text", caption);
+    if (!/render3d\.app/i.test(caption)) {
+      params.set("url", "https://render3d.app");
+    }
+    const url = `https://x.com/intent/post?${params.toString()}`;
     const win = window.open(url, "_blank", "noopener,noreferrer");
     if (!win) window.location.href = url;
     return caption;
@@ -693,8 +700,11 @@ export function createViewportVideoRecorder({
       const file = new File([blob], `render3d-video.${ext}`, {
         type: blob.type || (ext === "mov" ? "video/quicktime" : "video/mp4"),
       });
-      if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
-      await navigator.share({ files: [file], text: text || "Made in Render3D", title: "Render3D" });
+      const shareText = text || "Render Studio";
+      const withLink = /render3d\.app/i.test(shareText) ? shareText : `${shareText}\nhttps://render3d.app`;
+      const payload = { files: [file], text: withLink, title: "Render Studio" };
+      if (navigator.canShare && !navigator.canShare(payload)) return false;
+      await navigator.share(payload);
       return true;
     } catch (err) {
       if (String(err?.name || "") === "AbortError") return true;
@@ -740,7 +750,7 @@ export function createViewportVideoRecorder({
       setShareStatus("Nothing to post yet.", true);
       return;
     }
-    const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Made in Render3D";
+    const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Render Studio";
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
     if (postBtn) postBtn.disabled = true;
     try {
@@ -791,7 +801,7 @@ export function createViewportVideoRecorder({
       preview.volume = 1;
     }
     const text = modal.querySelector("[data-video-share-text]");
-    if (text && !text.value) text.value = "Made in Render3D";
+    if (text && !text.value) text.value = "Render Studio";
     setShareStatus(append ? "3D take added to timeline." : "");
     modal.classList.remove("hidden");
     await refreshXStatus();

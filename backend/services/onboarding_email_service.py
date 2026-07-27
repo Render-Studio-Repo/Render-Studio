@@ -129,6 +129,7 @@ def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
         </p>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
           When the $10 is used up, the Render3D Key disappears from your key list until you buy more credits (or add your own API key).
+          Usage uses the same pricing as paid Studio credits (model cost + 15% markup).
         </p>
         <a href="{studio}" style="display:inline-block;margin:8px 0 18px;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Open Studio</a>
         <h2 style="margin:18px 0 10px;font-size:18px;">Want more after the trial?</h2>

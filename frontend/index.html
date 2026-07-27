@@ -2706,14 +2706,15 @@
           OpenAI, Claude, and Kimi models we support, with no personal API key required.
         </p>
         <p class="muted small">
-          When the $10 runs out, the Render3D Key disappears from your key list until you buy more credits
-          (or add your own key). Open <strong>Account → AI &amp; billing</strong> anytime to buy more with Stripe.
+          Usage works like paid Studio credits: each generation deducts the model cost plus
+          <strong>15% markup</strong>, so you see the same pricing before you buy more.
+          When the balance hits $0, the Render3D Key disappears until you buy credits or add your own key.
         </p>
       </div>
       <div class="welcome-actions">
         <button type="button" class="welcome-action welcome-action--primary" data-trial-credits-action="start">
           <span class="welcome-action-icon" aria-hidden="true">01</span>
-          <span><strong>Start generating</strong><small>Use your $10 trial</small></span>
+          <span><strong>Start generating</strong><small>Same 15% markup as paid credits</small></span>
         </button>
         <button type="button" class="welcome-action" data-trial-credits-action="buy">
           <span class="welcome-action-icon" aria-hidden="true">02</span>
@@ -3052,7 +3053,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260727-trial-credits"></script>
+  <script type="module" src="/app.js?v=20260727-x-render-studio"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

@@ -823,52 +823,85 @@ function renderUserLookup(users = []) {
   `;
 }
 
+function changelogInlineHtml(text) {
+  return escapeHtml(text)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
+}
+
 function renderChangelogMarkdown(md) {
   const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
   const out = [];
   let inList = false;
-  const flushList = () => {
+  let inDay = false;
+  const closeList = () => {
     if (inList) {
       out.push("</ul>");
       inList = false;
     }
   };
-  const inline = (text) => escapeHtml(text)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  const closeDay = () => {
+    closeList();
+    if (inDay) {
+      out.push("</article>");
+      inDay = false;
+    }
+  };
+  const openDay = (label) => {
+    closeDay();
+    inDay = true;
+    out.push(`<article class="admin-changelog-day-card">`);
+    out.push(`<header class="admin-changelog-day-head"><time class="admin-changelog-day-badge">${changelogInlineHtml(label)}</time></header>`);
+  };
+
   for (const raw of lines) {
     const line = raw;
-    if (/^\s*<!--/.test(line) || /^\s*$/.test(line)) {
-      flushList();
+    if (/^\s*<!--/.test(line)) continue;
+    if (/^\s*$/.test(line)) {
+      closeList();
       continue;
     }
-    if (/^#\s+/.test(line)) {
-      flushList();
-      out.push(`<h2 class="admin-changelog-title">${inline(line.replace(/^#\s+/, ""))}</h2>`);
+    // Skip document H1 ("Changelog") — the Management tab already labels this view.
+    if (/^#\s+/.test(line) && !/^##\s+/.test(line)) continue;
+    if (/^---+\s*$/.test(line)) {
+      closeList();
+      out.push('<hr class="admin-changelog-rule" />');
       continue;
     }
     if (/^##\s+/.test(line)) {
-      flushList();
-      out.push(`<h3 class="admin-changelog-day">${inline(line.replace(/^##\s+/, ""))}</h3>`);
+      openDay(line.replace(/^##\s+/, "").trim());
+      continue;
+    }
+    if (/^###\s+/.test(line)) {
+      closeList();
+      if (!inDay) openDay("Notes");
+      out.push(`<h4 class="admin-changelog-subhead">${changelogInlineHtml(line.replace(/^###\s+/, ""))}</h4>`);
       continue;
     }
     if (/^>\s?/.test(line)) {
-      flushList();
-      out.push(`<p class="admin-changelog-note">${inline(line.replace(/^>\s?/, ""))}</p>`);
+      closeList();
+      out.push(`<aside class="admin-changelog-note">${changelogInlineHtml(line.replace(/^>\s?/, ""))}</aside>`);
       continue;
     }
-    if (/^-\s+/.test(line)) {
+    if (/^-\s+/.test(line) || /^\*\s+/.test(line)) {
+      if (!inDay) openDay("Updates");
       if (!inList) {
         out.push('<ul class="admin-changelog-list">');
         inList = true;
       }
-      out.push(`<li>${inline(line.replace(/^-\s+/, ""))}</li>`);
+      out.push(`<li><span class="admin-changelog-bullet" aria-hidden="true"></span><span class="admin-changelog-item">${changelogInlineHtml(line.replace(/^[-*]\s+/, ""))}</span></li>`);
       continue;
     }
-    flushList();
-    out.push(`<p>${inline(line)}</p>`);
+    closeList();
+    if (!inDay) {
+      out.push(`<p class="admin-changelog-lede">${changelogInlineHtml(line)}</p>`);
+    } else {
+      out.push(`<p class="admin-changelog-para">${changelogInlineHtml(line)}</p>`);
+    }
   }
-  flushList();
+  closeDay();
   return out.join("\n") || '<p class="muted">Changelog is empty.</p>';
 }
 

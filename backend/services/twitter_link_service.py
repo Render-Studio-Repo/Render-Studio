@@ -1086,6 +1086,15 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
     return media_id
 
 
+def _caption_with_site_link(text: str, *, default: str = "Render Studio") -> str:
+    caption = (text or default).strip() or default
+    if "render3d.app" not in caption.lower():
+        # X auto-links URLs; keep under tweet limit.
+        suffix = " https://render3d.app"
+        caption = (caption[: max(0, 270 - len(suffix))] + suffix).strip()
+    return caption[:270]
+
+
 def post_image(
     user_id: str,
     *,
@@ -1096,7 +1105,7 @@ def post_image(
 ) -> dict[str, Any]:
     if not image_bytes:
         raise RuntimeError("No image data to post.")
-    caption = (text or "Captured in Render3D").strip()[:270]
+    caption = _caption_with_site_link(text)
     media_id = _upload_image(user_id, image_bytes, mime_type or "image/png")
     return _tweet_with_media(user_id, media_id, caption)
 
@@ -1111,7 +1120,7 @@ def post_video(
 ) -> dict[str, Any]:
     if not video_bytes:
         raise RuntimeError("No video data to post.")
-    caption = (text or "Recorded in Render3D").strip()[:270]
+    caption = _caption_with_site_link(text)
 
     with tempfile.TemporaryDirectory(prefix="r3d-x-") as tmp:
         raw_path = Path(tmp) / (filename or "clip.webm")

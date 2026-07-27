@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-mp4-share";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-render-studio";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -161,6 +161,7 @@ const LS_FIRST_PROJECT_PROMPT_ONBOARDING = "render3d:firstProjectPromptOnboardin
 const LS_GOOGLE_NEW_USER_WALKTHROUGH = "render3d:googleNewUserWalkthrough:v1";
 const LS_AI_SETUP_INTRO_DISMISSED = "render3d:aiSetupIntroDismissed:v1";
 const SS_AI_SETUP_INTRO_OFFERED = "render3d:aiSetupIntroOffered:v1";
+const LS_TRIAL_CREDITS_POPUP_SEEN = "render3d:trialCreditsPopupSeen:v1";
 const DEFAULT_PROMPT_MODE = "v2";
 const FUSION_PROMPT_MODE_ENABLED = false;
 
@@ -17378,13 +17379,53 @@ function closeTrialCreditsPopup() {
   document.getElementById("trial-credits-modal")?.classList.add("hidden");
 }
 
+function trialCreditsPopupSeenKey(user = currentUser) {
+  return user?.id ? `render3d:trialCreditsPopupSeen:v1:${user.id}` : "render3d:trialCreditsPopupSeen:v1";
+}
+
+function markTrialCreditsPopupSeenLocal() {
+  try {
+    localStorage.setItem(trialCreditsPopupSeenKey(), "1");
+  } catch (_) {}
+  if (aiStatus?.credits?.trial) {
+    aiStatus = {
+      ...aiStatus,
+      credits: {
+        ...aiStatus.credits,
+        trial: {
+          ...aiStatus.credits.trial,
+          popup_seen: true,
+          show_popup: false,
+        },
+      },
+    };
+  }
+}
+
 async function ackTrialCreditsPopup() {
   closeTrialCreditsPopup();
+  markTrialCreditsPopupSeenLocal();
   try {
     const data = await api("/api/user/ai-credits/trial-ack", { method: "POST" });
-    if (data?.ai) renderAIStatus(data.ai);
-    else if (data?.credits && aiStatus) {
-      aiStatus = { ...aiStatus, credits: data.credits };
+    if (data?.ai) {
+      // Keep show_popup false even if a stale payload races in.
+      if (data.ai.credits?.trial) {
+        data.ai.credits.trial.show_popup = false;
+        data.ai.credits.trial.popup_seen = true;
+      }
+      renderAIStatus(data.ai);
+    } else if (data?.credits && aiStatus) {
+      aiStatus = {
+        ...aiStatus,
+        credits: {
+          ...data.credits,
+          trial: {
+            ...(data.credits.trial || {}),
+            show_popup: false,
+            popup_seen: true,
+          },
+        },
+      };
     }
   } catch (err) {
     console.warn("Could not acknowledge trial credits popup:", err);
@@ -17395,22 +17436,31 @@ function shouldShowTrialCreditsPopup() {
   if (!currentUser || !aiStatus) return false;
   if (window.__render3dShowMeFromQuery) return false;
   if (new URLSearchParams(window.location.search).has("showMe")) return false;
+  try {
+    if (localStorage.getItem(trialCreditsPopupSeenKey()) === "1") return false;
+  } catch (_) {}
   const trial = aiStatus?.credits?.trial;
   return !!(trial?.show_popup);
 }
 
 let trialCreditsPopupTimer = null;
+let trialCreditsPopupOffered = false;
 
 function maybeOfferTrialCreditsPopup() {
+  if (trialCreditsPopupOffered) return;
   if (!shouldShowTrialCreditsPopup()) return;
   if (trialCreditsPopupTimer) return;
   const setupOpen = !document.getElementById("ai-setup-intro-modal")?.classList.contains("hidden");
   if (setupOpen) closeAISetupIntro({ remember: false });
   trialCreditsPopupTimer = window.setTimeout(() => {
     trialCreditsPopupTimer = null;
-    if (!shouldShowTrialCreditsPopup()) return;
+    if (trialCreditsPopupOffered || !shouldShowTrialCreditsPopup()) return;
     const modal = document.getElementById("trial-credits-modal");
     if (!modal) return;
+    trialCreditsPopupOffered = true;
+    // Mark seen as soon as we show it so refresh / re-render never shows it again.
+    markTrialCreditsPopupSeenLocal();
+    void api("/api/user/ai-credits/trial-ack", { method: "POST" }).catch(() => {});
     modal.classList.remove("hidden");
     modal.querySelector("[data-trial-credits-action='start']")?.focus();
   }, 700);
