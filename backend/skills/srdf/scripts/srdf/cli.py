@@ -154,6 +154,7 @@ def _generate_target_inner(script_path: Path, *, output_path: Path) -> Path:
     xml = str(payload["xml"])
     urdf_path = _resolve_relative_file(payload["urdf"], source_path=script_path, suffix=".urdf", label="urdf")
     urdf_robot = _read_urdf_robot(urdf_path)
+    xml = _coerce_srdf_common_mistakes(xml, urdf_robot_name=str(urdf_robot.get("name") or ""))
     xml = _xml_with_linked_urdf_metadata(xml, output_path=output_path, urdf_path=urdf_path)
     srdf_source = parse_srdf_xml(xml, source_path=output_path)
     _validate_linked_urdf_ref(
@@ -227,6 +228,48 @@ def _normalize_xml_value(raw_xml: object, *, script_path: Path, label: str) -> s
         f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element or string, "
         f"got {type(raw_xml).__name__}"
     )
+
+
+def _coerce_srdf_common_mistakes(xml_text: str, *, urdf_robot_name: str) -> str:
+    """Fix common AI SRDF mistakes before validation.
+
+    - Missing <robot name="..."> → copy from linked URDF
+    - <link_group name="x"> → <link name="x"/>
+    """
+    text = str(xml_text or "")
+    if not text.strip():
+        return text
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return text
+
+    changed = False
+    if root.tag == "robot":
+        if not str(root.attrib.get("name") or "").strip() and urdf_robot_name:
+            root.set("name", urdf_robot_name)
+            changed = True
+
+    for group in root.findall("group"):
+        for child in list(group):
+            if child.tag != "link_group":
+                continue
+            name = str(child.attrib.get("name") or "").strip()
+            if not name:
+                continue
+            replacement = ET.Element("link", name=name)
+            # Preserve relative order by inserting before the mistaken node.
+            idx = list(group).index(child)
+            group.remove(child)
+            group.insert(idx, replacement)
+            changed = True
+
+    if not changed:
+        return text
+    body = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    if text.lstrip().startswith("<?xml"):
+        return f'<?xml version="1.0"?>\n{body}'
+    return body
 
 
 def _is_xml_element(value: object) -> bool:

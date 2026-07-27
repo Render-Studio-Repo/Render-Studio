@@ -222,13 +222,65 @@ def _write_urdf_payload(payload: dict[str, object], *, output_path: Path, script
 
 def _normalize_xml_value(raw_xml: object, *, script_path: Path, label: str) -> str:
     if _is_xml_element(raw_xml):
-        return _serialize_xml_element(raw_xml)
-    if isinstance(raw_xml, str):
-        return raw_xml
-    raise TypeError(
-        f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element or string, "
-        f"got {type(raw_xml).__name__}"
-    )
+        xml = _serialize_xml_element(raw_xml)
+    elif isinstance(raw_xml, str):
+        xml = raw_xml
+    else:
+        raise TypeError(
+            f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element or string, "
+            f"got {type(raw_xml).__name__}"
+        )
+    return _coerce_primitive_geometry_attrs(xml)
+
+
+def _coerce_primitive_geometry_attrs(xml_text: str) -> str:
+    """Fix common AI mistakes: <box><size>x y z</size></box> → <box size="x y z"/>.
+
+    URDF requires size/radius/length as attributes, not child elements.
+    """
+    text = str(xml_text or "")
+    if not text.strip():
+        return text
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        # Keep original; downstream validation will report the parse error.
+        return text
+
+    changed = False
+    for geom_tag, attr_names in (
+        ("box", ("size",)),
+        ("cylinder", ("radius", "length")),
+        ("sphere", ("radius",)),
+    ):
+        for element in root.iter(geom_tag):
+            for attr_name in attr_names:
+                if str(element.attrib.get(attr_name) or "").strip():
+                    continue
+                child = element.find(attr_name)
+                if child is None:
+                    continue
+                value = str(child.text or "").strip()
+                if not value:
+                    continue
+                element.set(attr_name, value)
+                element.remove(child)
+                changed = True
+            # Drop empty leftover text-only children that some generators leave behind.
+            for child in list(element):
+                if child.tag in attr_names and not str(child.attrib) and not list(child):
+                    # Already handled above when value was present; remove empty shells.
+                    if not str(child.text or "").strip():
+                        element.remove(child)
+                        changed = True
+
+    if not changed:
+        return text
+    # Preserve XML declaration if the input had one.
+    body = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    if text.lstrip().startswith("<?xml"):
+        return f'<?xml version="1.0"?>\n{body}'
+    return body
 
 
 def _is_xml_element(value: object) -> bool:
