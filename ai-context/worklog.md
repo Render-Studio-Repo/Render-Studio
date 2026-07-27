@@ -1,3 +1,19 @@
+## 2026-07-27 — Simple Changelogs adopted + worklog backfill
+
+- Policy: `.simple-changelogs.json` distribution `web`, developer history required, signatures on, new surfaces ask.
+- Created `CHANGELOG.md` + `DEVELOPER_CHANGELOG.md` from `ai-context/worklog.md` (2026-07-19 → 2026-07-27) + ship commit `237c533`.
+- Date headings (no SemVer tags found). Pre-worklog history not reconstructed.
+
+---
+
+## 2026-07-27 — X media INIT failed (empty 403)
+
+- Cause: OAuth1 used v1.1 `upload.twitter.com` INIT → empty **403**. v2 INIT works; finalize hits **credits depleted**; tweet create needs Read and write app permissions.
+- Share to X (video) now opens compose + downloads the clip (no API media credits needed).
+- Backend OAuth1 media prefers v2 initialize/append/finalize; clearer errors for empty 403 / credits / Read-only.
+
+---
+
 ## 2026-07-26 — Export share scoped to the model (not whole scene)
 
 - Sharing `Shower_Door…step` baked every eye-visible sibling (old Parametric assembly + other mounts) and sometimes rooted the link on `.3mf` (no GLB preview).

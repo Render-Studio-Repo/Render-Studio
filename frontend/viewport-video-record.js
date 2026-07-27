@@ -688,22 +688,61 @@ export function createViewportVideoRecorder({
     const text = shareModalEl?.querySelector("[data-video-share-text]")?.value?.trim() || "Made in Render3D";
     const postBtn = shareModalEl?.querySelector("[data-video-share-post-x]");
     if (postBtn) postBtn.disabled = true;
-    setShareStatus("Opening X compose…");
+
+    // Prefer the connected-account API upload so the video is attached to the tweet.
+    // Only fall back to compose/share-sheet when X is not linked.
     try {
-      const shared = await shareVideoViaWebShare(blob, text);
-      if (shared) {
-        setShareStatus("Shared via your device share sheet.");
-        setStatus(true, "Shared viewport video.");
+      const status = await refreshXStatus();
+      const connected = !!status?.connected;
+      if (!connected || !api) {
+        setShareStatus("Connect X to upload the video with your caption, or use the share sheet…");
+        const shared = await shareVideoViaWebShare(blob, text);
+        if (shared) {
+          setShareStatus("Shared via your device share sheet.");
+          setStatus(true, "Shared viewport video.");
+          return;
+        }
+        openXCompose(text);
+        downloadShareBlob(blob);
+        setShareStatus("Opened X compose with your caption — attach the downloaded clip (Connect X to auto-upload).", true);
         return;
       }
-      openXCompose(text);
-      downloadShareBlob(blob);
-      setShareStatus("Opened X compose with your caption — attach the downloaded clip to the post.");
-      setStatus(true, "Opened X compose — attach the downloaded clip.");
+
+      setShareStatus("Uploading to X… this can take a minute for longer clips.");
+      const form = new FormData();
+      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+      form.append("video", blob, `render3d-video.${ext}`);
+      form.append("text", text);
+      const headers = {};
+      const token = getToken?.();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch("/api/integrations/twitter/post-video", {
+        method: "POST",
+        headers,
+        body: form,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data?.detail || data?.message || res.statusText || "Post failed.";
+        if (res.status === 401) {
+          setShareStatus(String(detail), true);
+          await refreshXStatus();
+          return;
+        }
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      setShareStatus(data?.url ? `Posted — ${data.url}` : "Posted to X with video.");
+      setStatus(true, "Shared viewport video to X.");
+      if (data?.url) {
+        try {
+          window.open(data.url, "_blank", "noopener");
+        } catch (_) {}
+      }
     } catch (err) {
-      setShareStatus(err?.message || "Could not open X.", true);
+      setShareStatus(err?.message || "Could not post to X.", true);
     } finally {
       if (postBtn) postBtn.disabled = false;
+      await refreshXStatus();
     }
   }
 

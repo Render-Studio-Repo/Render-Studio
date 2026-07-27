@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "distribution": "web",
+  "guidance": {
+    "version": 6,
+    "backfillStatus": "completed"
+  },
+  "developerChangelog": "required",
+  "signatures": "agent-and-timestamp",
+  "newReleaseNoteSurfaces": "ask"
+}
