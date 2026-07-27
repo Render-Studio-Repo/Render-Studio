@@ -297,7 +297,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
         </div>
         <label class="screenshot-markup-caption">
           <span>Caption</span>
-          <textarea data-shot-markup-text maxlength="270" rows="2" placeholder="Render Studio"></textarea>
+          <textarea data-shot-markup-text maxlength="270" rows="2" placeholder="loading Render Studio"></textarea>
         </label>
         <p class="screenshot-markup-x-status muted small" data-shot-markup-x-status></p>
         <p class="screenshot-markup-status muted small" data-shot-markup-status role="status"></p>
@@ -655,8 +655,8 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
 
   function openXCompose(text) {
     // X cannot hyperlink arbitrary words; attach render3d.app via the url=
-    // intent param so "Render Studio" posts include a live link to the site.
-    const caption = String(text || "Render Studio").trim().slice(0, 270) || "Render Studio";
+    // intent param so "loading Render Studio" posts include a live link to the site.
+    const caption = String(text || "loading Render Studio").trim().slice(0, 270) || "loading Render Studio";
     const params = new URLSearchParams();
     params.set("text", caption);
     if (!/render3d\.app/i.test(caption)) {
@@ -683,11 +683,11 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     try {
       const file = new File([blob], "render3d-screenshot.png", { type: blob.type || "image/png" });
       if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
-      const shareText = text || "Render Studio";
+      const shareText = text || "loading Render Studio";
       const payload = {
         files: [file],
         text: /render3d\.app/i.test(shareText) ? shareText : `${shareText}\nhttps://render3d.app`,
-        title: "Render Studio",
+        title: "loading Render Studio",
       };
       if (navigator.canShare && !navigator.canShare(payload)) return false;
       await navigator.share(payload);
@@ -703,7 +703,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
       setStatus("Opening X compose…");
       const dataUrl = await compositeMarkedPng();
       const blob = await (await fetch(dataUrl)).blob();
-      const caption = String(modalEl?.querySelector("[data-shot-markup-text]")?.value || "Render Studio").trim() || "Render Studio";
+      const caption = String(modalEl?.querySelector("[data-shot-markup-text]")?.value || "loading Render Studio").trim() || "loading Render Studio";
 
       const shared = await shareImageViaWebShare(blob, caption);
       if (shared) {
@@ -742,7 +742,7 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
     const eyebrow = modalEl.querySelector(".screenshot-markup-eyebrow");
     if (eyebrow) eyebrow.textContent = modeLabel;
     const caption = modalEl.querySelector("[data-shot-markup-text]");
-    if (caption && !caption.value.trim()) caption.value = "Render Studio";
+    if (caption && !caption.value.trim()) caption.value = "loading Render Studio";
     modalEl.classList.remove("hidden");
     void refreshXStatus();
   }

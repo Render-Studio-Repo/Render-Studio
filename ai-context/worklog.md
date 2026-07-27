@@ -1,3 +1,11 @@
+## 2026-07-27 — X share caption: Render Studio + site link
+
+- Default Share to X caption is **Render Studio** (not “Made in Render3D”).
+- Compose intent attaches `url=https://render3d.app` so the post includes a live link (X cannot hyperlink arbitrary words).
+- Cache-bust `?v=20260727-x-render-studio`.
+
+---
+
 ## 2026-07-27 — Management Changelog tab
 
 - Added Management → **Changelog** tab showing live repo `CHANGELOG.md` via `GET /api/admin/changelog`.
