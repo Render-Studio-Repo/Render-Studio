@@ -1,7 +1,0 @@
-name=v1
-label=Render3D v1 — pre-mobile desktop milestone
-created_utc=20260603-050929
-source=/home/ubuntu/backups/LATEST-pre-mobile
-canonical_pre_mobile=true
-permanent=true
-notes=Desktop UI with ribbon, auth, workspaces, collaboration. Before mobile-ui.js.

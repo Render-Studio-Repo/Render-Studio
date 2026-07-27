@@ -8,6 +8,41 @@ projects/
 backups/
 inbox/
 backend/render3d.db
+logs/
+
+# Local snapshots / backup trees (not for GitHub)
+milestones/
+**/cad.backup-*/
+**/*.backup-*/
+*.bak
+
+# Temp vendor / experiment checkouts
+tmp_*/
+tmp-*/
+tmp_img2threejs
+tmp_jake_text_to_cad
+
+# 3D / CAD model binaries (generate locally; do not upload)
+*.glb
+*.gltf
+*.stl
+*.step
+*.stp
+*.obj
+*.3mf
+*.ply
+*.fbx
+*.iges
+*.igs
+*.brep
+*.brp
+*.off
+*.dae
+*.usd
+*.usda
+*.usdc
+*.abc
+*.f3z
 
 # Python
 .venv/
