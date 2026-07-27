@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record a Render3D platform tour MP4 for Bambu funding submission."""
+"""Record a Render Studio platform tour MP4 for Bambu funding submission."""
 
 from __future__ import annotations
 
@@ -247,7 +247,7 @@ async def run() -> Path:
         await page.goto(f"{BASE}/", wait_until="domcontentloaded")
         await page.evaluate(
             TITLE_CARD_JS,
-            ["Render3D", "AI CAD workspace — design, wire, architect, and simulate in one platform"],
+            ["Render Studio", "AI CAD workspace — design, wire, architect, and simulate in one platform"],
         )
         await page.wait_for_timeout(3200)
         await page.evaluate(HIDE_TITLE_JS)
@@ -406,7 +406,7 @@ async def run() -> Path:
         # Docs / landing flavor
         try:
             await page.goto(f"{BASE}/docs.html", wait_until="domcontentloaded", timeout=90000)
-            await caption(page, "Docs & APIs", "Ship automations with the Render3D API and skills", 2.0)
+            await caption(page, "Docs & APIs", "Ship automations with the Render Studio API and skills", 2.0)
             await page.wait_for_timeout(800)
         except Exception as exc:
             print(f"[demo] docs skip: {exc}", flush=True)
@@ -418,7 +418,7 @@ async def run() -> Path:
             pass
         await page.evaluate(
             TITLE_CARD_JS,
-            ["Build. Wire. Architect. Ship.", "Render3D — the AI workspace for hardware teams · render3d.app"],
+            ["Build. Wire. Architect. Ship.", "Render Studio — the AI workspace for hardware teams · render3d.app"],
         )
         await page.wait_for_timeout(3600)
 
@@ -436,8 +436,8 @@ async def run() -> Path:
 def encode(webm: Path) -> tuple[Path, Path]:
     import subprocess
 
-    mp4 = OUT_DIR / "Render3D-Bambu-Platform-Tour.mp4"
-    gif = OUT_DIR / "Render3D-Bambu-Platform-Tour.gif"
+    mp4 = OUT_DIR / "Render Studio-Bambu-Platform-Tour.mp4"
+    gif = OUT_DIR / "Render Studio-Bambu-Platform-Tour.gif"
     # High-quality H.264 for upload
     subprocess.run(
         [

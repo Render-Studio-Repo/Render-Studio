@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Brand update GIFs with a bottom-right transparent Render3D logo + rising electricity.
+"""Brand update GIFs with a bottom-right transparent Render Studio logo + rising electricity.
 
 Usage:
   python scripts/brand-update-gifs.py

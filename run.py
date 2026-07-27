@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #test
-"""Start the Render3D server."""
+"""Start the Render Studio server."""
 
 import uvicorn
 

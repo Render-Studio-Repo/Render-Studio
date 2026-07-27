@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Watch a local Downloads folder for McMaster CAD and upload into a Render3D project.
+"""Watch a local Downloads folder for McMaster CAD and upload into a Render Studio project.
 
 McMaster always saves CAD to the browser Downloads folder (it cannot write into
-Render3D directly). This script bridges that gap:
+Render Studio directly). This script bridges that gap:
 
   1. Download STEP/STL/etc from McMaster as usual
   2. This watcher detects the new file
-  3. Uploads it into your current Render3D project
+  3. Uploads it into your current Render Studio project
 
 Usage:
   export RENDER3D_API="https://render3d.app"          # or http://localhost:8001
@@ -95,7 +95,7 @@ def file_stable(path: Path) -> bool:
 
 def main() -> None:
     if not TOKEN:
-        die("set RENDER3D_TOKEN (JWT from a signed-in Render3D session)")
+        die("set RENDER3D_TOKEN (JWT from a signed-in Render Studio session)")
     if not PROJECT_ID:
         die("set RENDER3D_PROJECT_ID")
     if not DOWNLOADS.is_dir():

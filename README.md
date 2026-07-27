@@ -1,4 +1,4 @@
-# Render3D
+# Render Studio
 
 A local CAD project visualizer inspired by ForgeCAD: orbit/zoom/pan a 3D viewport, upload meshes, edit transforms, generate CAD from natural-language prompts, wire electronics, and turn selected geometry references into local Draw edits.
 

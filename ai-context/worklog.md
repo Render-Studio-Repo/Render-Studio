@@ -1,14 +1,14 @@
 ## 2026-07-27 — Rebrand to Render Studio + render credits
 
 - User-facing product name: **Render Studio** (kept `render3d.app` URLs, logos, `Render3DMobile*` APIs).
-- Billing copy: **Render3D credits / Studio credits → render credits**; platform key label **Render Studio Key**.
+- Billing copy: **render credits / render credits → render credits**; platform key label **Render Studio Key**.
 - Cache-bust `?v=20260727-render-studio`.
 
 ---
 
 ## 2026-07-27 — X share caption: Render Studio + site link
 
-- Default Share to X caption is **Render Studio** (not “Made in Render3D”).
+- Default Share to X caption is **Render Studio** (not “loading Render Studio”).
 - Compose intent attaches `url=https://render3d.app` so the post includes a live link (X cannot hyperlink arbitrary words).
 - Cache-bust `?v=20260727-x-render-studio`.
 
@@ -23,7 +23,7 @@
 
 ## 2026-07-27 — Ship trial credits + X MP4 share
 
-- One-time $10 Render3D Key trial (`grant_signup_trial_if_needed`), trial email, welcome popup + `/api/user/ai-credits/trial-ack`.
+- One-time $10 Render Studio Key trial (`grant_signup_trial_if_needed`), trial email, welcome popup + `/api/user/ai-credits/trial-ack`.
 - Share to X prepares MP4 (`blobForXShare`) before compose/download; cache-bust `?v=20260727-trial-mp4-ship`.
 - Pushed `3883b13` / `56d520c` + follow-up label/cache commits; restart `render3d.service`.
 
@@ -203,7 +203,7 @@
 ## 2026-07-25 — Kimi selection no longer snaps back to Claude
 
 - Bug: prompt-key UI treated every non-Claude provider as OpenAI; `normalizePlatformProviderId` was missing in `app.js` (threw when reconciling platform picks). Selecting Kimi could silently keep/patch Anthropic.
-- Fix: real Kimi platform choice, provider normalize helper, personal Save/Use disables Render3D shared Claude fallback and selects `personal:<id>` in the compose picker.
+- Fix: real Kimi platform choice, provider normalize helper, personal Save/Use disables Render Studio shared Claude fallback and selects `personal:<id>` in the compose picker.
 - Cache-bust `app.js` / `ai-key-ui.js` `?v=20260725-kimi-stick`.
 
 ---
@@ -220,7 +220,7 @@
 ## 2026-07-25 — Shared credits: Kimi K3 (V3) platform key
 
 - Added `KIMI_API_KEY` (+ `KIMI_MODEL` / `KIMI_MODEL_QUALITY=kimi-k3`) to server `.env`.
-- Credits path now offers **Render3D Kimi** alongside OpenAI/Claude (`ai_credit_service` + platform key UI).
+- Credits path now offers **Render Studio Kimi** alongside OpenAI/Claude (`ai_credit_service` + platform key UI).
 - Default Kimi quality model: `kimi-k3` (V3). Cache-bust `app.js` / `ai-key-ui.js` `?v=20260725-kimi-credits`. Service restarted.
 
 ---
@@ -405,7 +405,7 @@
 
 ## 2026-07-24 — Fusion: select root folders to export
 
-- Top-level (root) folders now show an explicit **Select** + **Open** row so you can export into Render3D/etc without opening first.
+- Top-level (root) folders now show an explicit **Select** + **Open** row so you can export into Render Studio/etc without opening first.
 - Cache-bust `?v=20260724-fusion-root`.
 
 ---
@@ -428,7 +428,7 @@
 
 ## 2026-07-24 — Fusion folder click = select with ✓
 
-- Folder tiles used to **Open** on click, so picking a destination inside Render3D felt broken.
+- Folder tiles used to **Open** on click, so picking a destination inside Render Studio felt broken.
 - Click folder → select export target + green ✓; separate **Open** browses inside.
 - Taller folder grid; cache-bust `?v=20260724-fusion-check`.
 
@@ -733,7 +733,7 @@
 
 ## 2026-07-24 — Fusion export: upload to current folder
 
-- Inside a Fusion folder (e.g. Render3D) there is a primary **Export to Fusion · {folder}** button — no subfolder required.
+- Inside a Fusion folder (e.g. Render Studio) there is a primary **Export to Fusion · {folder}** button — no subfolder required.
 - Folder tiles use **Export** (one-click upload there). Bottom submit label shows the destination folder name.
 - Cache-bust: `file-actions.js` / `styles.css` `?v=20260724-fusion-export-here`.
 
@@ -768,7 +768,7 @@
 
 ## 2026-07-24 — Fusion export: nested folder grid picker
 
-- Export → Fusion folder browser is now a **2-column tile grid**; click a tile to open nested folders (e.g. Project Files → Render3D → …).
+- Export → Fusion folder browser is now a **2-column tile grid**; click a tile to open nested folders (e.g. Project Files → Render Studio → …).
 - **Export here** selects the current folder; breadcrumbs + Back for navigation; last nested path remembered.
 - Cache-bust: `file-actions.js?v=20260724-fusion-folder-grid`, `styles.css?v=20260724-fusion-folder-grid`, `app.js` import bump.
 
@@ -805,7 +805,7 @@
 
 - Bug: after shared-workspace nesting, **all** multi-member team roots were nested — Sam W has no solo personal workspace, so Personal/Projects looked empty (everything under shared folders). Public “Sam W” files still showed.
 - Fix: nest invited (member-only) teams; keep owner/admin team roots at Projects root. Users with a true personal workspace (Vineet) still nest other teams under `{Team} shared workspace`.
-- Verified: Sam ~94 root projects restored; Vineet still 1 personal + Render3D shared folder.
+- Verified: Sam ~94 root projects restored; Vineet still 1 personal + Render Studio shared folder.
 - File: `backend/main.py` (service restart).
 
 ## 2026-07-24 — Keep AI prompt draft across refresh
@@ -853,7 +853,7 @@
 
 ## 2026-07-23 — Invited workspace projects → shared folder
 
-- Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render3D models mixed).
+- Problem: accepting a workspace invite dumped that team's root projects into the invitee's personal Projects root (Vineet had 1 personal + ~60 Render Studio models mixed).
 - Fix: `list_projects` nests non-personal root projects under virtual `__shared_ws_{teamId}` named "{Team} shared workspace". Real subfolders unchanged. Browser treats them as virtual/read-only.
 - Files: `backend/main.py`, `frontend/workspace-browser.js`, cache-bust `?v=20260723-shared-ws-folder`.
 
@@ -889,7 +889,7 @@
 
 ## 2026-07-23 — Link preview title → AI & Robotics Studio
 
-- Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to **Render3D — The AI & Robotics Studio** (was “AI Product Studio”).
+- Updated `frontend/index.html` `<title>`, `og:title`, `twitter:title`, and descriptions to **Render Studio — The AI & Robotics Studio** (was “AI Product Studio”).
 
 ## 2026-07-23 — Viewport high-quality video record control
 

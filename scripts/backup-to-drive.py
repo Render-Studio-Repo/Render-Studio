@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Daily backup of Render3D 3D project models to Google Drive.
+"""Daily backup of Render Studio 3D project models to Google Drive.
 
 Creates a temporary archive of ``projects/``, uploads it under
 PARENT_FOLDER_ID/M-D-YYYY/, then deletes the local archive so model
@@ -538,7 +538,7 @@ def run_backup(*, skip_upload: bool = False, keep_local: bool = False) -> None:
 
 def main() -> int:
     setup_logging()
-    parser = argparse.ArgumentParser(description="Backup Render3D models to Google Drive")
+    parser = argparse.ArgumentParser(description="Backup Render Studio models to Google Drive")
     parser.add_argument("--auth", action="store_true", help="Run OAuth flow and save token")
     parser.add_argument("--local-only", action="store_true", help="Create archive only; skip Drive upload")
     parser.add_argument(

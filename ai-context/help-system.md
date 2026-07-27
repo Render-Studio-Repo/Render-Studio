@@ -1,6 +1,6 @@
 # Help & docs system — architecture
 
-Render3D's user education stack is mature and interconnected. **One catalog feeds everything** — understand this before touching any help surface.
+Render Studio's user education stack is mature and interconnected. **One catalog feeds everything** — understand this before touching any help surface.
 
 ## The canonical catalog
 

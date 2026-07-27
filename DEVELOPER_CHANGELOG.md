@@ -10,7 +10,7 @@
 - Signup trial: `grant_signup_trial_if_needed` ($10), trial email, popup + `/api/user/ai-credits/trial-ack`; platform key labeled Render Studio Key.
 - Share to X: `blobForXShare` prefers MP4 before compose/download.
 - Linked mobile-app-chrome.css; forced .mobile-corner-launchers / showcase bar display:none !important.
-- Menu tiles [data-mobile-app] wired via Render3DMobileStudio; low-profile hamburger until is-open.
+- Menu tiles [data-mobile-app] wired via Render StudioMobileStudio; low-profile hamburger until is-open.
 - Account menu Authorized apps card for X (/assets/brands/x-corp.svg) + Discord; shared connectXAccount helpers.
 - Comprehensive changelog backfill from worklog (Jul 19–27) + git reconstruction (Jun 19; Jul 6–17).
 - Repo hygiene: stop tracking local .config dirs (9f19a67); exclude CAD models and local backups from GitHub (31bae7d).
@@ -286,7 +286,7 @@
 
 - autodesk_oauth.py + /oauth/autodesk/* and /api/autodesk/*; DB tables for Autodesk tokens and Fusion mirrors.
 - fusion-panel.js; Fusion prompt mode + push flag in app.js / main.py / ribbon.
-- fusion360-plugin/Render3DLink localhost bridge.
+- fusion360-plugin/Render StudioLink localhost bridge.
 - New services: render_agent_service, agent_marketplace_service, social_oauth, wiring_debug_job_service; daily_limit_usd on user AI keys.
 - skill_runner surfaces CAD kernel signal deaths into the AI repair loop; Pro reasoning-effort clamp (min medium).
 - DXF prompt attach stores truncated text_content on reference chips; backup scripts appear.

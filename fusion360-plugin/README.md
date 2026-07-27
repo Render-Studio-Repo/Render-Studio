@@ -1,12 +1,12 @@
-# Render3D Fusion 360 Plugin Bridge
+# Render Studio Fusion 360 Plugin Bridge
 
-This is a local Fusion 360 add-in scaffold for Render3D Fusion mode.
+This is a local Fusion 360 add-in scaffold for Render Studio Fusion mode.
 
 ## Install
 
-1. Copy `Render3DLink/` into your Fusion 360 add-ins folder.
+1. Copy `Render StudioLink/` into your Fusion 360 add-ins folder.
 2. In Fusion 360, open `Utilities > Add-ins > Scripts and Add-ins`.
-3. Select `Render3DLink` and click `Run`.
+3. Select `Render StudioLink` and click `Run`.
 4. The bridge listens on `http://127.0.0.1:38630`.
 
 ## API
@@ -25,7 +25,7 @@ Request body:
 
 ```json
 {
-  "source": "def run(ctx):\n    app = ctx['app']\n    ui = ctx['ui']\n    ui.messageBox('Hello from Render3D')\n"
+  "source": "def run(ctx):\n    app = ctx['app']\n    ui = ctx['ui']\n    ui.messageBox('Hello from Render Studio')\n"
 }
 ```
 

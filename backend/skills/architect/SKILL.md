@@ -33,9 +33,9 @@ Quality bar: generated houses should look like believable modular house kits, no
 4. Name major solids/components semantically: `room_floor_A`, `wall_north_exterior`, `window_insert_01_glass`, `door_panel_A`, `roof_panel_left`, `robot_lift_tab_A`.
 5. Add robot-assembly intent in source comments and labels: pick points, lift points, assembly order, mating side, and connector type.
 6. Make window and door modules replaceable inserts, not just visual cutouts.
-7. Prefer kit assemblies over one fused monolith. Never fuse the room into a single solid. Keep room parts as distinct components/bodies so Render3D can select a wall and run wall-level generative edits.
+7. Prefer kit assemblies over one fused monolith. Never fuse the room into a single solid. Keep room parts as distinct components/bodies so Render Studio can select a wall and run wall-level generative edits.
 8. Add clear reference dimensions in comments: module grid count, room footprint, wall height, panel thickness, connector spacing, and intended snap side.
-9. Assign house-like visual styling/material labels to major solids so the Render3D preview reads as a house kit without manual coloring.
+9. Assign house-like visual styling/material labels to major solids so the Render Studio preview reads as a house kit without manual coloring.
 10. Add architectural cues: baseboards, sill/lintel pieces, trim frames, studs or panel seams, simple interior floor finish, and visible wall thickness.
 11. Make each wall length adjustable after generation. Avoid modeling walls as one merged perimeter; make each wall a standalone body with its own origin/center, label, length dimension, connector endpoints, and snap-side metadata.
 12. Design every structural part as if it may be 3D printed and robot assembled. Include connector clearances, lead-in chamfers, oversized robot pick tabs, flat gripping faces, and visible orientation labels such as `TOP`, `INSIDE`, `NORTH`, and `SNAP_A`.
@@ -158,15 +158,15 @@ When the user asks for robot construction instructions, include:
 
 <!-- render3d-studio -->
 
-## Render3D Studio
+## Render Studio
 
-On the Render3D server this skill lives at `backend/skills/architect/`.
+On the Render Studio server this skill lives at `backend/skills/architect/`.
 
 - **Python tools:** `backend/skills/architect/scripts/` (run from the **project directory**, not the skill folder)
 - **References:** `backend/skills/architect/references/`
-- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render3D JSON Feature Programs in those modes.
-- **Standard mode only:** when the product asks for a Feature Program, emit Render3D JSON Feature Programs instead of Python.
-- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render3D's own viewer loads the generated STEP/GLB.
+- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render Studio JSON Feature Programs in those modes.
+- **Standard mode only:** when the product asks for a Feature Program, emit Render Studio JSON Feature Programs instead of Python.
+- **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render Studio's own viewer loads the generated STEP/GLB.
 - **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
 
 See `backend/skills/RENDER3D.md` for full integration notes.

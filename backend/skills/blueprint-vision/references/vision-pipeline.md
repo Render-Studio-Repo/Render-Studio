@@ -194,7 +194,7 @@ Produce a **complete** generation prompt — not a summary. Include:
 Formats to emit:
 
 1. **CAD brief** (prose, for CAD skill / `cad-brief.md`)
-2. **Render3D Feature Program intent** (ordered features with combine ops when running in Studio)
+2. **Render Studio Feature Program intent** (ordered features with combine ops when running in Studio)
 3. **Build123D outline** (function names, parameters, major features — not full code unless requested)
 
 Example prompt fragment:

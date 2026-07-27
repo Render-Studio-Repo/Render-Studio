@@ -29,21 +29,21 @@ UPDATES = [
         "id": "render-agent-do-it-for-me",
         "title": "Render Agent: Do it for me",
         "discord": (
-            "**New in Render3D — Render Agent: Do it for me**\n"
+            "**New in Render Studio — Render Agent: Do it for me**\n"
             "Tell the agent what you want. It gathers the task, project, and object, "
             "then walks each setup step with sticky notes before it runs.\n\n"
             f"👉 [Click here to try it]({PUBLIC}/getting-started.html#render-agent)\n"
             f"Updates: {PUBLIC}/updates.html"
         ),
         "linkedin": (
-            "New in Render3D for CAD developers and makers:\n\n"
+            "New in Render Studio for CAD developers and makers:\n\n"
             "Render Agent → Do it for me\n"
             "Describe the outcome. The agent collects task + project + object context, "
             "explains each setup step with sticky notes, then sends the request for you.\n\n"
             "Built for faster onboarding inside a real AI CAD studio — not a slide deck.\n\n"
             f"Click here to try it: {PUBLIC}/getting-started.html#render-agent\n"
             f"Changelog: {PUBLIC}/updates.html\n\n"
-            "#CAD #AI #3DPrinting #Robotics #Render3D #Developers"
+            "#CAD #AI #3DPrinting #Robotics #Render Studio #Developers"
         ),
         "gif": "render-agent.social.gif",
         "href": f"{PUBLIC}/getting-started.html#render-agent",
@@ -52,20 +52,20 @@ UPDATES = [
         "id": "mode-2-selected-face-edit",
         "title": "Mode 2.0 selected-face edits",
         "discord": (
-            "**New in Render3D — Mode 2.0 face-accurate edits**\n"
+            "**New in Render Studio — Mode 2.0 face-accurate edits**\n"
             "Pick a face or part, then ask AI to lengthen/extend. Edits stay locked to the "
             "selected object instead of regenerating from an old baseline.\n\n"
             f"👉 [Click here to try it]({PUBLIC}/getting-started.html#picks)\n"
             f"Updates: {PUBLIC}/updates.html"
         ),
         "linkedin": (
-            "Shipping a precision upgrade in Render3D Mode 2.0:\n\n"
+            "Shipping a precision upgrade in Render Studio Mode 2.0:\n\n"
             "Selected-face length edits\n"
             "Face/component refs now keep generative edit mode on the live viewport object, "
             "so “make this 20mm longer” revises the part you picked — not a stale baseline.\n\n"
             f"Click here to try it: {PUBLIC}/getting-started.html#picks\n"
             f"More updates: {PUBLIC}/updates.html\n\n"
-            "#GenerativeDesign #CAD #AI #Manufacturing #Render3D"
+            "#GenerativeDesign #CAD #AI #Manufacturing #Render Studio"
         ),
         "gif": "picks.social.gif",
         "href": f"{PUBLIC}/getting-started.html#picks",
@@ -74,7 +74,7 @@ UPDATES = [
         "id": "mobile-app-chrome",
         "title": "App-like mobile studio",
         "discord": (
-            "**New in Render3D — App-like mobile studio**\n"
+            "**New in Render Studio — App-like mobile studio**\n"
             "Hamburger grid menu, profile top-right, tools FAB, and a locked viewport "
             "(no accidental zoom while tapping menus). Pick a model in Explorer and it opens "
             "instantly — no extra × tap.\n\n"
@@ -82,7 +82,7 @@ UPDATES = [
             f"Updates: {PUBLIC}/updates.html"
         ),
         "linkedin": (
-            "Render3D mobile just got a true app shell:\n\n"
+            "Render Studio mobile just got a true app shell:\n\n"
             "• Central ☰ menu grid for studio actions\n"
             "• Profile control top-right (same as desktop)\n"
             "• Bottom tools FAB for Grid / Transparent / Orbit / AI\n"
@@ -90,7 +90,7 @@ UPDATES = [
             "• Explorer model select auto-opens the part\n\n"
             f"Click here to try it: {PUBLIC}/\n"
             f"Changelog: {PUBLIC}/updates.html\n\n"
-            "#MobileCAD #AI #3D #ProductDesign #Render3D"
+            "#MobileCAD #AI #3D #ProductDesign #Render Studio"
         ),
         "gif": "select-object.social.gif",
         "href": f"{PUBLIC}/",
@@ -99,7 +99,7 @@ UPDATES = [
         "id": "gen-loader-ready-banner",
         "title": "Metallic gen loader + ready banner",
         "discord": (
-            "**New in Render3D — Generation HUD**\n"
+            "**New in Render Studio — Generation HUD**\n"
             "Bottom-right metallic loader with a mini printer + robot: the part prints with "
             "the progress bar, then the robot picks & places at 100%. When the model is ready, "
             "a status banner fades in above it.\n\n"
@@ -107,7 +107,7 @@ UPDATES = [
             f"Updates: {PUBLIC}/updates.html"
         ),
         "linkedin": (
-            "A small UX detail that changes how AI CAD feels in Render3D:\n\n"
+            "A small UX detail that changes how AI CAD feels in Render Studio:\n\n"
             "Generation HUD (bottom-right)\n"
             "• Metallic loader card\n"
             "• Printer builds the part with the progress bar\n"
@@ -116,7 +116,7 @@ UPDATES = [
             "Also fixed the Generate double-click race so the loader appears on the first click.\n\n"
             f"Click here to try it: {PUBLIC}/\n"
             f"Updates: {PUBLIC}/updates.html\n\n"
-            "#UX #AI #CAD #Render3D #DeveloperExperience"
+            "#UX #AI #CAD #Render Studio #DeveloperExperience"
         ),
         "gif": "ai-generate.social.gif",
         "href": f"{PUBLIC}/",
@@ -125,20 +125,20 @@ UPDATES = [
         "id": "realtime-editor-popup",
         "title": "Realtime editor viewport popup",
         "discord": (
-            "**New in Render3D — Realtime editor popup**\n"
+            "**New in Render Studio — Realtime editor popup**\n"
             "Open a large realtime viewport from the workspace strip. After import/open it "
             "collapses to a compact left chip for the active object.\n\n"
             f"👉 [Click here to try it]({PUBLIC}/)\n"
             f"Updates: {PUBLIC}/updates.html"
         ),
         "linkedin": (
-            "Render3D realtime collaboration got a cleaner viewport flow:\n\n"
+            "Render Studio realtime collaboration got a cleaner viewport flow:\n\n"
             "Realtime editor popup\n"
             "Launch a large shared viewport from the workspace strip, then collapse it to a "
             "compact chip once the active object is open — better for reviews without losing context.\n\n"
             f"Click here to try it: {PUBLIC}/\n"
             f"Updates: {PUBLIC}/updates.html\n\n"
-            "#Collaboration #CAD #Realtime #Render3D"
+            "#Collaboration #CAD #Realtime #Render Studio"
         ),
         "gif": "workspaces.social.gif",
         "href": f"{PUBLIC}/",

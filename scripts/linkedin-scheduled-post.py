@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scheduled LinkedIn poster for Render3D Recent Updates.
+"""Scheduled LinkedIn poster for Render Studio Recent Updates.
 
 Run this from cron hourly. It posts at configured local-hour slots:
 - Monday-Friday: LINKEDIN_SCHEDULE_WEEKDAY_HOURS (default 10)

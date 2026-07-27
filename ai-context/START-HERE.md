@@ -1,4 +1,4 @@
-# START HERE — AI agent context for Render3D
+# START HERE — AI agent context for Render Studio
 
 > **Point of this folder:** `ai-context/` is the shared memory for AI agents working in this workspace. Read this file first in every new conversation. It tells you what we're building, how the workspace is laid out, how to verify your work, and how not to break a **live server with real users**.
 
@@ -6,7 +6,7 @@
 
 ## 1. What this is
 
-**Render3D** is an AI-first CAD platform ("ForgeCAD-inspired"): natural-language CAD generation, a 3D viewport, solid modeling, constrained sketch, wiring/electronics simulation, rigging/URDF, Fusion 360 / Onshape cloud sync, an Architect (building) mode, a parts marketplace, and a full in-app help system. Frontend is vanilla JS modules (no framework, no bundler); backend is FastAPI + Python.
+**Render Studio** is an AI-first CAD platform ("ForgeCAD-inspired"): natural-language CAD generation, a 3D viewport, solid modeling, constrained sketch, wiring/electronics simulation, rigging/URDF, Fusion 360 / Onshape cloud sync, an Architect (building) mode, a parts marketplace, and a full in-app help system. Frontend is vanilla JS modules (no framework, no bundler); backend is FastAPI + Python.
 
 **Critical fact: this is a LIVE production server.**
 

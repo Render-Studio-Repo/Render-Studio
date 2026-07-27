@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post product updates to the Render3D Discord channel.
+"""Post product updates to the Render Studio Discord channel.
 
 Examples:
   python scripts/notify-discord-update.py --status

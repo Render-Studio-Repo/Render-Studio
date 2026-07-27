@@ -1,6 +1,6 @@
 # Premium Agent Service
 
-This folder is the boundary for Render3D-hosted premium agent operations: paid app execution, billing checks, managed queues, provider credentials, and store fulfillment.
+This folder is the boundary for Render Studio-hosted premium agent operations: paid app execution, billing checks, managed queues, provider credentials, and store fulfillment.
 
 The open-source app store can run without this service. Self-hosters can keep premium apps disabled, or replace this service with their own billing and worker implementation.
 
@@ -9,7 +9,7 @@ The open-source app store can run without this service. Self-hosters can keep pr
 - Verify purchases/subscriptions before premium app install or execution.
 - Run managed agent apps in isolated workers.
 - Keep provider keys, signing secrets, and billing webhooks out of the public frontend.
-- Record fulfillment events back to the main Render3D API.
+- Record fulfillment events back to the main Render Studio API.
 - Enforce per-user/team quotas for premium agent usage.
 
 ## Not Included

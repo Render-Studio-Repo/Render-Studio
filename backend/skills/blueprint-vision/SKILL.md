@@ -5,7 +5,7 @@ description: Analyze engineering drawings, concept schematics, blueprints, paten
 
 # Blueprint Vision
 
-Render3D-local skill: vision analysis for schematic-to-CAD workflows.
+Render Studio-local skill: vision analysis for schematic-to-CAD workflows.
 
 ## Purpose
 
@@ -37,7 +37,7 @@ Do not use for render-only artwork, non-engineering photos, or tasks that need n
 - Technical illustrations with dimension lines, zone maps, and callout text
 - Infographic-style reasoning sheets that combine iso views, tables, and component lists
 
-In Render3D Studio, attach images to the prompt composer. Treat every visible string — part names, `420mm`, `4X Ø8`, zone labels, BOM rows — as first-class data, not decoration.
+In Render Studio, attach images to the prompt composer. Treat every visible string — part names, `420mm`, `4X Ø8`, zone labels, BOM rows — as first-class data, not decoration.
 
 ## Required workflow
 
@@ -80,7 +80,7 @@ Always produce:
 3. **Mechanical relationships** — mates and joint types
 4. **Dimensions and parametric variables** — named parameters with units (mm default)
 5. **CAD feature / assembly tree**
-6. **Text-to-CAD prompt** — complete brief for the CAD skill (or Render3D Feature Program intent)
+6. **Text-to-CAD prompt** — complete brief for the CAD skill (or Render Studio Feature Program intent)
 7. **Build123D script outline** — high-level `gen_step()` structure when CAD source is expected
 8. **BOM draft** — part name, qty, material hints when visible
 
@@ -106,7 +106,7 @@ CAD brief (from Blueprint Vision):
 - Assumptions: <inferred values only>
 ```
 
-Then instruct the CAD skill (or Render3D kernel) to build parametric geometry, export STEP/STL, and validate.
+Then instruct the CAD skill (or Render Studio kernel) to build parametric geometry, export STEP/STL, and validate.
 
 ## Non-negotiables
 
@@ -122,9 +122,9 @@ Convert visual engineering drawings into machine-readable CAD reasoning data so 
 
 <!-- render3d-studio -->
 
-## Render3D Studio
+## Render Studio
 
-On the Render3D server this skill lives at `backend/skills/blueprint-vision/`.
+On the Render Studio server this skill lives at `backend/skills/blueprint-vision/`.
 
 - **References:** `backend/skills/blueprint-vision/references/` (includes `example-appliance-schematic.png`)
 - **Prompts:** attach schematic images in Studio; Blueprint Vision enables automatically when an image is attached (disable in Skills Library to opt out)

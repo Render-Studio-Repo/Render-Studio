@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Watch Render3D uvicorn workers for stuck CAD/kernel CPU burn and recycle them.
+"""Watch Render Studio uvicorn workers for stuck CAD/kernel CPU burn and recycle them.
 
 Detects worker processes that stay hot while they have no legitimate running
 generation job (or the job heartbeat has gone stale). Sends SIGTERM/SIGKILL to

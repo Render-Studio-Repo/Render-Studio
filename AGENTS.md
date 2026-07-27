@@ -1,6 +1,6 @@
-# Agent instructions — Render3D workspace
+# Agent instructions — Render Studio workspace
 
-**Read `ai-context/START-HERE.md` before doing anything else.** It is the entrypoint to this workspace's agent context: what Render3D is, the workspace map, safety rules, and verification workflow.
+**Read `ai-context/START-HERE.md` before doing anything else.** It is the entrypoint to this workspace's agent context: what Render Studio is, the workspace map, safety rules, and verification workflow.
 
 Non-negotiables (details in `ai-context/`):
 

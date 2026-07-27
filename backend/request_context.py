@@ -20,17 +20,26 @@ def get_client_ip() -> str:
 
 
 def extract_client_ip(request: object) -> str:
-    """Best-effort client IP from a Starlette/FastAPI Request (honors X-Forwarded-For)."""
+    """Best-effort client IP from a Starlette/FastAPI Request.
+
+    Prefer proxy-controlled headers (X-Real-IP / CF-Connecting-IP). For
+    X-Forwarded-For, use the *rightmost* hop — left-most is client-spoofable
+    when the edge proxy appends rather than replaces.
+    """
     headers = getattr(request, "headers", None) or {}
-    forwarded = ""
     try:
-        forwarded = str(headers.get("x-forwarded-for") or headers.get("X-Forwarded-For") or "")
+        for key in ("x-real-ip", "cf-connecting-ip", "true-client-ip"):
+            raw = str(headers.get(key) or "").strip()
+            if raw:
+                return _normalize_ip(raw.split(",")[0].strip())
+        forwarded = str(headers.get("x-forwarded-for") or "").strip()
     except Exception:
         forwarded = ""
     if forwarded:
-        # Left-most is the original client when proxies append.
-        candidate = forwarded.split(",")[0].strip()
-        return _normalize_ip(candidate)
+        # Right-most is the address added by our edge proxy (real peer).
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            return _normalize_ip(parts[-1])
     client = getattr(request, "client", None)
     host = getattr(client, "host", None) if client is not None else None
     return _normalize_ip(str(host or ""))

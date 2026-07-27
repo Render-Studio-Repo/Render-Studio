@@ -395,10 +395,22 @@ def grant_signup_trial_if_needed(
     account = ensure_account(user["id"])
     if str(account.get("trial_granted_at") or "").strip():
         # Existing trial holders claim their current IP so later signups from it are blocked.
-        _claim_trial_ip_for_user(user["id"], ip, granted_at=str(account.get("trial_granted_at") or "") or None)
+        if ip:
+            _claim_trial_ip_for_user(user["id"], ip, granted_at=str(account.get("trial_granted_at") or "") or None)
         info = _trial_info(account)
         info["just_granted"] = False
         info["blocked_ip"] = False
+        return info
+
+    # No usable client IP → refuse grant (blocks unlimited trials when IP is blank).
+    if not ip:
+        info = _trial_info(account)
+        info["just_granted"] = False
+        info["blocked_ip"] = True
+        info["blocked_reason"] = (
+            "Could not verify your network for the free trial. "
+            "Try again from a normal browser connection."
+        )
         return info
 
     amount = SIGNUP_TRIAL_CENTS
@@ -407,20 +419,19 @@ def grant_signup_trial_if_needed(
         "signup_trial": True,
         "key_label": "Render Studio Key",
         "note": "Temporary shared Render Studio key credits for OpenAI, Anthropic, and Kimi.",
-        "client_ip": ip or None,
+        "client_ip": ip,
     }
     with get_conn() as conn:
-        if ip:
-            prior = conn.execute(
-                "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
-                (ip,),
-            ).fetchone()
-            if prior and str(prior["user_id"]) != str(user["id"]):
-                info = _trial_info(account)
-                info["just_granted"] = False
-                info["blocked_ip"] = True
-                info["blocked_reason"] = "Free trial credits were already claimed from this network."
-                return info
+        prior = conn.execute(
+            "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
+            (ip,),
+        ).fetchone()
+        if prior and str(prior["user_id"]) != str(user["id"]):
+            info = _trial_info(account)
+            info["just_granted"] = False
+            info["blocked_ip"] = True
+            info["blocked_reason"] = "Free trial credits were already claimed from this network."
+            return info
 
         cur = conn.execute(
             """
@@ -433,7 +444,7 @@ def grant_signup_trial_if_needed(
             WHERE user_id = ?
               AND (trial_granted_at IS NULL OR TRIM(COALESCE(trial_granted_at, '')) = '')
             """,
-            (amount, now, ip or None, now, user["id"]),
+            (amount, now, ip, now, user["id"]),
         )
         if cur.rowcount == 0:
             account = dict(
@@ -444,42 +455,41 @@ def grant_signup_trial_if_needed(
             info["blocked_ip"] = False
             return info
 
-        if ip:
-            # Claim the IP atomically; if another signup won the race, roll back this grant.
-            try:
+        # Claim the IP atomically; if another signup won the race, roll back this grant.
+        try:
+            conn.execute(
+                """
+                INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at)
+                VALUES (?, ?, ?)
+                """,
+                (ip, user["id"], now),
+            )
+        except Exception:
+            other = conn.execute(
+                "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
+                (ip,),
+            ).fetchone()
+            if other and str(other["user_id"]) != str(user["id"]):
                 conn.execute(
                     """
-                    INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at)
-                    VALUES (?, ?, ?)
+                    UPDATE ai_credit_accounts
+                    SET balance_cents = CASE
+                          WHEN balance_cents > ? THEN balance_cents - ?
+                          ELSE 0
+                        END,
+                        use_platform_key = 0,
+                        trial_granted_at = NULL,
+                        trial_grant_ip = NULL,
+                        updated_at = ?
+                    WHERE user_id = ?
                     """,
-                    (ip, user["id"], now),
+                    (amount, amount, now, user["id"]),
                 )
-            except Exception:
-                other = conn.execute(
-                    "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
-                    (ip,),
-                ).fetchone()
-                if other and str(other["user_id"]) != str(user["id"]):
-                    conn.execute(
-                        """
-                        UPDATE ai_credit_accounts
-                        SET balance_cents = CASE
-                              WHEN balance_cents > ? THEN balance_cents - ?
-                              ELSE 0
-                            END,
-                            use_platform_key = 0,
-                            trial_granted_at = NULL,
-                            trial_grant_ip = NULL,
-                            updated_at = ?
-                        WHERE user_id = ?
-                        """,
-                        (amount, amount, now, user["id"]),
-                    )
-                    info = _trial_info(ensure_account(user["id"]))
-                    info["just_granted"] = False
-                    info["blocked_ip"] = True
-                    info["blocked_reason"] = "Free trial credits were already claimed from this network."
-                    return info
+                info = _trial_info(ensure_account(user["id"]))
+                info["just_granted"] = False
+                info["blocked_ip"] = True
+                info["blocked_reason"] = "Free trial credits were already claimed from this network."
+                return info
 
         row = conn.execute("SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone()
         balance = int((row["balance_cents"] if row else 0) or 0)
@@ -624,6 +634,8 @@ def update_settings(
     sets: list[str] = []
     vals: list[Any] = []
     if use_platform_key is not None:
+        if use_platform_key and int(account.get("balance_cents") or 0) <= 0:
+            raise ValueError("Buy shared-key credits before enabling the Render Studio Key.")
         sets.append("use_platform_key = ?")
         vals.append(1 if use_platform_key else 0)
     if auto_refill_enabled is not None:
@@ -707,29 +719,32 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
         return None
     base_cents = max(1, round(float(base_cost) * 100))
     charge_cents = max(1, round(base_cents * (1 + MARKUP_PERCENT / 100)))
-    account = ensure_account(user_id)
-    balance = int(account.get("balance_cents") or 0)
-    if balance < charge_cents:
-        raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
-    new_balance = balance - charge_cents
+    ensure_account(user_id)
     now = _now()
-    # When trial/prepaid credits hit zero, hide the temporary Render Studio key.
-    disable_platform = 1 if new_balance <= 0 else 0
     with get_conn() as conn:
-        if disable_platform:
-            conn.execute(
-                """
-                UPDATE ai_credit_accounts
-                SET balance_cents = ?, use_platform_key = 0, updated_at = ?
-                WHERE user_id = ?
-                """,
-                (new_balance, now, user_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE ai_credit_accounts SET balance_cents = ?, updated_at = ? WHERE user_id = ?",
-                (new_balance, now, user_id),
-            )
+        # Atomic debit — prevents concurrent overspend past the prepaid balance.
+        cur = conn.execute(
+            """
+            UPDATE ai_credit_accounts
+            SET balance_cents = balance_cents - ?,
+                use_platform_key = CASE
+                  WHEN balance_cents - ? <= 0 THEN 0
+                  ELSE use_platform_key
+                END,
+                updated_at = ?
+            WHERE user_id = ?
+              AND balance_cents >= ?
+            """,
+            (charge_cents, charge_cents, now, user_id, charge_cents),
+        )
+        if cur.rowcount == 0:
+            raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
+        row = conn.execute(
+            "SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        new_balance = int((row["balance_cents"] if row else 0) or 0)
+        disable_platform = new_balance <= 0
         conn.execute(
             """
             INSERT INTO ai_credit_transactions (
@@ -819,9 +834,9 @@ def create_checkout_session(
             "payment_link": True,
         }
 
-    add_credits(user["id"], amount, provider="demo", meta={"demo": True})
-    update_settings(user["id"], use_platform_key=True)
-    return {"demo": True, "url": success_url, "credits": status(user)}
+    raise ValueError(
+        "Stripe checkout is not configured. Credits cannot be added without payment."
+    )
 
 
 def handle_success_session(session_id: str) -> bool:
@@ -951,6 +966,8 @@ def handle_payment_link_session(session: dict[str, Any]) -> bool:
 
 
 def demo_add(user: dict[str, Any], amount_cents: int) -> dict[str, Any]:
-    add_credits(user["id"], max(MIN_CHECKOUT_CENTS, int(amount_cents or 0)), provider="demo", meta={"token": secrets.token_hex(4)})
+    """Admin-only test top-up. Never expose to regular users."""
+    amount = max(MIN_CHECKOUT_CENTS, min(MAX_PAYMENT_LINK_CENTS, int(amount_cents or 0)))
+    add_credits(user["id"], amount, provider="demo", meta={"token": secrets.token_hex(4), "admin_demo": True})
     update_settings(user["id"], use_platform_key=True)
     return status(user)
