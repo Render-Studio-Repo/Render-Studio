@@ -324,11 +324,48 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
+def _claim_trial_ip_for_user(user_id: str, ip: str, *, granted_at: str | None = None) -> None:
+    """Record that this IP already received a free trial (best-effort, race-safe)."""
+    ip = str(ip or "").strip()
+    if not user_id or not ip:
+        return
+    now = granted_at or _now()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
+            (ip,),
+        ).fetchone()
+        if existing:
+            return
+        try:
+            conn.execute(
+                "INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at) VALUES (?, ?, ?)",
+                (ip, user_id, now),
+            )
+        except Exception:
+            return
+        conn.execute(
+            """
+            UPDATE ai_credit_accounts
+            SET trial_grant_ip = COALESCE(NULLIF(trial_grant_ip, ''), ?)
+            WHERE user_id = ?
+            """,
+            (ip, user_id),
+        )
+
+
+def grant_signup_trial_if_needed(
+    user: dict[str, Any] | None,
+    *,
+    client_ip: str | None = None,
+) -> dict[str, Any]:
     """One-time $10 Render3D-key trial for every user (new or returning).
 
     Idempotent. Enables the temporary Render3D Key (OpenAI / Anthropic / Kimi)
     until the balance is spent; the key option disappears at $0.
+
+    Only one free trial is allowed per client IP — additional accounts from the
+    same IP do not receive credits.
     """
     empty = {
         "granted": False,
@@ -337,19 +374,31 @@ def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
         "amount_cents": SIGNUP_TRIAL_CENTS,
         "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
         "email_sent": False,
+        "blocked_ip": False,
     }
     if not user or not user.get("id"):
         return empty
+
+    try:
+        from backend.request_context import get_client_ip
+    except Exception:
+        get_client_ip = lambda: ""  # noqa: E731
+    ip = str(client_ip if client_ip is not None else get_client_ip() or "").strip()
+
     if not (platform_openai_configured() or platform_anthropic_configured() or platform_kimi_configured()):
         account = ensure_account(user["id"])
         info = _trial_info(account)
         info["just_granted"] = False
+        info["blocked_ip"] = False
         return info
 
     account = ensure_account(user["id"])
     if str(account.get("trial_granted_at") or "").strip():
+        # Existing trial holders claim their current IP so later signups from it are blocked.
+        _claim_trial_ip_for_user(user["id"], ip, granted_at=str(account.get("trial_granted_at") or "") or None)
         info = _trial_info(account)
         info["just_granted"] = False
+        info["blocked_ip"] = False
         return info
 
     amount = SIGNUP_TRIAL_CENTS
@@ -358,19 +407,33 @@ def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
         "signup_trial": True,
         "key_label": "Render3D Key",
         "note": "Temporary shared Render3D key credits for OpenAI, Anthropic, and Kimi.",
+        "client_ip": ip or None,
     }
     with get_conn() as conn:
+        if ip:
+            prior = conn.execute(
+                "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
+                (ip,),
+            ).fetchone()
+            if prior and str(prior["user_id"]) != str(user["id"]):
+                info = _trial_info(account)
+                info["just_granted"] = False
+                info["blocked_ip"] = True
+                info["blocked_reason"] = "Free trial credits were already claimed from this network."
+                return info
+
         cur = conn.execute(
             """
             UPDATE ai_credit_accounts
             SET balance_cents = balance_cents + ?,
                 use_platform_key = 1,
                 trial_granted_at = ?,
+                trial_grant_ip = COALESCE(NULLIF(trial_grant_ip, ''), ?),
                 updated_at = ?
             WHERE user_id = ?
               AND (trial_granted_at IS NULL OR TRIM(COALESCE(trial_granted_at, '')) = '')
             """,
-            (amount, now, now, user["id"]),
+            (amount, now, ip or None, now, user["id"]),
         )
         if cur.rowcount == 0:
             account = dict(
@@ -378,7 +441,46 @@ def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
             )
             info = _trial_info(account)
             info["just_granted"] = False
+            info["blocked_ip"] = False
             return info
+
+        if ip:
+            # Claim the IP atomically; if another signup won the race, roll back this grant.
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO ai_credit_trial_ips (ip, user_id, granted_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (ip, user["id"], now),
+                )
+            except Exception:
+                other = conn.execute(
+                    "SELECT user_id FROM ai_credit_trial_ips WHERE ip = ?",
+                    (ip,),
+                ).fetchone()
+                if other and str(other["user_id"]) != str(user["id"]):
+                    conn.execute(
+                        """
+                        UPDATE ai_credit_accounts
+                        SET balance_cents = CASE
+                              WHEN balance_cents > ? THEN balance_cents - ?
+                              ELSE 0
+                            END,
+                            use_platform_key = 0,
+                            trial_granted_at = NULL,
+                            trial_grant_ip = NULL,
+                            updated_at = ?
+                        WHERE user_id = ?
+                        """,
+                        (amount, amount, now, user["id"]),
+                    )
+                    info = _trial_info(ensure_account(user["id"]))
+                    info["just_granted"] = False
+                    info["blocked_ip"] = True
+                    info["blocked_reason"] = "Free trial credits were already claimed from this network."
+                    return info
+
         row = conn.execute("SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone()
         balance = int((row["balance_cents"] if row else 0) or 0)
         conn.execute(
@@ -392,6 +494,7 @@ def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
     account = ensure_account(user["id"])
     info = _trial_info(account)
     info["just_granted"] = True
+    info["blocked_ip"] = False
     return info
 
 

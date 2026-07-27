@@ -32,6 +32,7 @@ from pydantic import BaseModel, EmailStr, Field
 from backend.auth import create_access_token, get_current_user, get_current_user_optional, get_user_by_id
 from backend.config import settings
 from backend.database import get_conn, init_db
+from backend.request_context import extract_client_ip, reset_client_ip, set_client_ip
 from backend.services import cad_service
 from backend.services import share_preview
 from backend.services.ai_service import AIService
@@ -304,41 +305,45 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    if request.url.path.startswith("/api/"):
-        trace_id = new_trace_id()
-        request.state.trace_id = trace_id
-        t0 = time.perf_counter()
-        trace_add(
-            "info",
-            f"{request.method} {request.url.path}",
-            trace_id=trace_id,
-            data={"query": str(request.query_params)},
-        )
-        try:
-            response = await call_next(request)
-            ms = (time.perf_counter() - t0) * 1000
+    ip_token = set_client_ip(extract_client_ip(request))
+    try:
+        if request.url.path.startswith("/api/"):
+            trace_id = new_trace_id()
+            request.state.trace_id = trace_id
+            t0 = time.perf_counter()
             trace_add(
-                "info" if response.status_code < 400 else "error",
-                f"{request.method} {request.url.path} → {response.status_code} ({ms:.0f}ms)",
+                "info",
+                f"{request.method} {request.url.path}",
                 trace_id=trace_id,
-                data={"status": response.status_code, "duration_ms": ms},
+                data={"query": str(request.query_params), "client_ip": extract_client_ip(request)},
             )
-            response.headers["X-Trace-Id"] = trace_id
-            return response
-        except Exception as exc:
-            ms = (time.perf_counter() - t0) * 1000
-            trace_add("error", f"{request.method} {request.url.path} crashed: {exc}", trace_id=trace_id)
-            logger.exception("Unhandled error")
-            return JSONResponse(
-                status_code=500,
-                content={"detail": str(exc), "trace_id": trace_id},
-                headers={"X-Trace-Id": trace_id},
-            )
-    response = await call_next(request)
-    path = request.url.path
-    if path == "/" or path.endswith((".html", ".js", ".css")):
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
-    return response
+            try:
+                response = await call_next(request)
+                ms = (time.perf_counter() - t0) * 1000
+                trace_add(
+                    "info" if response.status_code < 400 else "error",
+                    f"{request.method} {request.url.path} → {response.status_code} ({ms:.0f}ms)",
+                    trace_id=trace_id,
+                    data={"status": response.status_code, "duration_ms": ms},
+                )
+                response.headers["X-Trace-Id"] = trace_id
+                return response
+            except Exception as exc:
+                ms = (time.perf_counter() - t0) * 1000
+                trace_add("error", f"{request.method} {request.url.path} crashed: {exc}", trace_id=trace_id)
+                logger.exception("Unhandled error")
+                return JSONResponse(
+                    status_code=500,
+                    content={"detail": str(exc), "trace_id": trace_id},
+                    headers={"X-Trace-Id": trace_id},
+                )
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith((".html", ".js", ".css")):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+    finally:
+        reset_client_ip(ip_token)
 
 
 @app.middleware("http")
