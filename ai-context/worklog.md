@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-07-26 — Texture apply on timeline + Solid remove texturing
+
+- Applying library/render textures now records timeline kind `texture` (icon 🧱 + user), not a generic Upload.
+- Solid-mode right-click marking menu: **Remove texturing (back to original rendered colors)** (Architect keeps AI Wall Texture).
+- Remove prefers timeline restore when the latest step is a texture apply; otherwise strips maps and saves `texture_remove`.
+- Upload accepts optional `history_kind` / `history_label` form fields. Cache-bust `app.js` / `timeline.js` `?v=20260726-texture-tl`. Backend restart applied.
+
+---
+
 ## 2026-07-26 — Admin Recent Notifications tab
 
 - Added **Notifications** view on `/admin-dashboard.html`: review signup alerts + suggestions/bugs one at a time (Prev/Next, ←/→, filters).
