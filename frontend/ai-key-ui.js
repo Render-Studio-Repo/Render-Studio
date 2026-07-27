@@ -113,7 +113,15 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
 
   function renderModelOptions(provider, selectedModel = "") {
     if (!modelInput) return;
-    const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    let options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    const trial = status?.credits?.trial || {};
+    const onTrial = !!(status?.credits?.on_free_trial || trial.on_free_trial
+      || (trial.granted && !trial.reclaimed_at && Number(status?.credits?.balance_cents || 0) > 0 && !status?.credits?.last_purchase_cents));
+    if (onTrial && String(provider || "").toLowerCase() === "openai") {
+      const blocked = new Set((trial.quality_blocked_openai_models || ["gpt-5.5", "gpt-5.5-pro"]).map((m) => String(m).toLowerCase()));
+      // Keep GPT-5.5 available for Speed; Quality is enforced server-side. Still de-emphasize Pro on trial.
+      options = options.filter((o) => String(o.value).toLowerCase() !== "gpt-5.5-pro");
+    }
     const selected = selectedModel || defaultModel(provider);
     modelInput.innerHTML = "";
     options.forEach((model) => {

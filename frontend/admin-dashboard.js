@@ -992,8 +992,8 @@ function renderDashboard(root, data) {
     <section class="admin-panel" id="admin-section-trial-credits" data-admin-section="trial-credits">
       <div class="admin-agent-head">
         <div>
-          <h3>Free trial credits ($10)</h3>
-          <p class="muted small admin-panel-hint">Signup Render Studio Key grants and spend. Refresh for live totals (not cached with the daily dashboard).</p>
+          <h3>Free trial credits ($10 / 1 week)</h3>
+          <p class="muted small admin-panel-hint">Max 10 new grants per week. Idle balances reclaim after 7 days into a pool for waitlisted users. Refresh for live totals.</p>
         </div>
         <button type="button" class="btn secondary btn-compact" id="admin-trial-credits-refresh">Refresh</button>
       </div>
