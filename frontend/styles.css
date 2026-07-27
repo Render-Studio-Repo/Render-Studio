@@ -26758,6 +26758,18 @@ body.theme-light .profile-preferences-advanced-nav button.active b {
   z-index: 10120;
 }
 
+.trial-credits-modal {
+  z-index: 10130;
+}
+
+.trial-credits-card {
+  border-color: rgba(88, 166, 255, 0.42);
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.62),
+    0 0 0 1px rgba(88, 166, 255, 0.16),
+    0 0 46px rgba(88, 166, 255, 0.12);
+}
+
 .ai-setup-intro-card {
   border-color: rgba(251, 146, 60, 0.4);
   box-shadow:
