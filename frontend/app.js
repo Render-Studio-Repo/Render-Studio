@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-local-share";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-mp4-share";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -16549,11 +16549,7 @@ function platformProviderLabel(provider) {
 }
 
 function platformKeyDisplayName(provider) {
-  const p = normalizePlatformProviderId(provider);
-  if (p === "anthropic") return "Render3D Anthropic";
-  if (p === "kimi") return "Render3D Kimi";
-  if (p === "xai") return "Render3D Grok";
-  return "Render3D OpenAI";
+  return "Render3D Key";
 }
 
 /** True when a stored platform:* key disagrees with the account's Render3D provider. */
@@ -17368,12 +17364,85 @@ function renderAIStatus(status) {
     el.className = "status";
     el.textContent = "";
     renderProjectCostThumb(latestPromptHistoryEntries || [], allProjects.find((p) => p.id === projectId)?.usage_summary || null);
+    maybeOfferTrialCreditsPopup();
     return;
   }
   el.className = "status error";
   el.textContent = "Add your own AI key or buy shared-key credits before prompting.";
   renderProjectCostThumb(latestPromptHistoryEntries || [], allProjects.find((p) => p.id === projectId)?.usage_summary || null);
+  maybeOfferTrialCreditsPopup();
   maybeOfferSharedKeyCredits();
+}
+
+function closeTrialCreditsPopup() {
+  document.getElementById("trial-credits-modal")?.classList.add("hidden");
+}
+
+async function ackTrialCreditsPopup() {
+  closeTrialCreditsPopup();
+  try {
+    const data = await api("/api/user/ai-credits/trial-ack", { method: "POST" });
+    if (data?.ai) renderAIStatus(data.ai);
+    else if (data?.credits && aiStatus) {
+      aiStatus = { ...aiStatus, credits: data.credits };
+    }
+  } catch (err) {
+    console.warn("Could not acknowledge trial credits popup:", err);
+  }
+}
+
+function shouldShowTrialCreditsPopup() {
+  if (!currentUser || !aiStatus) return false;
+  if (window.__render3dShowMeFromQuery) return false;
+  if (new URLSearchParams(window.location.search).has("showMe")) return false;
+  const trial = aiStatus?.credits?.trial;
+  return !!(trial?.show_popup);
+}
+
+let trialCreditsPopupTimer = null;
+
+function maybeOfferTrialCreditsPopup() {
+  if (!shouldShowTrialCreditsPopup()) return;
+  if (trialCreditsPopupTimer) return;
+  const setupOpen = !document.getElementById("ai-setup-intro-modal")?.classList.contains("hidden");
+  if (setupOpen) closeAISetupIntro({ remember: false });
+  trialCreditsPopupTimer = window.setTimeout(() => {
+    trialCreditsPopupTimer = null;
+    if (!shouldShowTrialCreditsPopup()) return;
+    const modal = document.getElementById("trial-credits-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.querySelector("[data-trial-credits-action='start']")?.focus();
+  }, 700);
+}
+
+function initTrialCreditsModal() {
+  const modal = document.getElementById("trial-credits-modal");
+  if (!modal) return;
+  modal.querySelectorAll("[data-trial-credits-close]").forEach((el) => {
+    el.addEventListener("click", () => {
+      void ackTrialCreditsPopup();
+    });
+  });
+  modal.addEventListener("click", (event) => {
+    const actionEl = event.target.closest("[data-trial-credits-action]");
+    if (!actionEl) return;
+    const action = actionEl.dataset.trialCreditsAction;
+    void ackTrialCreditsPopup().then(() => {
+      if (action === "buy") {
+        aiKeyUi?.openRequired?.({
+          message: "Buy more Studio credits to keep the Render3D Key after your $10 trial.",
+          openAdd: false,
+        });
+      }
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+      event.preventDefault();
+      void ackTrialCreditsPopup();
+    }
+  });
 }
 
 function aiSetupIntroKey(user = currentUser) {
@@ -17409,6 +17478,7 @@ function shouldShowAISetupIntro({ ignoreSessionOffer = false } = {}) {
 let aiSetupIntroTimer = null;
 
 function maybeOfferSharedKeyCredits() {
+  if (shouldShowTrialCreditsPopup()) return;
   if (!shouldShowAISetupIntro()) return;
   if (aiSetupIntroTimer) return;
   try {
@@ -17416,6 +17486,7 @@ function maybeOfferSharedKeyCredits() {
   } catch (_) {}
   aiSetupIntroTimer = window.setTimeout(() => {
     aiSetupIntroTimer = null;
+    if (shouldShowTrialCreditsPopup()) return;
     if (!shouldShowAISetupIntro({ ignoreSessionOffer: true })) return;
     const modal = document.getElementById("ai-setup-intro-modal");
     if (!modal) return;
@@ -28529,6 +28600,7 @@ window.addEventListener("keydown", (e) => {
 (async function init() {
   initPromptKeyPopup();
   initAISetupIntroModal();
+  initTrialCreditsModal();
   initPromptGenerationSpeed();
   initPromptSpiceToggle();
   initPromptElectronicsToggle();

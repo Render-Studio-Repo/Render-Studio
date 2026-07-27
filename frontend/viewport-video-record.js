@@ -652,7 +652,14 @@ export function createViewportVideoRecorder({
   }
 
   function downloadShareBlob(blob) {
-    const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
+    const type = String(blob?.type || "").toLowerCase();
+    const ext = type.includes("mp4") || type.includes("m4v")
+      ? "mp4"
+      : type.includes("quicktime")
+        ? "mov"
+        : type.includes("webm")
+          ? "webm"
+          : "mp4";
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -664,11 +671,28 @@ export function createViewportVideoRecorder({
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
+  async function blobForXShare(blob) {
+    // X accepts MP4 and MOV; H.264 MP4 is the efficient choice (smaller than
+    // typical MOV, and WebM often fails to attach on desktop compose).
+    if (!blob) return null;
+    if (blobLooksLike(blob, "mp4")) return blob;
+    const type = String(blob.type || "").toLowerCase();
+    if (type.includes("quicktime") || type.endsWith("/mov")) return blob;
+    return blobForDownloadFormat(blob, "mp4");
+  }
+
   async function shareVideoViaWebShare(blob, text) {
     if (!blob || typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
     try {
-      const ext = (blob.type || "").includes("mp4") ? "mp4" : "webm";
-      const file = new File([blob], `render3d-video.${ext}`, { type: blob.type || `video/${ext}` });
+      const type = String(blob.type || "").toLowerCase();
+      const ext = type.includes("mp4") || type.includes("m4v")
+        ? "mp4"
+        : type.includes("quicktime")
+          ? "mov"
+          : "mp4";
+      const file = new File([blob], `render3d-video.${ext}`, {
+        type: blob.type || (ext === "mov" ? "video/quicktime" : "video/mp4"),
+      });
       if (navigator.canShare && !navigator.canShare({ files: [file], text })) return false;
       await navigator.share({ files: [file], text: text || "Made in Render3D", title: "Render3D" });
       return true;
@@ -681,17 +705,30 @@ export function createViewportVideoRecorder({
   async function shareViaComposeAttach(blob, text) {
     // No site can inject a file into x.com's compose box. On phones, the OS
     // share sheet can hand the video to the X app. On desktop, we open compose
-    // with the caption and save the clip so the user attaches it in one click.
-    const shared = await shareVideoViaWebShare(blob, text);
+    // with the caption and save an MP4 so the user attaches it in one click.
+    setShareStatus("Preparing MP4 for X…");
+    let xBlob = blob;
+    try {
+      xBlob = await blobForXShare(blob);
+    } catch (err) {
+      setShareStatus(err?.message || "Could not convert to MP4 — using original clip.", true);
+      xBlob = blob;
+    }
+    if (!xBlob) xBlob = blob;
+
+    const shared = await shareVideoViaWebShare(xBlob, text);
     if (shared) {
       setShareStatus("Pick X in the share sheet — the video goes with the post.");
       setStatus(true, "Shared viewport video.");
       return true;
     }
     openXCompose(text);
-    downloadShareBlob(blob);
+    downloadShareBlob(xBlob);
+    const isMp4 = blobLooksLike(xBlob, "mp4");
     setShareStatus(
-      "X compose is open with your caption. The clip just saved to Downloads — in X, click the media button and pick that file.",
+      isMp4
+        ? "X compose is open with your caption. MP4 saved to Downloads — in X, click the media button and pick that file."
+        : "X compose is open with your caption. Clip saved to Downloads — in X, click the media button and pick that file.",
     );
     setStatus(true, "Opened X compose — attach the downloaded clip.");
     return false;
@@ -709,7 +746,7 @@ export function createViewportVideoRecorder({
     try {
       // Skip X API media upload — it needs paid developer credits and was
       // showing "Uploading…" then silently falling back to a download.
-      setShareStatus("Opening X with your caption…");
+      setShareStatus("Preparing video for X…");
       await shareViaComposeAttach(blob, text);
     } catch (err) {
       setShareStatus(err?.message || "Could not open X.", true);

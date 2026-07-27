@@ -444,6 +444,18 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE ai_credit_accounts ADD COLUMN trial_granted_at TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE ai_credit_accounts ADD COLUMN trial_popup_seen_at TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE ai_credit_accounts ADD COLUMN trial_email_sent_at TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ai_credit_transactions_user ON ai_credit_transactions(user_id, created_at DESC)"
             )

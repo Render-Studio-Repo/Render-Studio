@@ -2694,6 +2694,35 @@
     </div>
   </div>
 
+  <div id="trial-credits-modal" class="auth-modal welcome-modal trial-credits-modal hidden" role="dialog" aria-modal="true" aria-labelledby="trial-credits-title">
+    <div class="auth-backdrop" data-trial-credits-close></div>
+    <div class="auth-card welcome-card trial-credits-card">
+      <button type="button" class="auth-close" data-trial-credits-close aria-label="Close">&times;</button>
+      <div class="welcome-copy">
+        <p class="info-eyebrow">Free trial credits</p>
+        <h2 id="trial-credits-title">You have $10 in Render3D credits</h2>
+        <p>
+          We added <strong>$10</strong> so you can try the temporary <strong>Render3D Key</strong> —
+          OpenAI, Claude, and Kimi models we support, with no personal API key required.
+        </p>
+        <p class="muted small">
+          When the $10 runs out, the Render3D Key disappears from your key list until you buy more credits
+          (or add your own key). Open <strong>Account → AI &amp; billing</strong> anytime to buy more with Stripe.
+        </p>
+      </div>
+      <div class="welcome-actions">
+        <button type="button" class="welcome-action welcome-action--primary" data-trial-credits-action="start">
+          <span class="welcome-action-icon" aria-hidden="true">01</span>
+          <span><strong>Start generating</strong><small>Use your $10 trial</small></span>
+        </button>
+        <button type="button" class="welcome-action" data-trial-credits-action="buy">
+          <span class="welcome-action-icon" aria-hidden="true">02</span>
+          <span><strong>Buy more credits</strong><small>Keep the Render3D Key</small></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="ai-key-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-key-title">
     <div class="auth-backdrop" data-ai-key-close></div>
     <div class="auth-card ai-keys-card">
@@ -3023,7 +3052,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260727-exploded-rotate-badge"></script>
+  <script type="module" src="/app.js?v=20260727-x-mp4-share"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

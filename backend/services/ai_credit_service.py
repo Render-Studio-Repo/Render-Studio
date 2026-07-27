@@ -17,6 +17,7 @@ MIN_CHECKOUT_CENTS = 500
 DEFAULT_REFILL_CENTS = 2000
 DEFAULT_REFILL_THRESHOLD_CENTS = 500
 MAX_PAYMENT_LINK_CENTS = 100_000
+SIGNUP_TRIAL_CENTS = 1000  # $10 Render3D key trial for every account once
 
 
 def _now() -> str:
@@ -241,7 +242,7 @@ def resolve_platform_credentials(
             "provider": "anthropic",
             "model": chosen,
             "api_key": settings.anthropic_api_key.strip(),
-            "shared_key_name": "Render3D Claude",
+            "shared_key_name": "Render3D Key",
             "key_id": "anthropic",
             "source": "platform",
         }
@@ -261,7 +262,7 @@ def resolve_platform_credentials(
             "provider": "kimi",
             "model": chosen,
             "api_key": settings.kimi_api_key.strip(),
-            "shared_key_name": "Render3D Kimi",
+            "shared_key_name": "Render3D Key",
             "key_id": "kimi",
             "source": "platform",
         }
@@ -280,7 +281,7 @@ def resolve_platform_credentials(
         "provider": "openai",
         "model": chosen,
         "api_key": settings.openai_api_key.strip(),
-        "shared_key_name": "Render3D OpenAI",
+        "shared_key_name": "Render3D Key",
         "key_id": "openai",
         "source": "platform",
     }
@@ -305,9 +306,130 @@ def ensure_account(user_id: str) -> dict[str, Any]:
     return dict(row) if row else {"user_id": user_id, "balance_cents": 0}
 
 
+def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
+    granted_at = str(account.get("trial_granted_at") or "").strip() or None
+    popup_seen_at = str(account.get("trial_popup_seen_at") or "").strip() or None
+    email_sent_at = str(account.get("trial_email_sent_at") or "").strip() or None
+    balance = int(account.get("balance_cents") or 0)
+    return {
+        "granted": bool(granted_at),
+        "granted_at": granted_at,
+        "amount_cents": SIGNUP_TRIAL_CENTS,
+        "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
+        "popup_seen": bool(popup_seen_at),
+        "show_popup": bool(granted_at and not popup_seen_at),
+        "email_sent": bool(email_sent_at),
+        "active": bool(granted_at and balance > 0 and account.get("use_platform_key")),
+        "key_label": "Render3D Key",
+    }
+
+
+def grant_signup_trial_if_needed(user: dict[str, Any] | None) -> dict[str, Any]:
+    """One-time $10 Render3D-key trial for every user (new or returning).
+
+    Idempotent. Enables the temporary Render3D Key (OpenAI / Anthropic / Kimi)
+    until the balance is spent; the key option disappears at $0.
+    """
+    empty = {
+        "granted": False,
+        "just_granted": False,
+        "show_popup": False,
+        "amount_cents": SIGNUP_TRIAL_CENTS,
+        "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
+        "email_sent": False,
+    }
+    if not user or not user.get("id"):
+        return empty
+    if not (platform_openai_configured() or platform_anthropic_configured() or platform_kimi_configured()):
+        account = ensure_account(user["id"])
+        info = _trial_info(account)
+        info["just_granted"] = False
+        return info
+
+    account = ensure_account(user["id"])
+    if str(account.get("trial_granted_at") or "").strip():
+        info = _trial_info(account)
+        info["just_granted"] = False
+        return info
+
+    amount = SIGNUP_TRIAL_CENTS
+    now = _now()
+    meta = {
+        "signup_trial": True,
+        "key_label": "Render3D Key",
+        "note": "Temporary shared Render3D key credits for OpenAI, Anthropic, and Kimi.",
+    }
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            UPDATE ai_credit_accounts
+            SET balance_cents = balance_cents + ?,
+                use_platform_key = 1,
+                trial_granted_at = ?,
+                updated_at = ?
+            WHERE user_id = ?
+              AND (trial_granted_at IS NULL OR TRIM(COALESCE(trial_granted_at, '')) = '')
+            """,
+            (amount, now, now, user["id"]),
+        )
+        if cur.rowcount == 0:
+            account = dict(
+                conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone() or {}
+            )
+            info = _trial_info(account)
+            info["just_granted"] = False
+            return info
+        row = conn.execute("SELECT balance_cents FROM ai_credit_accounts WHERE user_id = ?", (user["id"],)).fetchone()
+        balance = int((row["balance_cents"] if row else 0) or 0)
+        conn.execute(
+            """
+            INSERT INTO ai_credit_transactions (
+              id, user_id, kind, amount_cents, balance_after_cents, provider, meta_json, created_at
+            ) VALUES (?, ?, 'trial', ?, ?, 'render3d', ?, ?)
+            """,
+            (str(uuid.uuid4()), user["id"], amount, balance, json.dumps(meta), now),
+        )
+    account = ensure_account(user["id"])
+    info = _trial_info(account)
+    info["just_granted"] = True
+    return info
+
+
+def ack_trial_popup(user_id: str) -> dict[str, Any]:
+    account = ensure_account(user_id)
+    now = _now()
+    if not str(account.get("trial_popup_seen_at") or "").strip():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE ai_credit_accounts SET trial_popup_seen_at = ?, updated_at = ? WHERE user_id = ?",
+                (now, now, user_id),
+            )
+    return status({"id": user_id})
+
+
+def mark_trial_email_sent(user_id: str) -> None:
+    account = ensure_account(user_id)
+    if str(account.get("trial_email_sent_at") or "").strip():
+        return
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE ai_credit_accounts SET trial_email_sent_at = ?, updated_at = ? WHERE user_id = ?",
+            (now, now, user_id),
+        )
+
+
 def status(user: dict[str, Any]) -> dict[str, Any]:
     account = ensure_account(user["id"])
     balance = int(account.get("balance_cents") or 0)
+    # Temporary Render3D key must not stay selected once credits are gone.
+    if balance <= 0 and account.get("use_platform_key"):
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE ai_credit_accounts SET use_platform_key = 0, updated_at = ? WHERE user_id = ?",
+                (_now(), user["id"]),
+            )
+        account = ensure_account(user["id"])
     last_purchase = _last_purchase(user["id"])
     last_amount = int((last_purchase or {}).get("amount_cents") or 0)
     percent_left = round((balance / last_amount) * 100, 1) if last_amount > 0 else None
@@ -319,7 +441,7 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
     return {
         "available": any(providers.values()),
         "providers": providers,
-        "use_platform_key": bool(account.get("use_platform_key")),
+        "use_platform_key": bool(account.get("use_platform_key")) and balance > 0,
         "platform_provider": str(account.get("platform_provider") or "openai"),
         "platform_model": str(account.get("platform_model") or ""),
         "balance_cents": balance,
@@ -330,13 +452,15 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
         "auto_refill_amount_cents": int(account.get("auto_refill_amount_cents") or DEFAULT_REFILL_CENTS),
         "last_purchase_cents": last_amount,
         "last_purchase_percent_left": percent_left,
-        "models": platform_models(),
+        "models": platform_models() if balance > 0 else [],
         "stripe_ready": bool(_stripe()),
         "payment_methods": {
             "stripe": bool(_stripe()) or bool(_payment_link_url()),
             "stripe_payment_link": bool(_payment_link_url()) and not bool(_stripe()),
             "paypal": False,
         },
+        "trial": _trial_info(account),
+        "key_configured": any(providers.values()),
     }
 
 
@@ -486,11 +610,23 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
         raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
     new_balance = balance - charge_cents
     now = _now()
+    # When trial/prepaid credits hit zero, hide the temporary Render3D key.
+    disable_platform = 1 if new_balance <= 0 else 0
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE ai_credit_accounts SET balance_cents = ?, updated_at = ? WHERE user_id = ?",
-            (new_balance, now, user_id),
-        )
+        if disable_platform:
+            conn.execute(
+                """
+                UPDATE ai_credit_accounts
+                SET balance_cents = ?, use_platform_key = 0, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (new_balance, now, user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE ai_credit_accounts SET balance_cents = ?, updated_at = ? WHERE user_id = ?",
+                (new_balance, now, user_id),
+            )
         conn.execute(
             """
             INSERT INTO ai_credit_transactions (
@@ -510,7 +646,12 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
                 now,
             ),
         )
-    return {"charged_cents": charge_cents, "balance_cents": new_balance, "markup_percent": MARKUP_PERCENT}
+    return {
+        "charged_cents": charge_cents,
+        "balance_cents": new_balance,
+        "markup_percent": MARKUP_PERCENT,
+        "platform_key_disabled": bool(disable_platform),
+    }
 
 
 def create_checkout_session(

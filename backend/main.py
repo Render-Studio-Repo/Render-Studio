@@ -2003,6 +2003,18 @@ def _daily_ai_spend_for_user(user_id: str) -> float:
 
 
 def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
+    try:
+        trial = ai_credit_service.grant_signup_trial_if_needed(user)
+        if trial.get("just_granted") and not trial.get("email_sent"):
+            import threading
+
+            threading.Thread(
+                target=_send_trial_credits_email_background,
+                args=(dict(user),),
+                daemon=True,
+            ).start()
+    except Exception:
+        logger.debug("signup trial grant skipped for user_id=%s", user.get("id"), exc_info=True)
     status = user_ai_keys_service.status_for_user(user)
     try:
         status["credits"] = ai_credit_service.status(user)
@@ -2017,9 +2029,9 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
         preferred = str(credits.get("platform_provider") or "openai").strip().lower()
         preferred_model = str(credits.get("platform_model") or "").strip()
         for provider_id, label, configured in (
-            ("openai", "Render3D OpenAI", bool(providers.get("openai"))),
-            ("anthropic", "Render3D Claude", bool(providers.get("anthropic"))),
-            ("kimi", "Render3D Kimi", bool(providers.get("kimi"))),
+            ("openai", "Render3D Key", bool(providers.get("openai"))),
+            ("anthropic", "Render3D Key", bool(providers.get("anthropic"))),
+            ("kimi", "Render3D Key", bool(providers.get("kimi"))),
         ):
             if not configured:
                 continue
@@ -2037,6 +2049,7 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
                     "provider": creds["provider"],
                     "model": creds["model"],
                     "source": "platform",
+                    "temporary": True,
                     "enabled": bool(credits.get("use_platform_key")),
                     "is_active": bool(credits.get("use_platform_key")) and preferred == provider_id,
                 }
@@ -4777,6 +4790,24 @@ def _send_welcome_email_background(user: dict[str, Any]) -> None:
         logger.info("onboarding welcome email result user_id=%s ok=%s error=%s", user.get("id"), result.get("ok"), result.get("error"))
     except Exception:
         logger.warning("Could not send onboarding welcome email for user_id=%s", user.get("id"), exc_info=True)
+
+
+def _send_trial_credits_email_background(user: dict[str, Any]) -> None:
+    try:
+        result = onboarding_email_service.send_trial_credits_email(user)
+        if result.get("ok") or result.get("error") in {"smtp_not_configured", "placeholder_social_email", "missing_email"}:
+            try:
+                ai_credit_service.mark_trial_email_sent(user["id"])
+            except Exception:
+                pass
+        logger.info(
+            "trial credits email result user_id=%s ok=%s error=%s",
+            user.get("id"),
+            result.get("ok"),
+            result.get("error"),
+        )
+    except Exception:
+        logger.warning("Could not send trial credits email for user_id=%s", user.get("id"), exc_info=True)
 
 
 @app.post("/api/auth/register")
@@ -9582,6 +9613,13 @@ def claim_user_ai_credit_checkout(
         credits = ai_credit_service.claim_checkout_session(user, body.session_id)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    return {"credits": credits, "ai": _ai_status_for_user(user)}
+
+
+@app.post("/api/user/ai-credits/trial-ack")
+def ack_user_ai_credit_trial(user: dict[str, Any] = Depends(get_current_user)):
+    """Dismiss the $10 Render3D Key trial welcome popup."""
+    credits = ai_credit_service.ack_trial_popup(user["id"])
     return {"credits": credits, "ai": _ai_status_for_user(user)}
 
 

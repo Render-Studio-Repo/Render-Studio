@@ -110,3 +110,80 @@ def send_welcome_email(user: dict[str, Any]) -> dict[str, Any]:
         smtp.login(settings.capacity_alert_smtp_user.strip(), settings.capacity_alert_smtp_password.strip())
         smtp.send_message(msg)
     return {"ok": True, "to": email}
+
+
+def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
+    name = html.escape(str(user.get("display_name") or "there"))
+    subject = "You've got $10 in Render3D AI credits"
+    studio = "https://render3d.app/"
+    html_body = f"""<!doctype html>
+<html>
+  <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
+    <div style="max-width:720px;margin:0 auto;padding:28px;">
+      <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
+        <img src="https://render3d.app/render3d-logo.png" alt="Render3D" width="56" height="56" style="border-radius:14px;" />
+        <h1 style="margin:18px 0 8px;font-size:26px;">Hi {name} — you have $10 to try Render3D.</h1>
+        <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
+          We added <strong style="color:#e6edf3;">$10 in Studio credits</strong> to your account.
+          That unlocks the temporary <strong style="color:#e6edf3;">Render3D Key</strong> for OpenAI, Claude, and Kimi models we support — no personal API key required.
+        </p>
+        <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
+          When the $10 is used up, the Render3D Key disappears from your key list until you buy more credits (or add your own API key).
+        </p>
+        <a href="{studio}" style="display:inline-block;margin:8px 0 18px;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Open Studio</a>
+        <h2 style="margin:18px 0 10px;font-size:18px;">Want more after the trial?</h2>
+        <ol style="color:#c9d1d9;line-height:1.65;padding-left:22px;">
+          <li>Open <strong>Account → AI &amp; billing</strong> (or the key picker next to Generate).</li>
+          <li>Choose <strong>Buy</strong> under Studio credits and checkout with Stripe.</li>
+          <li>Credits keep the Render3D Key available for any supported model.</li>
+        </ol>
+        <p style="margin:18px 0 0;color:#9da7b3;line-height:1.55;">Prefer your own key? You can add OpenAI, Claude, Kimi, or Grok anytime in AI &amp; billing.</p>
+      </div>
+    </div>
+  </body>
+</html>"""
+    text_body = f"""Hi {user.get('display_name') or 'there'} — you have $10 to try Render3D.
+
+We added $10 in Studio credits to your account. That unlocks the temporary Render3D Key for OpenAI, Claude, and Kimi models we support — no personal API key required.
+
+When the $10 is used up, the Render3D Key disappears until you buy more credits (or add your own API key).
+
+Open Studio: {studio}
+
+Want more after the trial?
+1. Open Account → AI & billing (or the key picker next to Generate).
+2. Choose Buy under Studio credits and checkout with Stripe.
+3. Credits keep the Render3D Key available for any supported model.
+
+Prefer your own key? Add OpenAI, Claude, Kimi, or Grok anytime in AI & billing.
+"""
+    return {"subject": subject, "html": html_body, "text": text_body}
+
+
+def send_trial_credits_email(user: dict[str, Any]) -> dict[str, Any]:
+    email = str(user.get("email") or "").strip()
+    if not email:
+        return {"ok": False, "error": "missing_email"}
+    if email.endswith("@social.render3d.local"):
+        return {"ok": False, "error": "placeholder_social_email"}
+    template = render_trial_credits_email(user)
+    if not smtp_configured():
+        logger.info("Trial credits email not sent to %s: SMTP is not configured.", email)
+        return {"ok": False, "error": "smtp_not_configured", "template": template}
+
+    msg = EmailMessage()
+    msg["Subject"] = template["subject"]
+    msg["From"] = (settings.capacity_alert_from or settings.capacity_alert_smtp_user).strip()
+    msg["To"] = email
+    msg.set_content(template["text"])
+    msg.add_alternative(template["html"], subtype="html")
+
+    host = (settings.capacity_alert_smtp_host or "smtp.gmail.com").strip()
+    port = int(settings.capacity_alert_smtp_port or 587)
+    with smtplib.SMTP(host, port, timeout=30) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(settings.capacity_alert_smtp_user.strip(), settings.capacity_alert_smtp_password.strip())
+        smtp.send_message(msg)
+    return {"ok": True, "to": email}
