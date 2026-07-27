@@ -84,7 +84,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260726-wiring-restore";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-trial-key";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -16674,7 +16674,7 @@ function getPlatformPromptKeys(status) {
   if (providers.openai) {
     keys.push({
       id: "openai",
-      name: "Render3D OpenAI",
+      name: "Render3D Key",
       provider: "openai",
       model: preferred === "openai" ? preferredModel : (models.find((m) => m.provider === "openai")?.model || ""),
       source: "platform",
@@ -16683,7 +16683,7 @@ function getPlatformPromptKeys(status) {
   if (providers.anthropic) {
     keys.push({
       id: "anthropic",
-      name: "Render3D Anthropic",
+      name: "Render3D Key",
       provider: "anthropic",
       model: preferred === "anthropic" ? preferredModel : (models.find((m) => m.provider === "anthropic")?.model || ""),
       source: "platform",
@@ -16692,7 +16692,7 @@ function getPlatformPromptKeys(status) {
   if (providers.kimi) {
     keys.push({
       id: "kimi",
-      name: "Render3D Kimi",
+      name: "Render3D Key",
       provider: "kimi",
       model: preferred === "kimi" ? preferredModel : (models.find((m) => m.provider === "kimi")?.model || "kimi-k3"),
       source: "platform",

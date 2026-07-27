@@ -1,3 +1,11 @@
+## 2026-07-27 — Ship trial credits + X MP4 share
+
+- One-time $10 Render3D Key trial (`grant_signup_trial_if_needed`), trial email, welcome popup + `/api/user/ai-credits/trial-ack`.
+- Share to X prepares MP4 (`blobForXShare`) before compose/download; cache-bust `?v=20260727-trial-mp4-ship`.
+- Pushed `3883b13` / `56d520c` + follow-up label/cache commits; restart `render3d.service`.
+
+---
+
 ## 2026-07-27 — Changelog comprehensive backfill
 
 - Rebuilt `CHANGELOG.md` + `DEVELOPER_CHANGELOG.md` from full `ai-context/worklog.md` (Jul 19–27) plus git reconstruction (Jun 19; Jul 6–7, 10, 14–17).
