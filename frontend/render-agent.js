@@ -1549,7 +1549,39 @@ export function createRenderAgent({
         method: "POST",
       });
       const url = data.url || `${window.location.origin}${data.url_path || ""}`;
-      await navigator.clipboard.writeText(url);
+      const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+      if (mobile && typeof navigator.share === "function") {
+        try {
+          await navigator.share({ title: "Render Studio chat", url, text: url });
+          setStatus(`Share link ready (${data.share_id}).`);
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") {
+            setStatus("Share cancelled.");
+            return;
+          }
+        }
+      }
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(url);
+          setStatus(`Share link copied (${data.share_id}).`);
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, url.length);
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (!ok) throw new Error("Clipboard copy was blocked on this device.");
       setStatus(`Share link copied (${data.share_id}).`);
     } catch (err) {
       setStatus(err.message || "Could not create share link.", true);

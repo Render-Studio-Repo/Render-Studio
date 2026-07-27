@@ -2008,9 +2008,10 @@ def _daily_ai_spend_for_user(user_id: str) -> float:
 
 
 def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
+    trial_grant: dict[str, Any] = {}
     try:
-        trial = ai_credit_service.grant_signup_trial_if_needed(user)
-        if trial.get("just_granted") and not trial.get("email_sent"):
+        trial_grant = ai_credit_service.grant_signup_trial_if_needed(user) or {}
+        if trial_grant.get("just_granted") and not trial_grant.get("email_sent"):
             import threading
 
             threading.Thread(
@@ -2020,12 +2021,34 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
             ).start()
     except Exception:
         logger.debug("signup trial grant skipped for user_id=%s", user.get("id"), exc_info=True)
+        trial_grant = {}
     status = user_ai_keys_service.status_for_user(user)
     try:
         status["credits"] = ai_credit_service.status(user)
     except Exception:
         status["credits"] = {"available": False, "balance_cents": 0, "markup_percent": 15}
     credits = status.get("credits") or {}
+    # Surface grant blockers on credits.trial so the client never teasers free
+    # credits when the weekly allotment is out / waitlisted / IP-blocked.
+    trial_info = dict(credits.get("trial") or {})
+    for key in (
+        "blocked_weekly_cap",
+        "waitlisted",
+        "blocked_ip",
+        "blocked_reason",
+        "just_granted",
+        "from_pool",
+    ):
+        if key in trial_grant:
+            trial_info[key] = trial_grant[key]
+    if trial_grant.get("blocked_weekly_cap") or trial_grant.get("waitlisted") or trial_grant.get("blocked_ip"):
+        trial_info["show_popup"] = False
+        trial_info["blocked_weekly_cap"] = bool(
+            trial_grant.get("blocked_weekly_cap") or trial_info.get("blocked_weekly_cap")
+        )
+        trial_info["waitlisted"] = bool(trial_grant.get("waitlisted") or trial_info.get("waitlisted"))
+    credits["trial"] = trial_info
+    status["credits"] = credits
     providers = credits.get("providers") or {}
     balance_ok = int(credits.get("balance_cents") or 0) > 0
     platform_keys: list[dict[str, Any]] = []

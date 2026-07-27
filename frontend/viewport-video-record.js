@@ -364,10 +364,21 @@ export function createViewportVideoRecorder({
           <button type="button" class="btn secondary" data-video-share-close>Done</button>
         </div>
       </div>
+      <div class="viewport-video-x-prep hidden" data-video-x-prep role="status" aria-live="polite">
+        <div class="viewport-video-x-prep-card">
+          <div class="viewport-video-x-prep-spinner" aria-hidden="true"></div>
+          <p class="viewport-video-x-prep-title" data-video-x-prep-title>Preparing MP4…</p>
+          <p class="viewport-video-x-prep-body" data-video-x-prep-body>Converting your clip so X can attach it.</p>
+          <button type="button" class="btn secondary viewport-video-x-prep-dismiss hidden" data-video-x-prep-dismiss>Got it</button>
+        </div>
+      </div>
     `;
     document.body.appendChild(shareModalEl);
     shareModalEl.querySelectorAll("[data-video-share-close]").forEach((el) => {
       el.addEventListener("click", () => closeShareModal());
+    });
+    shareModalEl.querySelector("[data-video-x-prep-dismiss]")?.addEventListener("click", () => {
+      hideXPrepPopup();
     });
     shareModalEl.querySelector("[data-video-share-download]")?.addEventListener("click", () => {
       void downloadEdited();
@@ -456,6 +467,25 @@ export function createViewportVideoRecorder({
     if (!el) return;
     el.textContent = text || "";
     el.classList.toggle("is-error", !!isError && !!text);
+  }
+
+  function showXPrepPopup({ title, body, spinning = true, dismissible = false } = {}) {
+    const modal = ensureShareModal();
+    const prep = modal.querySelector("[data-video-x-prep]");
+    const titleEl = modal.querySelector("[data-video-x-prep-title]");
+    const bodyEl = modal.querySelector("[data-video-x-prep-body]");
+    const dismiss = modal.querySelector("[data-video-x-prep-dismiss]");
+    const spinner = modal.querySelector(".viewport-video-x-prep-spinner");
+    if (!prep) return;
+    if (titleEl) titleEl.textContent = title || "Preparing MP4…";
+    if (bodyEl) bodyEl.textContent = body || "Converting your clip so X can attach it.";
+    spinner?.classList.toggle("hidden", !spinning);
+    dismiss?.classList.toggle("hidden", !dismissible);
+    prep.classList.remove("hidden");
+  }
+
+  function hideXPrepPopup() {
+    shareModalEl?.querySelector("[data-video-x-prep]")?.classList.add("hidden");
   }
 
   function setXStatus(text) {
@@ -742,7 +772,13 @@ export function createViewportVideoRecorder({
   async function shareViaComposeAttach(blob, text) {
     // No site can inject a file into x.com's compose box. On phones, the OS
     // share sheet can hand the video to the X app. On desktop, we open compose
-    // with the caption and save an MP4 so the user attaches it in one click.
+    // with the caption and save an MP4 so the user can drag it onto X.
+    showXPrepPopup({
+      title: "Preparing MP4…",
+      body: "Converting your clip for X. This can take a few seconds.",
+      spinning: true,
+      dismissible: false,
+    });
     setShareStatus("Preparing MP4 for X…");
     let xBlob = blob;
     try {
@@ -755,6 +791,7 @@ export function createViewportVideoRecorder({
 
     const shared = await shareVideoViaWebShare(xBlob, text);
     if (shared) {
+      hideXPrepPopup();
       setShareStatus("Pick X in the share sheet — the video goes with the post.");
       setStatus(true, "Shared viewport video.");
       return true;
@@ -762,12 +799,20 @@ export function createViewportVideoRecorder({
     openXCompose(text);
     downloadShareBlob(xBlob);
     const isMp4 = blobLooksLike(xBlob, "mp4");
+    showXPrepPopup({
+      title: isMp4 ? "MP4 ready — drag it onto X" : "Clip ready — drag it onto X",
+      body: isMp4
+        ? "X compose is open with your caption. Your MP4 just downloaded — drag and drop that video into the X post."
+        : "X compose is open with your caption. Your clip just downloaded — drag and drop that video into the X post.",
+      spinning: false,
+      dismissible: true,
+    });
     setShareStatus(
       isMp4
-        ? "X compose is open with your caption. MP4 saved to Downloads — in X, click the media button and pick that file."
-        : "X compose is open with your caption. Clip saved to Downloads — in X, click the media button and pick that file.",
+        ? "MP4 downloaded — drag and drop the video onto X."
+        : "Clip downloaded — drag and drop the video onto X.",
     );
-    setStatus(true, "Opened X compose — attach the downloaded clip.");
+    setStatus(true, "Opened X compose — drag and drop the downloaded video onto X.");
     return false;
   }
 
@@ -785,9 +830,16 @@ export function createViewportVideoRecorder({
     try {
       // Skip X API media upload — it needs paid developer credits and was
       // showing "Uploading…" then silently falling back to a download.
-      setShareStatus("Preparing video for X…");
+      showXPrepPopup({
+        title: "Preparing MP4…",
+        body: "Getting your video ready for X.",
+        spinning: true,
+        dismissible: false,
+      });
+      setShareStatus("Preparing MP4 for X…");
       await shareViaComposeAttach(blob, text);
     } catch (err) {
+      hideXPrepPopup();
       setShareStatus(err?.message || "Could not open X.", true);
     } finally {
       if (postBtn) postBtn.disabled = false;
@@ -796,6 +848,7 @@ export function createViewportVideoRecorder({
 
   function closeShareModal() {
     finishXPinPrompt(false);
+    hideXPrepPopup();
     const preview = shareModalEl?.querySelector(".viewport-video-share-preview");
     if (preview) {
       preview.removeAttribute("src");

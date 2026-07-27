@@ -347,6 +347,18 @@ def ensure_account(user_id: str) -> dict[str, Any]:
     return dict(row) if row else {"user_id": user_id, "balance_cents": 0}
 
 
+def _user_on_trial_waitlist(user_id: str) -> bool:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM ai_credit_trial_waitlist WHERE user_id = ? LIMIT 1",
+            (uid,),
+        ).fetchone()
+    return bool(row)
+
+
 def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
     granted_at = str(account.get("trial_granted_at") or "").strip() or None
     popup_seen_at = str(account.get("trial_popup_seen_at") or "").strip() or None
@@ -355,6 +367,7 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
     balance = int(account.get("balance_cents") or 0)
     uid = str(account.get("user_id") or "")
     on_free = is_free_trial_credits_account(account, user_id=uid or None)
+    waitlisted = (not granted_at) and _user_on_trial_waitlist(uid)
     # Only advertise free credits when the user still has a usable trial balance.
     # Weekly-cap / waitlisted users never get granted_at, and spent/reclaimed
     # trials must not keep showing the "$10 free" popup.
@@ -364,6 +377,7 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         and not reclaimed_at
         and balance > 0
         and on_free
+        and not waitlisted
     )
     return {
         "granted": bool(granted_at),
@@ -379,6 +393,8 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         "email_sent": bool(email_sent_at),
         "active": bool(granted_at and balance > 0 and account.get("use_platform_key") and not reclaimed_at),
         "on_free_trial": on_free,
+        "waitlisted": waitlisted,
+        "blocked_weekly_cap": waitlisted,
         "quality_blocked_openai_models": sorted(TRIAL_QUALITY_BLOCKED_OPENAI),
         "key_label": "Render Studio Key",
     }

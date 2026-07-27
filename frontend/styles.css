@@ -11265,12 +11265,85 @@ body.theme-light .vve-prompt input {
 
 .viewport-video-share-x-status,
 .viewport-video-share-status {
-  margin: 0 0 6px;
-  min-height: 1.1em;
+  margin: 0 0 8px;
+  min-height: 1.25em;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: #c9d1d9;
 }
 
 .viewport-video-share-status.is-error {
   color: #f85149;
+}
+
+.viewport-video-x-prep {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(1, 4, 9, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.viewport-video-x-prep.hidden {
+  display: none;
+}
+
+.viewport-video-x-prep-card {
+  width: min(420px, 100%);
+  padding: 28px 24px 22px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(251, 133, 0, 0.16), transparent 55%),
+    linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.96));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.viewport-video-x-prep-spinner {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 16px;
+  border: 3px solid rgba(251, 133, 0, 0.22);
+  border-top-color: #fb8500;
+  border-radius: 50%;
+  animation: viewport-video-x-prep-spin 0.85s linear infinite;
+}
+
+.viewport-video-x-prep-spinner.hidden {
+  display: none;
+}
+
+@keyframes viewport-video-x-prep-spin {
+  to { transform: rotate(360deg); }
+}
+
+.viewport-video-x-prep-title {
+  margin: 0 0 10px;
+  font-size: 1.45rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: #f0f3f6;
+  line-height: 1.25;
+}
+
+.viewport-video-x-prep-body {
+  margin: 0 0 18px;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+
+.viewport-video-x-prep-dismiss {
+  min-width: 120px;
+}
+
+.viewport-video-share-modal {
+  position: relative;
 }
 
 .viewport-video-share-actions {
@@ -18013,6 +18086,30 @@ section h2 {
 
 .file-export-share {
   width: 100%;
+}
+
+.file-export-share-url {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.file-export-share-url input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel, #12151c);
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .file-export-share:disabled {

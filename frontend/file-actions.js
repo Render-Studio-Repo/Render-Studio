@@ -418,16 +418,106 @@ async function downloadFile(url, filename, { retries = 3 } = {}) {
 }
 
 async function copyText(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+  const value = String(text || "");
+  if (!value) throw new Error("Nothing to copy.");
+
+  // Prefer Clipboard API when available, but always fall back — iOS/Android
+  // often reject writeText after an await (lost user gesture) even though
+  // navigator.clipboard exists.
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      /* fall through to execCommand / selection */
+    }
   }
+
   const ta = document.createElement("textarea");
-  ta.value = text;
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;padding:0;margin:0;border:0;opacity:0;";
   document.body.appendChild(ta);
+  ta.focus();
   ta.select();
-  document.execCommand("copy");
+  ta.setSelectionRange(0, value.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
   ta.remove();
+  if (!ok) throw new Error("Clipboard copy was blocked on this device.");
+  return true;
+}
+
+async function shareOrCopyUrl(url, { title = "Render Studio share" } = {}) {
+  const shareUrl = String(url || "").trim();
+  if (!shareUrl) throw new Error("No share link to copy.");
+
+  // Native share sheet is the reliable mobile path (clipboard is flaky on iOS).
+  if (isMobileClient() && typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title, url: shareUrl, text: shareUrl });
+      return { method: "share" };
+    } catch (err) {
+      // User cancelled the sheet — treat as success (they saw the link).
+      if (err?.name === "AbortError") return { method: "share-cancel" };
+      /* fall through to clipboard */
+    }
+  }
+
+  await copyText(shareUrl);
+  return { method: "clipboard" };
+}
+
+function revealShareUrlForManualCopy(menu, shareUrl, shareBtn) {
+  if (!menu || !shareUrl) return;
+  let box = menu.querySelector(".file-export-share-url");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "file-export-share-url";
+    box.innerHTML = `
+      <label class="muted small">Share link — tap to select, then copy</label>
+      <input type="text" readonly inputmode="none" autocomplete="off" spellcheck="false" />
+    `;
+    const actions = menu.querySelector(".file-export-actions");
+    if (actions) actions.insertAdjacentElement("afterend", box);
+    else menu.appendChild(box);
+    const input = box.querySelector("input");
+    input?.addEventListener("focus", () => {
+      try {
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      } catch {
+        /* ignore */
+      }
+    });
+    input?.addEventListener("click", () => {
+      try {
+        input.select();
+        input.setSelectionRange(0, input.value.length);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+  const input = box.querySelector("input");
+  if (input) {
+    input.value = shareUrl;
+    requestAnimationFrame(() => {
+      try {
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, shareUrl.length);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+  if (shareBtn) shareBtn.textContent = isMobileClient() ? "Share / copy again" : "Copy again";
 }
 
 function showStepModeChooser(menu, item, onChoose, anchorEl = null, clickEvent = null) {
@@ -593,7 +683,7 @@ export async function openFileExportMenu({
     <p class="file-export-status muted small">Preparing exports…</p>
     <div class="file-export-list"></div>
     <div class="file-export-actions">
-      <button type="button" class="btn secondary btn-compact file-export-share" disabled>Copy share link</button>
+      <button type="button" class="btn secondary btn-compact file-export-share" disabled>${mobile && typeof navigator.share === "function" ? "Share link" : "Copy share link"}</button>
       ${onshapeSource ? `
       <button type="button" class="btn file-export-onshape file-export-onshape-push" title="Push updated STEP back to the original Onshape document">
         <img src="/onshape-logo.png" width="14" height="14" alt="" style="vertical-align:-2px" />
@@ -734,6 +824,9 @@ export async function openFileExportMenu({
 
   let preparedShareUrl = "";
   let preparingShare = false;
+  const shareReadyLabel = () => (
+    mobile && typeof navigator.share === "function" ? "Share link" : "Copy share link"
+  );
   const prepareShareLink = async () => {
     if (!shareBtn || preparingShare || preparedShareUrl) return;
     preparingShare = true;
@@ -743,7 +836,7 @@ export async function openFileExportMenu({
     try {
       if (!shareFilename) throw new Error("No shareable model file prepared yet.");
       preparedShareUrl = await createShareUrl(projectId, shareFilename, shareContext);
-      shareBtn.textContent = "Copy share link";
+      shareBtn.textContent = shareReadyLabel();
       shareBtn.disabled = false;
     } catch (err) {
       shareBtn.textContent = "Retry share link";
@@ -874,10 +967,21 @@ export async function openFileExportMenu({
         if (!preparedShareUrl) return;
       }
       shareBtn.disabled = true;
-      await copyText(preparedShareUrl);
-      shareBtn.textContent = "Link copied!";
+      const result = await shareOrCopyUrl(preparedShareUrl, {
+        title: title || `Share ${shareFilename || filename}`,
+      });
+      if (result.method === "share-cancel") {
+        shareBtn.textContent = shareReadyLabel();
+        revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
+      } else if (result.method === "share") {
+        shareBtn.textContent = "Shared!";
+      } else {
+        shareBtn.textContent = "Link copied!";
+      }
     } catch (err) {
-      shareBtn.textContent = "Copy share link";
+      shareBtn.textContent = shareReadyLabel();
+      // Always surface a selectable URL on mobile so the user can long-press copy.
+      if (preparedShareUrl) revealShareUrlForManualCopy(menu, preparedShareUrl, shareBtn);
       showExportError(menu, err, {
         title: "Could not copy share link",
         onRetry: () => shareBtn.click(),

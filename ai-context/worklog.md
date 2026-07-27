@@ -1,3 +1,20 @@
+## 2026-07-27 — Mobile share link copy fix
+
+- Export “Copy share link” uses native `navigator.share` on mobile, with Clipboard + execCommand fallbacks.
+- If copy still fails, show a selectable URL field for long-press copy.
+- Cache-bust `?v=20260727-mobile-share-copy`.
+
+---
+
+## 2026-07-27 — Hide free-credits popup when weekly allotment is out
+
+- Merge `blocked_weekly_cap` / `waitlisted` from trial grant into AI status `credits.trial`.
+- Persist waitlist flags on `_trial_info`; force `show_popup: false` when out for the week.
+- Frontend never shows the $10 free-credits modal for waitlisted users; setup intro stops advertising free/shared trial credits.
+- Cache-bust `?v=20260727-no-free-week-popup`.
+
+---
+
 ## 2026-07-27 — Rebrand to Render Studio + render credits
 
 - User-facing product name: **Render Studio** (kept `render3d.app` URLs, logos, `Render3DMobile*` APIs).

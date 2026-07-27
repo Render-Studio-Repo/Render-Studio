@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-no-assemble-trial";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-prep-popup";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -83,14 +83,14 @@ import { createProjectChatUI } from "./project-chat.js?v=20260725-chat-lightbox"
 import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
-import { createRenderAgent } from "./render-agent.js?v=20260724-gs-gifs";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-trial-week-cap";
+import { createRenderAgent } from "./render-agent.js?v=20260727-mobile-share-copy";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-no-free-week-popup";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260727-mobile-export";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260727-mobile-share-copy";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -17361,6 +17361,10 @@ function renderAIStatus(status) {
   reconcileCodexToggleWithKeys();
   const el = document.getElementById("prompt-status");
   if (!el || !aiStatus) return;
+  // If weekly free-trial spots are exhausted, never leave the $10 popup visible.
+  if (aiStatus?.credits?.trial?.blocked_weekly_cap || aiStatus?.credits?.trial?.waitlisted) {
+    document.getElementById("trial-credits-modal")?.classList.add("hidden");
+  }
   if (aiStatus.ai_ready) {
     el.className = "status";
     el.textContent = "";
@@ -17432,6 +17436,18 @@ async function ackTrialCreditsPopup() {
   }
 }
 
+function isTrialCreditsUnavailable() {
+  const credits = aiStatus?.credits || {};
+  const trial = credits.trial || {};
+  return !!(
+    trial.blocked_weekly_cap
+    || trial.waitlisted
+    || trial.blocked_ip
+    || trial.reclaimed_at
+    || !(Number(credits.balance_cents) > 0)
+  );
+}
+
 function shouldShowTrialCreditsPopup() {
   if (!currentUser || !aiStatus) return false;
   if (window.__render3dShowMeFromQuery) return false;
@@ -17443,9 +17459,10 @@ function shouldShowTrialCreditsPopup() {
   const trial = credits.trial || {};
   // Never tease free credits when the weekly allotment is out, waitlisted,
   // reclaimed, or the balance is already $0.
-  if (trial.blocked_weekly_cap || trial.waitlisted) return false;
-  if (trial.reclaimed_at) return false;
-  if (!(Number(credits.balance_cents) > 0)) return false;
+  if (isTrialCreditsUnavailable()) {
+    document.getElementById("trial-credits-modal")?.classList.add("hidden");
+    return false;
+  }
   if (!(trial.on_free_trial || trial.active || trial.granted)) return false;
   return !!trial.show_popup;
 }
@@ -17534,8 +17551,39 @@ function shouldShowAISetupIntro({ ignoreSessionOffer = false } = {}) {
 
 let aiSetupIntroTimer = null;
 
+function syncAISetupIntroCopyForTrialAvailability() {
+  const modal = document.getElementById("ai-setup-intro-modal");
+  if (!modal) return;
+  const outForWeek = !!(aiStatus?.credits?.trial?.blocked_weekly_cap || aiStatus?.credits?.trial?.waitlisted);
+  const copy = modal.querySelector(".ai-setup-copy p:not(.info-eyebrow)");
+  const creditsBtn = modal.querySelector("[data-ai-setup-action='credits']");
+  const stepCredits = Array.from(modal.querySelectorAll(".ai-setup-step-grid span")).find((el) =>
+    /load credits/i.test(el.textContent || ""),
+  );
+  if (outForWeek) {
+    if (copy) {
+      copy.textContent =
+        "Your account is ready, but AI generation needs one more step: add your OpenAI or Claude API key, or open Getting Started to learn the workflow first.";
+    }
+    creditsBtn?.classList.add("hidden");
+    if (stepCredits) stepCredits.textContent = "2. Buy credits anytime";
+  } else {
+    if (copy) {
+      copy.textContent =
+        "Your account is ready, but AI generation needs one more step: add your OpenAI or Claude API key, load shared credits for Render Studio’s platform key, or open Getting Started to learn the workflow first.";
+    }
+    creditsBtn?.classList.remove("hidden");
+    if (stepCredits) stepCredits.textContent = "2. Or load credits";
+  }
+}
+
 function maybeOfferSharedKeyCredits() {
   if (shouldShowTrialCreditsPopup()) return;
+  // When free trial spots are out for the week, never open a flow that
+  // advertises free / shared trial credits.
+  if (aiStatus?.credits?.trial?.blocked_weekly_cap || aiStatus?.credits?.trial?.waitlisted) {
+    document.getElementById("trial-credits-modal")?.classList.add("hidden");
+  }
   if (!shouldShowAISetupIntro()) return;
   if (aiSetupIntroTimer) return;
   try {
@@ -17547,6 +17595,7 @@ function maybeOfferSharedKeyCredits() {
     if (!shouldShowAISetupIntro({ ignoreSessionOffer: true })) return;
     const modal = document.getElementById("ai-setup-intro-modal");
     if (!modal) return;
+    syncAISetupIntroCopyForTrialAvailability();
     modal.classList.remove("hidden");
     modal.querySelector("[data-ai-setup-action='key']")?.focus();
   }, 900);
