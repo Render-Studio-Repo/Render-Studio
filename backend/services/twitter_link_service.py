@@ -1086,7 +1086,7 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
     return media_id
 
 
-def _caption_with_site_link(text: str, *, default: str = "loading Render Studio") -> str:
+def _caption_with_site_link(text: str, *, default: str = "Built on Render Studio") -> str:
     caption = (text or default).strip() or default
     if "render3d.app" not in caption.lower():
         # X auto-links URLs; keep under tweet limit.
