@@ -1,12 +1,12 @@
-## 2026-07-29 — Bambu: pack whole kit across print plates
+## 2026-07-29 — Bambu: real virtual plates 01/02/… (not black mesh “plates”)
 
-- Single-plate export only showed ~6 on-bed parts; 34 others were packed off the bed.
-- Multi-body 3MF again bin-packs bodies onto as many Bambu plates as needed; every mesh is seated on-bed for its plate.
-- Plate assignment and XY seating share one packer so parts don’t overlap / fall off.
-- Verified drone → 10 plates / 40 objects / 0 off-bed.
-- Cache-bust `?v=20260729-bambu-multiplate`; restarted `render3d.service`.
+- Root cause: Studio only builds multi-plate UI when `Application` starts with `BambuStudio-` **and** `Metadata/project_settings.config` exists. Without that it geometry-loads onto plate 01; plate-grid offsets look like black plate meshes off-bed.
+- 3MF now sets `Application=BambuStudio-01.10.00.87`, embeds X1C `project_settings.config`, keeps body packing across plates, uses Bambu UUID suffixes.
+- Verified drone 3MF has project_settings + 10 plates + BambuStudio Application.
+- Cache-bust `?v=20260729-bambu-real-plates`; restarted `render3d.service`.
 
 ---
+
 
 
 

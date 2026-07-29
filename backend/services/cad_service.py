@@ -40,6 +40,16 @@ THREEMF_BAMBU_BED_W = 256.0
 THREEMF_BAMBU_BED_D = 256.0
 THREEMF_BAMBU_PLATE_GAP = 1.0 / 5.0
 THREEMF_BAMBU_MAX_PLATES = 36
+# Studio only treats the file as a multi-plate *project* when Application starts with
+# "BambuStudio-" AND Metadata/project_settings.config is present. Otherwise it dumps
+# every object onto plate 01 with world transforms (looks like black plate meshes).
+THREEMF_BAMBU_APPLICATION = "BambuStudio-01.10.00.87"
+THREEMF_BAMBU_OBJECT_UUID_SUFFIX = "-61cb-4c03-9d28-80fed5dfa1dc"
+THREEMF_BAMBU_SUBOBJECT_UUID_SUFFIX = "-81cb-4c03-9d28-80fed5dfa1dc"
+THREEMF_BAMBU_COMPONENT_UUID_SUFFIX = "-b206-40ff-9872-83e8017abed1"
+THREEMF_BAMBU_BUILD_ITEM_UUID_SUFFIX = "-b1ec-4553-aec9-835e5b724bb4"
+THREEMF_BAMBU_BUILD_UUID = "2c7c17d8-22b5-4d84-8835-1976022ea369"
+_BAMBU_PROJECT_SETTINGS_PATH = Path(__file__).resolve().parent / "bambu_project_settings_x1c.json"
 ET.register_namespace("", THREEMF_CORE_NS)
 ET.register_namespace("p", THREEMF_PRODUCTION_NS)
 ET.register_namespace("BambuStudio", THREEMF_BAMBU_NS)
@@ -3510,7 +3520,41 @@ def _append_3mf_mesh_object(
     )
 
 
-def _build_object_model_xml(mesh: trimesh.Trimesh, *, mesh_object_id: int = 1) -> bytes:
+def _bambu_hex_uuid(index: int, suffix: str) -> str:
+    return f"{int(index) & 0xFFFFFFFF:08x}{suffix}"
+
+
+def _bambu_project_settings_bytes() -> bytes:
+    """Minimal-but-complete Bambu project_settings so Studio opens as a real project."""
+    try:
+        raw = _BAMBU_PROJECT_SETTINGS_PATH.read_bytes()
+        if raw.strip():
+            return raw
+    except OSError as exc:
+        logger.warning("missing bambu project_settings template: %s", exc)
+    # Fallback: enough keys for DynamicPrintConfig to be non-empty.
+    fallback = {
+        "version": "01.10.00.87",
+        "printer_model": "Bambu Lab X1 Carbon",
+        "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
+        "print_settings_id": "0.20mm Standard @BBL X1C",
+        "filament_settings_id": ["Generic PLA"],
+        "filament_type": ["PLA"],
+        "filament_colour": ["#00AE42"],
+        "nozzle_diameter": ["0.4"],
+        "printable_area": ["0x0", "256x0", "256x256", "0x256"],
+        "printable_height": "250",
+        "curr_bed_type": "Textured PEI Plate",
+    }
+    return (json.dumps(fallback, indent=4) + "\n").encode("utf-8")
+
+
+def _build_object_model_xml(
+    mesh: trimesh.Trimesh,
+    *,
+    mesh_object_id: int = 1,
+    file_index: int = 1,
+) -> bytes:
     model = ET.Element(
         f"{{{THREEMF_CORE_NS}}}model",
         {
@@ -3527,7 +3571,9 @@ def _build_object_model_xml(mesh: trimesh.Trimesh, *, mesh_object_id: int = 1) -
         {
             "id": str(mesh_object_id),
             "type": "model",
-            f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+            f"{{{THREEMF_PRODUCTION_NS}}}UUID": _bambu_hex_uuid(
+                file_index, THREEMF_BAMBU_SUBOBJECT_UUID_SUFFIX
+            ),
         },
     )
     mesh_el = ET.SubElement(obj, f"{{{THREEMF_CORE_NS}}}mesh")
@@ -3903,13 +3949,16 @@ def _export_bambu_multiplate_3mf(
             "requiredextensions": "p",
         },
     )
-    ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "Application"}).text = "Render Studio"
+    # Must start with "BambuStudio-" or Studio treats this as geometry-only (no multi-plate UI).
+    ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "Application"}).text = (
+        THREEMF_BAMBU_APPLICATION
+    )
     ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "BambuStudio:3mfVersion"}).text = "1"
     resources = ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}resources")
     build = ET.SubElement(
         root_model,
         f"{{{THREEMF_CORE_NS}}}build",
-        {f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4())},
+        {f"{{{THREEMF_PRODUCTION_NS}}}UUID": THREEMF_BAMBU_BUILD_UUID},
     )
 
     rel_lines = [
@@ -3930,7 +3979,12 @@ def _export_bambu_multiplate_3mf(
             0.5 * THREEMF_BAMBU_BED_D,
         )
         seated = _seat_mesh_at_plate_xy(raw_mesh, cx, cy)
-        object_files.append((f"3D/Objects/object_{file_index}.model", _build_object_model_xml(seated)))
+        object_files.append(
+            (
+                f"3D/Objects/object_{file_index}.model",
+                _build_object_model_xml(seated, file_index=file_index),
+            )
+        )
 
         wrapper = ET.SubElement(
             resources,
@@ -3938,7 +3992,9 @@ def _export_bambu_multiplate_3mf(
             {
                 "id": str(wrapper_id),
                 "type": "model",
-                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": _bambu_hex_uuid(
+                    file_index, THREEMF_BAMBU_OBJECT_UUID_SUFFIX
+                ),
             },
         )
         components = ET.SubElement(wrapper, f"{{{THREEMF_CORE_NS}}}components")
@@ -3948,7 +4004,9 @@ def _export_bambu_multiplate_3mf(
             {
                 f"{{{THREEMF_PRODUCTION_NS}}}path": mesh_path,
                 "objectid": "1",
-                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": _bambu_hex_uuid(
+                    (file_index << 16) | 1, THREEMF_BAMBU_COMPONENT_UUID_SUFFIX
+                ),
                 "transform": THREEMF_IDENTITY_TRANSFORM,
             },
         )
@@ -3959,7 +4017,9 @@ def _export_bambu_multiplate_3mf(
             f"{{{THREEMF_CORE_NS}}}item",
             {
                 "objectid": str(wrapper_id),
-                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": _bambu_hex_uuid(
+                    wrapper_id, THREEMF_BAMBU_BUILD_ITEM_UUID_SUFFIX
+                ),
                 "transform": _translation_transform(ox, oy, 0.0),
                 "printable": "1",
             },
@@ -3988,6 +4048,7 @@ def _export_bambu_multiplate_3mf(
     rel_lines.append("")
 
     settings_xml = _build_bambu_model_settings(bodies_meta)
+    project_settings = _bambu_project_settings_bytes()
 
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", _3MF_BAMBU_CONTENT_TYPES_XML)
@@ -3997,6 +4058,8 @@ def _export_bambu_multiplate_3mf(
         for arcname, payload in object_files:
             zf.writestr(arcname, payload)
         zf.writestr("Metadata/model_settings.config", settings_xml)
+        # Required for Studio to call load_from_3mf_structure() → real plates 01/02/…
+        zf.writestr("Metadata/project_settings.config", project_settings)
     return path
 
 

@@ -640,6 +640,7 @@ export function createViewportXR(opts) {
   let prevSqueeze = [false, false];
   let aiPanel = null;
   let aiPanelRefreshAt = 0;
+  let editModelPickActive = false;
   const LS_PANEL_POSES = "render3d:xr-panel-poses:v1";
 
   function loadAllPanelPoses() {
@@ -822,6 +823,7 @@ export function createViewportXR(opts) {
   xrHud.add(captureDock);
 
   function captureToolDefs() {
+    // Pause/Stop only appear while a recording is active
     if (captureRecState.recording) {
       return [
         {
@@ -832,7 +834,6 @@ export function createViewportXR(opts) {
           icon: "pause",
         },
         { id: "record_stop", label: "Stop", color: 0xef4444, glyph: "■", icon: "stop" },
-        { id: "screenshot", label: "Shot", color: 0x38bdf8, glyph: "▣", icon: "cam" },
       ];
     }
     return [
@@ -1922,10 +1923,32 @@ export function createViewportXR(opts) {
       return;
     }
     if (id.startsWith("target:")) {
-      try { setAiPromptSetting?.("targetMode", id.slice(7)); } catch (_) {}
-      refreshAiPromptPanel();
+      const mode = id.slice(7) === "edit" ? "edit" : "new";
+      try { setAiPromptSetting?.("targetMode", mode); } catch (_) {}
+      if (mode === "edit") {
+        openEditModelPicker();
+      } else {
+        refreshAiPromptPanel();
+      }
       return;
     }
+  }
+
+  function openEditModelPicker() {
+    let items = [];
+    try { items = (typeof getExplorerItems === "function" && getExplorerItems()) || []; } catch { items = []; }
+    if (!items.length) {
+      if (aiPanel) aiPanel.status = "No models to edit — generate one first";
+      menuFooterHint = "No models in this project to edit";
+      refreshAiPromptPanel();
+      openMenuConsole({ tab: "parts", keepPose: true, footerHint: "No models yet — generate one first" });
+      return;
+    }
+    if (aiPanel) aiPanel.status = "Pick which model to edit";
+    menuFooterHint = "Select the model you want to edit";
+    editModelPickActive = true;
+    openMenuConsole({ tab: "parts", forcePlace: false, footerHint: "Select a model to edit" });
+    refreshAiPromptPanel();
   }
 
   function ensureMenuConsole() {
@@ -2207,6 +2230,23 @@ export function createViewportXR(opts) {
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
 
+    // Left-hand docks first when the laser is close (Pause/Stop must beat distant panels)
+    try {
+      getLeftGrip()?.updateMatrixWorld?.(true);
+      dock.updateMatrixWorld?.(true);
+      captureDock.updateMatrixWorld?.(true);
+      const nearDock = raycaster
+        .intersectObjects([...dockButtons, ...captureDockButtons], false)
+        .filter((h) => h.distance < 0.45);
+      if (nearDock.length) {
+        return {
+          kind: "tool",
+          tool: nearDock[0].object.userData.xrTool,
+          distance: nearDock[0].distance,
+        };
+      }
+    } catch (_) {}
+
     // Dedicated AI prompt panel — physical hit meshes first (reliable on Quest)
     if (aiPanel?.group.visible) {
       aiPanel.group.updateMatrixWorld(true);
@@ -2483,6 +2523,19 @@ export function createViewportXR(opts) {
             onExplorerSelect?.(line.id);
           } catch (err) {
             console.warn("[viewport-xr] part select", err);
+          }
+          if (editModelPickActive || (line?.kind === "part")) {
+            try { setAiPromptSetting?.("targetMode", "edit"); } catch (_) {}
+            if (editModelPickActive) {
+              editModelPickActive = false;
+              if (aiPanel) aiPanel.status = `Editing: ${String(line.label || line.id).slice(0, 40)}`;
+              menuFooterHint = `Edit target: ${String(line.label || line.id).slice(0, 36)}`;
+              refreshAiPromptPanel();
+              // Keep AI panel visible; close menu so user can prompt
+              if (explorerPanel) explorerPanel.group.visible = false;
+              if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
+              return;
+            }
           }
           openMenuConsole({ tab: "parts", keepPose: true });
         }
