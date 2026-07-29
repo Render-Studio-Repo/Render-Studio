@@ -3448,7 +3448,7 @@ def _build_object_model_xml(mesh: trimesh.Trimesh, *, mesh_object_id: int = 1) -
 def _build_bambu_model_settings(
     bodies: list[dict[str, Any]],
 ) -> str:
-    """Bambu Studio Metadata/model_settings.config — one plate per body."""
+    """Bambu Studio Metadata/model_settings.config — one plate entry per plate id."""
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<config>"]
     for body in bodies:
         oid = int(body["object_id"])
@@ -3466,20 +3466,27 @@ def _build_bambu_model_settings(
         lines.append("    </part>")
         lines.append("  </object>")
 
+    # One <plate> per plater_id (multiple bodies may share a plate when packing).
+    plates: dict[int, list[dict[str, Any]]] = {}
     for body in bodies:
-        plate_id = int(body["plate_id"])
-        oid = int(body["object_id"])
-        identify = int(body.get("identify_id") or plate_id)
-        plate_name = _xml_attr_escape(str(body.get("plate_name") or body["name"]))
+        plates.setdefault(int(body["plate_id"]), []).append(body)
+    for plate_id, members in plates.items():
+        if len(members) == 1:
+            plate_name = _xml_attr_escape(str(members[0].get("plate_name") or members[0]["name"]))
+        else:
+            plate_name = _xml_attr_escape(f"Plate {plate_id}")
         lines.append("  <plate>")
         lines.append(f'    <metadata key="plater_id" value="{plate_id}"/>')
         lines.append(f'    <metadata key="plater_name" value="{plate_name}"/>')
         lines.append('    <metadata key="locked" value="false"/>')
-        lines.append("    <model_instance>")
-        lines.append(f'      <metadata key="object_id" value="{oid}"/>')
-        lines.append('      <metadata key="instance_id" value="0"/>')
-        lines.append(f'      <metadata key="identify_id" value="{identify}"/>')
-        lines.append("    </model_instance>")
+        for body in members:
+            oid = int(body["object_id"])
+            identify = int(body.get("identify_id") or oid)
+            lines.append("    <model_instance>")
+            lines.append(f'      <metadata key="object_id" value="{oid}"/>')
+            lines.append('      <metadata key="instance_id" value="0"/>')
+            lines.append(f'      <metadata key="identify_id" value="{identify}"/>')
+            lines.append("    </model_instance>")
         lines.append("  </plate>")
 
     lines.append("  <assemble>")
@@ -3542,17 +3549,92 @@ def _export_generic_scene_3mf(
     return path
 
 
+def _assign_bambu_plate_indices(count: int, max_plates: int = THREEMF_BAMBU_MAX_PLATES) -> list[int]:
+    """Map each body index → plate index (0-based), never exceeding max_plates."""
+    n = max(int(count), 0)
+    if n <= 0:
+        return []
+    if n <= max_plates:
+        return list(range(n))
+    # Round-robin across plates so overflow parts stay on-bed (no off-plate nudge).
+    return [i % max_plates for i in range(n)]
+
+
+def _pack_offsets_on_plate(
+    meshes: list[trimesh.Trimesh],
+    *,
+    bed_w: float = THREEMF_BAMBU_BED_W,
+    bed_d: float = THREEMF_BAMBU_BED_D,
+    margin: float = 6.0,
+    gap: float = 4.0,
+) -> list[tuple[float, float]]:
+    """Shelf-pack mesh XY extents onto one bed; returns per-mesh center targets."""
+    if len(meshes) == 1:
+        return [(0.5 * bed_w, 0.5 * bed_d)]
+    cursor_x = margin
+    cursor_y = margin
+    row_h = 0.0
+    usable_w = max(bed_w - 2 * margin, 1.0)
+    usable_d = max(bed_d - 2 * margin, 1.0)
+    centers: list[tuple[float, float]] = []
+    for mesh in meshes:
+        extents = np.asarray(mesh.extents, dtype=float)
+        w = float(max(extents[0], 1.0))
+        d = float(max(extents[1], 1.0))
+        # Scale down only for packing math if a single part is larger than the bed.
+        scale = min(1.0, usable_w / w, usable_d / d)
+        w *= scale
+        d *= scale
+        if cursor_x > margin and cursor_x + w > bed_w - margin:
+            cursor_x = margin
+            cursor_y += row_h + gap
+            row_h = 0.0
+        if cursor_y + d > bed_d - margin:
+            # Fall back to centered stack with small jitter so parts stay printable.
+            centers.append((0.5 * bed_w + (len(centers) % 3 - 1) * 8.0, 0.5 * bed_d))
+            continue
+        centers.append((cursor_x + 0.5 * w, cursor_y + 0.5 * d))
+        cursor_x += w + gap
+        row_h = max(row_h, d)
+    return centers
+
+
+def _seat_mesh_at_plate_xy(
+    mesh: trimesh.Trimesh,
+    center_x: float,
+    center_y: float,
+) -> trimesh.Trimesh:
+    """Seat mesh on Z=0 with its XY center at the given plate-local point."""
+    copy = mesh.copy()
+    bounds = np.asarray(copy.bounds, dtype=float)
+    lo, hi = bounds[0], bounds[1]
+    shift = np.array(
+        [
+            float(center_x) - 0.5 * (lo[0] + hi[0]),
+            float(center_y) - 0.5 * (lo[1] + hi[1]),
+            -float(lo[2]),
+        ],
+        dtype=float,
+    )
+    copy.apply_translation(shift)
+    return copy
+
+
 def _export_bambu_multiplate_3mf(
     prepared: list[tuple[str, trimesh.Trimesh]],
     path: Path,
     *,
     assemble_centers: list[np.ndarray] | None = None,
 ) -> Path:
-    """Bambu Studio project 3MF: each body on its own plate (Maker World style)."""
+    """Bambu Studio project 3MF: each body on its own plate (Maker World style).
+
+    When body count exceeds Bambu's plate limit, pack multiple parts onto plates
+    instead of stacking them off the bed (which causes "over the boundary").
+    """
     n = len(prepared)
     if n > THREEMF_BAMBU_MAX_PLATES:
         logger.warning(
-            "3MF has %s bodies; Bambu supports %s plates — packing overflow onto later plates",
+            "3MF has %s bodies; packing onto %s Bambu plates (multi-part plates)",
             n,
             THREEMF_BAMBU_MAX_PLATES,
         )
@@ -3565,7 +3647,20 @@ def _export_bambu_multiplate_3mf(
             assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
     assemble_origin = np.mean(np.vstack(assemble_centers), axis=0) if assemble_centers else np.zeros(3)
 
-    plate_count = min(n, THREEMF_BAMBU_MAX_PLATES)
+    plate_of = _assign_bambu_plate_indices(n)
+    plate_count = (max(plate_of) + 1) if plate_of else 1
+    members_by_plate: dict[int, list[int]] = {}
+    for idx, plate_idx in enumerate(plate_of):
+        members_by_plate.setdefault(plate_idx, []).append(idx)
+
+    # Precompute plate-local XY targets (multi-part plates get shelf-packed).
+    seat_xy: dict[int, tuple[float, float]] = {}
+    for plate_idx, members in members_by_plate.items():
+        meshes = [prepared[i][1] for i in members]
+        centers = _pack_offsets_on_plate(meshes)
+        for member_idx, center in zip(members, centers):
+            seat_xy[member_idx] = center
+
     bodies_meta: list[dict[str, Any]] = []
     object_files: list[tuple[str, bytes]] = []
 
@@ -3592,14 +3687,15 @@ def _export_bambu_multiplate_3mf(
     ]
 
     for idx, (name, raw_mesh) in enumerate(prepared):
-        plate_idx = min(idx, THREEMF_BAMBU_MAX_PLATES - 1)
+        plate_idx = plate_of[idx]
         # Bambu pattern: mesh lives in Objects/object_K.model as id=1;
         # root wrapper object id = 2*(K) with a component reference.
         file_index = idx + 1
         wrapper_id = file_index * 2
         mesh_path = f"/3D/Objects/object_{file_index}.model"
 
-        seated = _seat_mesh_on_bambu_plate(raw_mesh)
+        cx, cy = seat_xy.get(idx, (0.5 * THREEMF_BAMBU_BED_W, 0.5 * THREEMF_BAMBU_BED_D))
+        seated = _seat_mesh_at_plate_xy(raw_mesh, cx, cy)
         object_files.append((f"3D/Objects/object_{file_index}.model", _build_object_model_xml(seated)))
 
         wrapper = ET.SubElement(
@@ -3624,12 +3720,6 @@ def _export_bambu_multiplate_3mf(
         )
 
         ox, oy = _bambu_plate_origin(plate_idx, plate_count)
-        # Overflow bodies on the last plate get a small XY nudge so they don't stack.
-        if idx >= THREEMF_BAMBU_MAX_PLATES:
-            overflow = idx - THREEMF_BAMBU_MAX_PLATES + 1
-            ox += (overflow % 4) * 40.0
-            oy -= (overflow // 4) * 40.0
-
         ET.SubElement(
             build,
             f"{{{THREEMF_CORE_NS}}}item",
@@ -3653,7 +3743,7 @@ def _export_bambu_multiplate_3mf(
                 "object_id": wrapper_id,
                 "name": name,
                 "plate_id": plate_idx + 1,
-                "plate_name": name,
+                "plate_name": name if len(members_by_plate.get(plate_idx, [])) == 1 else f"Plate {plate_idx + 1}",
                 "identify_id": wrapper_id,
                 "assemble_transform": _transform_12_from_matrix(assemble_tf),
             }
@@ -3675,13 +3765,26 @@ def _export_bambu_multiplate_3mf(
     return path
 
 
-def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
+def export_scene_3mf(
+    scene: trimesh.Scene,
+    path: Path,
+    *,
+    visible_body_indices: list[int] | None = None,
+) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
     Multi-body scenes become a Bambu project with **one body per plate** (like
     Maker World gripper kits). Single-body scenes stay a compact generic 3MF.
+
+    ``visible_body_indices`` optionally keeps only those mesh indices (eye-visible
+    bodies). None means export every body in the scene.
     """
     scene_items = _meshes_from_scene(scene)
+    if visible_body_indices is not None:
+        allowed = {int(i) for i in visible_body_indices if int(i) >= 0}
+        scene_items = [
+            item for idx, item in enumerate(scene_items) if idx in allowed
+        ]
     if not scene_items:
         raise ValueError("no geometry to export to 3MF")
 
@@ -5234,11 +5337,19 @@ def _export_is_stale(src_mtime: float, dest: Path, fmt: str) -> bool:
     return dest.stat().st_mtime < src_mtime
 
 
-def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool = False) -> None:
+def ensure_mesh_exports(
+    project_path: Path,
+    filename: str,
+    *,
+    missing_only: bool = False,
+    visible_body_indices: list[int] | None = None,
+) -> None:
     """Generate STL / 3MF / faceted-STEP siblings for a mesh model when missing or stale.
 
     Native B-rep `{stem}.step` from text-to-cad is never overwritten. Mesh→STEP
     always lands in `{stem}__faceted.step` so Fusion push can keep using solid STEP.
+
+    ``visible_body_indices`` only affects 3MF (print plates for unhidden bodies).
     """
     safe = Path(filename).name
     src = project_path / safe
@@ -5251,6 +5362,7 @@ def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool
     src_mtime = src.stat().st_mtime
     mesh: trimesh.Trimesh | None = None
     src_is_step = src.suffix.lower() in STEP_SUFFIXES
+    force_3mf = visible_body_indices is not None
 
     for fmt in MESH_DERIVED_EXPORTS:
         if fmt == "step" and src_is_step:
@@ -5275,15 +5387,17 @@ def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool
         else:
             dest = project_path / f"{stem}.{fmt}"
 
-        if missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
+        if fmt == "3mf" and force_3mf:
+            pass  # always rebuild filtered print plates
+        elif missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
             continue
-        if not missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
+        elif not missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
             continue
         try:
             if fmt == "3mf":
                 # Keep separate bodies so Bambu gets one plate per body.
                 scene = scene_for_3mf_export(project_path, src)
-                export_scene_3mf(scene, dest)
+                export_scene_3mf(scene, dest, visible_body_indices=visible_body_indices)
             else:
                 if mesh is None:
                     mesh = load_mesh(src)

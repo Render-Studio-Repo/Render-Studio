@@ -662,6 +662,13 @@ class FileRenameRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
 
 
+class RegenerateExportsRequest(BaseModel):
+    visible_body_indices: list[int] | None = Field(
+        default=None,
+        description="When set, 3MF includes only these mesh body indices (eye-visible parts).",
+    )
+
+
 class ReferenceMarkupRequest(BaseModel):
     notes: str = ""
     strokes: list[Any] = Field(default_factory=list)
@@ -15534,17 +15541,28 @@ def export_file_to_onshape(project_id: str, filename: str, user: dict[str, Any] 
 
 
 @app.post("/api/projects/{project_id}/files/{filename}/exports/regenerate")
-def regenerate_file_exports(project_id: str, filename: str, user: dict[str, Any] = Depends(get_current_user)):
+def regenerate_file_exports(
+    project_id: str,
+    filename: str,
+    body: RegenerateExportsRequest | None = Body(default=None),
+    user: dict[str, Any] = Depends(get_current_user),
+):
     path = _require_project(user, project_id)
     safe = Path(filename).name
     if not (path / safe).is_file():
         raise HTTPException(404, "File not found")
-    cad_service.ensure_mesh_exports(path, safe)
+    visible_indices = None
+    if body is not None and body.visible_body_indices is not None:
+        visible_indices = [int(i) for i in body.visible_body_indices if int(i) >= 0]
+        if not visible_indices:
+            raise HTTPException(400, "No visible bodies to export. Unhide at least one part.")
+    cad_service.ensure_mesh_exports(path, safe, visible_body_indices=visible_indices)
     exports = cad_service.list_exports_for_model(path, safe)
     return {
         "filename": safe,
         "exports": exports,
         "file_url": f"/api/projects/{project_id}/files/{safe}",
+        "visible_body_indices": visible_indices,
     }
 
 

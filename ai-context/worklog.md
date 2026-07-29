@@ -1,3 +1,12 @@
+## 2026-07-29 — Export / Bambu 3MF: unhidden parts only + plate packing
+
+- Open-project **Export** uses eye-visible model (same as Export button), not a stale primary file.
+- Bambu/3MF regenerate accepts `visible_body_indices` so hidden bodies are not plated.
+- Fixed 40-body overflow: pack onto ≤36 plates (no off-bed nudge); one `<plate>` per plate id.
+- Cache-bust `?v=20260729-export-visible-3mf`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — Faster Create share link
 
 - Root cause: minting a share re-ran full `build_visible_assembly_exports` (STL + huge faceted STEP + 3MF + B-rep), not just the viewer GLB.

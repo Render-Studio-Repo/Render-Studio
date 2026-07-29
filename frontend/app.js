@@ -91,7 +91,7 @@ import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-plates";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-export-visible-3mf";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -21279,6 +21279,57 @@ function currentExportTargetFilename() {
   );
 }
 
+function collectVisibleBodyIndicesForExport(filename) {
+  const target = String(filename || "").split("#body:")[0].trim();
+  if (!target) return null;
+  const targetKey = componentStemName(target).toLowerCase();
+
+  const bodies = [];
+  const walk = (entry) => {
+    if (!entry) return;
+    if (entry.virtual_body && Number.isInteger(entry.body_index)) {
+      bodies.push(entry);
+    }
+    for (const child of entry.children || []) walk(child);
+  };
+  for (const entry of projectTree.getComponents?.() || []) {
+    if (entry.virtual_body || entry.virtual_component) continue;
+    const names = [entry.name, entry.viewer_filename, entry.filename, entry.source_filename]
+      .filter(Boolean)
+      .map(String);
+    const match = names.some((n) => {
+      return n === target || componentStemName(n).toLowerCase() === targetKey;
+    });
+    if (match) walk(entry);
+  }
+
+  if (bodies.length) {
+    const visible = bodies
+      .filter((entry) => !isBrowserComponentHidden(entry))
+      .map((entry) => entry.body_index)
+      .filter((idx) => Number.isInteger(idx) && idx >= 0);
+    if (!visible.length) return [];
+    if (visible.length === bodies.length) return null;
+    return [...new Set(visible)].sort((a, b) => a - b);
+  }
+
+  // Fallback: viewport mesh visibility when body tree is not hydrated.
+  const root =
+    projectAssembly.get?.(target)
+    || projectAssembly.get?.(selectedFile)
+    || null;
+  if (!root || typeof listObjectMeshes !== "function") return null;
+  const meshes = listObjectMeshes(root) || [];
+  if (meshes.length <= 1) return null;
+  const visible = [];
+  meshes.forEach((mesh, idx) => {
+    if (mesh && mesh.visible !== false) visible.push(idx);
+  });
+  if (!visible.length) return [];
+  if (visible.length === meshes.length) return null;
+  return visible;
+}
+
 function exportStepFilenameFor(name) {
   const raw = String(name || "").split("#body:")[0].trim();
   if (!raw) return raw;
@@ -21381,8 +21432,9 @@ async function exportCurrentModel(anchorEl) {
     allowedFilenames: [target, stepName],
     anchorEl: anchor,
     title: `Export ${componentStemName(target) || target}`,
-    hint: "Downloads / Fusion push use a Part STEP (B-rep) of this model so Extrude/Cut works.",
+    hint: "Downloads / Fusion push use a Part STEP (B-rep) of this model so Extrude/Cut works. Hidden eye-off parts are skipped.",
     shareContext: currentVisibleShareContext,
+    getVisibleBodyIndices: () => collectVisibleBodyIndicesForExport(target),
   });
 }
 
@@ -24662,6 +24714,15 @@ async function deleteProjectFile(filename) {
 async function exportProject(p) {
   const pid = p?.id;
   if (!pid) return;
+  // Open project: Export must honor eye-visibility (unhidden objects/bodies only).
+  if (pid === projectId) {
+    const anchor = document.querySelector(`.proj-item[data-project-id="${pid}"] .proj-row-body`)
+      || document.querySelector(`.proj-item[data-project-id="${pid}"]`)
+      || document.getElementById("btn-export-model")
+      || document.body;
+    await exportCurrentModel(anchor);
+    return;
+  }
   let files = Array.isArray(p.files) ? p.files : [];
   let preferred = p.latest_file || files?.[0]?.name
     || (p.browser?.components || []).find((c) => c?.name)?.name

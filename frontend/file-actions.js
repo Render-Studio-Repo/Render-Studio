@@ -646,6 +646,7 @@ export async function openFileExportMenu({
   allowedFilenames = null,
   autoAction = null,
   shareContext = null,
+  getVisibleBodyIndices = null,
 }) {
   closeExportMenu();
 
@@ -999,9 +1000,37 @@ export async function openFileExportMenu({
           return;
         }
         const url = item.url || `/api/projects/${projectId}/files/${encodeURIComponent(item.name)}`;
-        const dlName = item.format === "3mf"
+        let dlName = item.format === "3mf"
           ? item.name.replace(/\.3mf$/i, ".3MF")
           : item.name;
+        if (item.format === "3mf") {
+          let visibleBodyIndices = null;
+          try {
+            if (typeof getVisibleBodyIndices === "function") {
+              visibleBodyIndices = getVisibleBodyIndices();
+            }
+          } catch {
+            visibleBodyIndices = null;
+          }
+          if (Array.isArray(visibleBodyIndices) && visibleBodyIndices.length === 0) {
+            throw new Error("No visible parts to export. Unhide at least one body with the eye icon.");
+          }
+          const refreshed = await ensureThreeMfExport({
+            projectId,
+            filename: shareFilename || filename,
+            exports: sorted,
+            forceRefresh: true,
+            visibleBodyIndices,
+          });
+          if (refreshed?.name) {
+            dlName = refreshed.name.replace(/\.3mf$/i, ".3MF");
+            await downloadFile(
+              `/api/projects/${projectId}/files/${encodeURIComponent(refreshed.name)}`,
+              dlName,
+            );
+            return;
+          }
+        }
         await downloadFile(url, dlName);
       } catch (err) {
         showExportError(menu, err, { title: "Download failed" });
@@ -1243,11 +1272,20 @@ export async function openFileExportMenu({
   });
 
   bambuBtn?.addEventListener("click", async () => {
+    let visibleBodyIndices = null;
+    try {
+      if (typeof getVisibleBodyIndices === "function") {
+        visibleBodyIndices = getVisibleBodyIndices();
+      }
+    } catch {
+      visibleBodyIndices = null;
+    }
     await sendToBambuStudio({
       btn: bambuBtn,
       projectId,
       filename: shareFilename,
       exports: sorted,
+      visibleBodyIndices,
     });
   });
 
@@ -1375,8 +1413,14 @@ async function shareThreeMfToApps(fileUrl, filename) {
   }
 }
 
-async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh = false }) {
-  let threeMf = !forceRefresh
+async function ensureThreeMfExport({
+  projectId,
+  filename,
+  exports,
+  forceRefresh = false,
+  visibleBodyIndices = null,
+}) {
+  let threeMf = !forceRefresh && visibleBodyIndices == null
     ? (
       (exports || []).find((item) => String(item.format || "").toLowerCase() === "3mf")
       || (exports || []).find((item) => /\.3mf$/i.test(item.name || ""))
@@ -1384,10 +1428,21 @@ async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh 
     : null;
 
   // Always regenerate when sending to Bambu so the 3MF is plate-seated (Z=0) and fresh.
+  // Pass eye-visible body indices so hidden parts are not plated.
   try {
+    const regenBody = visibleBodyIndices != null
+      ? { visible_body_indices: visibleBodyIndices }
+      : {};
     await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,
-      { method: "POST", headers: authHeaders() },
+      {
+        method: "POST",
+        headers: {
+          ...authHeaders(),
+          ...(visibleBodyIndices != null ? { "Content-Type": "application/json" } : {}),
+        },
+        body: visibleBodyIndices != null ? JSON.stringify(regenBody) : undefined,
+      },
     );
   } catch {
     /* non-fatal — re-list below */
@@ -1410,7 +1465,7 @@ async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh 
   return threeMf;
 }
 
-async function sendToBambuStudio({ btn, projectId, filename, exports }) {
+async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBodyIndices = null }) {
   if (!btn) return;
   const menu = btn.closest(".file-export-menu");
   const original = btn.innerHTML;
@@ -1422,11 +1477,15 @@ async function sendToBambuStudio({ btn, projectId, filename, exports }) {
     if (!getToken()) {
       throw new Error(`Not authenticated. Sign in to create the temporary 3MF share link ${target} needs.`);
     }
+    if (Array.isArray(visibleBodyIndices) && visibleBodyIndices.length === 0) {
+      throw new Error("No visible parts to send. Unhide at least one body with the eye icon, then try again.");
+    }
     const threeMf = await ensureThreeMfExport({
       projectId,
       filename,
       exports,
       forceRefresh: true,
+      visibleBodyIndices,
     });
     // Share the 3MF itself so Bambu can fetch a public absolute URL.
     const shareRes = await fetch(
