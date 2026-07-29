@@ -75,6 +75,7 @@ import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-pr
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-prep-popup";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-quest-ar-panels";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -86,7 +87,7 @@ import { createWorkspaceManagementUI } from "./workspace-management.js?v=2026072
 import { createRenderAgent } from "./render-agent.js?v=20260727-mobile-share-copy";
 import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-no-free-week-popup";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
-import { createRibbon } from "./ribbon.js?v=20260724-pick-boot";
+import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
@@ -3037,6 +3038,91 @@ transformControls.addEventListener("objectChange", () => {
 });
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
+
+const viewportXR = createViewportXR({
+  renderer,
+  scene,
+  camera,
+  controls,
+  transformControls,
+  getMeshRoot: () => currentMesh || projectAssembly?.getRoot?.() || null,
+  getMmPerUnit: () => currentMmPerModelUnit(),
+  formatLength,
+  fitCamera: () => {
+    try { fitCamera(); } catch (_) { /* defined later; safe at runtime */ }
+  },
+  buttonEl: document.getElementById("btn-xr-vr"),
+  hideSceneChrome: () => {
+    try {
+      if (gridHelper) gridHelper.visible = false;
+      if (gridAxesGroup) gridAxesGroup.visible = false;
+      if (gridDotsGroup) gridDotsGroup.visible = false;
+    } catch (_) {}
+  },
+  restoreSceneChrome: () => {
+    try {
+      if (gridHelper) gridHelper.visible = !!gridVisible;
+      if (gridAxesGroup) gridAxesGroup.visible = !!gridVisible;
+      if (gridDotsGroup) gridDotsGroup.visible = !!gridVisible;
+    } catch (_) {}
+  },
+  getExplorerItems: () => {
+    try {
+      const entries = projectAssembly?.list?.() || [];
+      return entries.map((entry) => {
+        const name = Array.isArray(entry) ? entry[0] : (entry?.name || entry);
+        return {
+          id: name,
+          label: String(name || ""),
+          name,
+          active: name === selectedFile,
+        };
+      }).filter((it) => it.id);
+    } catch (_) {
+      return [];
+    }
+  },
+  onExplorerSelect: (id) => {
+    try {
+      if (!id) return;
+      selectedFile = id;
+      const obj = projectAssembly?.get?.(id);
+      if (obj) {
+        objectTools?.selectObject?.(obj, { filename: id });
+      }
+      document.querySelector(`[data-file="${CSS.escape(id)}"]`)?.scrollIntoView?.({ block: "nearest" });
+    } catch (err) {
+      console.warn("[xr] explorer select failed", err);
+    }
+  },
+  getPromptDraft: () => {
+    try {
+      return document.getElementById("prompt-input")?.value || "";
+    } catch (_) {
+      return "";
+    }
+  },
+  onPromptSubmit: () => {
+    try {
+      document.getElementById("btn-prompt")?.click();
+    } catch (err) {
+      console.warn("[xr] prompt submit failed", err);
+    }
+  },
+  onPresentingChange: (on) => {
+    document.body.classList.toggle("xr-presenting", !!on);
+    document.getElementById("btn-xr-vr-ribbon")?.classList.toggle("active", !!on);
+    document.getElementById("btn-xr-vr-ribbon")?.setAttribute("aria-pressed", on ? "true" : "false");
+    const hint = document.getElementById("xr-hud-hint");
+    if (hint && on) hint.classList.add("hidden");
+  },
+});
+window.Render3DViewportXR = viewportXR;
+// Mirror ribbon VR button → same toggle
+document.getElementById("btn-xr-vr-ribbon")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  viewportXR.toggle().catch((err) => console.warn("[vr]", err));
+});
 
 let gridVisible = true;
 let gridVisibleBeforeArchitect = null;
@@ -13477,46 +13563,54 @@ let promptTargetSelectedBody = null;
 const promptTargetBodyCache = new Map();
 
 function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  architectSession?.frame?.();
-  if (promptTargetPreview?.active) {
-    promptTargetPreview.angle += 0.008;
-    const center = promptTargetPreview.center;
-    const dist = promptTargetPreview.radius;
-    camera.position.set(
-      center.x + Math.cos(promptTargetPreview.angle) * dist,
-      center.y + Math.sin(promptTargetPreview.angle) * dist,
-      center.z + dist * 0.42
-    );
-    controls.target.copy(center);
-    camera.lookAt(center);
-    controls._eye?.subVectors(camera.position, controls.target);
-  } else if (explodedOrbit && orbitShouldRun() && !explodedOrbit.paused) {
-    explodedOrbit.angle += 0.006;
-    const { center, radius, elev } = explodedOrbit;
-    const cosElev = Math.cos(elev);
-    camera.position.set(
-      center.x + Math.cos(explodedOrbit.angle) * radius * cosElev,
-      center.y + Math.sin(explodedOrbit.angle) * radius * cosElev,
-      center.z + Math.sin(elev) * radius
-    );
-    controls.target.copy(center);
-    camera.lookAt(center);
-    controls._eye?.subVectors(camera.position, controls.target);
+  const xrOn = Boolean(viewportXR?.isPresenting?.());
+  if (!xrOn) {
+    controls.update();
+  } else {
+    viewportXR.update();
   }
+  if (!xrOn) {
+    architectSession?.frame?.();
+    if (promptTargetPreview?.active) {
+      promptTargetPreview.angle += 0.008;
+      const center = promptTargetPreview.center;
+      const dist = promptTargetPreview.radius;
+      camera.position.set(
+        center.x + Math.cos(promptTargetPreview.angle) * dist,
+        center.y + Math.sin(promptTargetPreview.angle) * dist,
+        center.z + dist * 0.42
+      );
+      controls.target.copy(center);
+      camera.lookAt(center);
+      controls._eye?.subVectors(camera.position, controls.target);
+    } else if (explodedOrbit && orbitShouldRun() && !explodedOrbit.paused) {
+      explodedOrbit.angle += 0.006;
+      const { center, radius, elev } = explodedOrbit;
+      const cosElev = Math.cos(elev);
+      camera.position.set(
+        center.x + Math.cos(explodedOrbit.angle) * radius * cosElev,
+        center.y + Math.sin(explodedOrbit.angle) * radius * cosElev,
+        center.z + Math.sin(elev) * radius
+      );
+      controls.target.copy(center);
+      camera.lookAt(center);
+      controls._eye?.subVectors(camera.position, controls.target);
+    }
 
-  // Dynamically adjust clip planes so zooming in/out never slices the mesh.
-  // Near tracks the gap to the model (not a raw fraction of orbit distance), and
-  // far always covers the model + floor grid even when tightly framed.
-  updateCameraClipPlanes();
+    // Dynamically adjust clip planes so zooming in/out never slices the mesh.
+    // Near tracks the gap to the model (not a raw fraction of orbit distance), and
+    // far always covers the model + floor grid even when tightly framed.
+    updateCameraClipPlanes();
+  }
 
   const renderCam = sketchEditor.getRenderCamera?.() || camera;
   renderer.render(scene, renderCam);
-  viewCube.update();
-  collab?.renderLabels(renderCam);
+  if (!xrOn) {
+    viewCube.update();
+    collab?.renderLabels(renderCam);
+  }
 }
-animate();
+renderer.setAnimationLoop(animate);
 
 function updateCameraClipPlanes() {
   const orbitDist = camera.position.distanceTo(controls.target);
@@ -26017,6 +26111,7 @@ document.addEventListener("click", async (e) => {
     if (tool === "lasso") { closeMobilePanels(); activatePickMode("lasso"); }
     if (tool === "section") { closeMobilePanels(); document.getElementById("btn-section")?.click(); }
     if (tool === "measure") document.getElementById("btn-measure")?.click();
+    if (tool === "vr") document.getElementById("btn-xr-vr")?.click();
     if (tool === "rig") void setupRobotMotionWorkflow();
     if (tool === "ai") { showAiComposePanel(); openMobileRightPanel(workspaceModes?.isWiring?.() ? "wiring" : "prompt"); }
     return;

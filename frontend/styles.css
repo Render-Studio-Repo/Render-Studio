@@ -41686,3 +41686,75 @@ body.robotics-design-tab .robotics-mode-tab {
   font-size: 0.75rem;
   padding: 4px 9px;
 }
+
+/* ── WebXR / Meta Quest VR ─────────────────────────────────────────────── */
+.viewport-view-btn--vr {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(56, 189, 248, 0.22), transparent 52%),
+    rgba(13, 17, 23, 0.86);
+  letter-spacing: 0.08em;
+}
+.viewport-view-btn--vr .viewport-vr-icon {
+  flex: 0 0 auto;
+}
+.viewport-view-btn--vr:hover,
+.viewport-view-btn--vr.active {
+  border-color: rgba(125, 211, 252, 0.85);
+  color: #e0f2fe;
+  background: rgba(8, 47, 73, 0.45);
+}
+.viewport-view-btn--vr[hidden],
+.viewport-view-btn--vr.hidden {
+  display: none !important;
+}
+
+.xr-hud-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(8, 15, 28, 0.82);
+  color: #e2e8f0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  max-width: min(420px, calc(100% - 24px));
+  text-align: center;
+}
+.xr-hud-hint.hidden { display: none; }
+.xr-hud-hint strong {
+  color: #7dd3fc;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+body.xr-presenting .xr-hud-hint { display: none; }
+body.xr-presenting .view-cube,
+body.xr-presenting .viewport-view-bar,
+body.xr-presenting .mobile-tools-fab,
+body.xr-presenting .mobile-showcase-bar {
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.ribbon-view-btn#btn-xr-vr-ribbon {
+  color: #7dd3fc;
+}
+.ribbon-view-btn#btn-xr-vr-ribbon.active {
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(8, 47, 73, 0.35);
+}

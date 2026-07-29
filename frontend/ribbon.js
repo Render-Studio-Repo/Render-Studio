@@ -1352,6 +1352,7 @@ function _buildRibbonDOM() {
   const viewBtns = [
     { id: "btn-gizmo",     label: "Gizmo",   title: "Move/rotate part in viewer (G / T / M)",             svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M10 2l1.5 3h-3L10 2zm0 16l-1.5-3h3L10 18zM2 10l3-1.5v3L2 10zm16 0l-3 1.5v-3L18 10zm-8-3a3 3 0 100 6 3 3 0 000-6z"/></svg>` },
     { id: "btn-measure",   label: "Measure", title: "Measure faces, edges, and distances (I)",           svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17L17 3"/><path d="M5 17h4M11 11h4M3 15v2M17 3v2"/></svg>` },
+    { id: "btn-xr-vr-ribbon", label: "AR", title: "AR on Meta Quest 3 — model in your room, measure, spatial panels", svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 7.5h15v5.2a2 2 0 0 1-2 2h-2.4a1.6 1.6 0 0 1-1.4-.8l-.7-1.1a1 1 0 0 0-1.7 0l-.7 1.1a1.6 1.6 0 0 1-1.4.8H4.5a2 2 0 0 1-2-2V7.5z"/><circle cx="6.8" cy="10.6" r="1.2"/><circle cx="13.2" cy="10.6" r="1.2"/></svg>`, pressed: false },
     { id: "btn-fit",       label: "Fit",     title: "Fit all in view (F)",                               svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M3 3h5v2H5v3H3V3zm9 0h5v5h-2V5h-3V3zM3 12h2v3h3v2H3v-5zm12 3h-3v2h5v-5h-2v3z"/></svg>` },
     { id: "btn-wireframe", label: "Wire",    title: "Toggle wireframe (W)",                              svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6" width="14" height="10" rx="1"/><path d="M3 6l4-3h6l4 3"/><path d="M17 6l-4 3H7L3 6"/><path d="M7 9v7m6-7v7"/></svg>` },
     { id: "btn-section",   label: "Section", title: "Section view — cut model to see inside (Shift+X)",  svg: `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="1.5"/><path d="M3 10h14" stroke-dasharray="3 2"/><path d="M10 3v7" stroke-dasharray="3 2"/></svg>`, pressed: false },
@@ -1367,6 +1368,10 @@ function _buildRibbonDOM() {
     btn.title = def.title;
     if (def.pressed !== undefined) btn.setAttribute("aria-pressed", String(def.pressed));
     btn.innerHTML = def.svg + `<span class="ribbon-view-label">${def.label}</span>`;
+    if (def.id === "btn-xr-vr-ribbon") {
+      btn.hidden = true;
+      btn.style.display = "none";
+    }
     viewControls.appendChild(btn);
   }
 
