@@ -18750,22 +18750,40 @@ Rules for improved_prompt:
 
 IMPROVE_MESH_PROMPT_SYSTEM = """You rewrite user prompts into stronger Mesh-mode prompts for Render Studio (img2threejs).
 
-Mesh mode rebuilds an object as a CODE-ONLY procedural Three.js model (primitives + materials + hierarchy), then exports GLB. It is NOT photogrammetry and NOT parametric CAD/STEP.
+Follow the img2threejs GitHub look-dev rules used for rendering there
+(grimoire/feedback/shading_realism.md + grimoire/build/threejs_texture_reference.md):
+Mesh mode rebuilds the object as a CODE-ONLY procedural Three.js model
+(primitives + MeshPhysicalMaterial/MeshStandardMaterial + hierarchy), then exports GLB.
+Your rewrite must make EVERYTHING look REALISTIC in the viewport — the same bar as img2threejs
+material-pass look-dev — not flat toy colors, and NOT CAD/STEP/Mode 2.0.
 
 Return JSON only:
 {"improved_prompt":"..."}
 
 Rules for improved_prompt:
-- Start with the short object name (2–5 words), then a colon, then reconstruction details.
-  Example: "Desk lamp: cylindrical base, tapered stem, conical shade; matte black metal stem, warm cream shade interior."
-- Describe silhouette, major part breakdown (named parts), proportions, and PBR materials (color, metalness, roughness).
-- Prefer hard-surface primitives and clear hierarchy over organic micro-detail.
-- If a reference image is implied, call out silhouette match, colors, and which parts should be separate meshes.
-- Avoid CAD jargon (extrude, loft, pocket, STEP, B-rep, feature tree).
-- For edits, say what to change on the existing procedural mesh and what to keep.
+- Start with the short object name (2–5 words), then a colon, then mesh + realistic material details.
+  Example: "Desk lamp: cylindrical base, tapered stem, conical shade; brushed black metal stem (metalness 0.85, roughness 0.32, anisotropy streaks, slight edge wear), warm cream fabric shade (roughness 0.82, soft weave bump), soft plastic switch (roughness 0.55, fingerprint mottling)."
+- Make EVERY surface read as realistic (img2threejs material-pass bar):
+  * Independent PBR channels — albedo/color, roughness, metalness, and when useful normal/bump/AO
+    (never reuse color as roughness or as a height/normal map).
+  * Name each distinct finish as its own mesh part (metal / plastic / glass / rubber / painted / fabric / wood).
+  * Give numeric material cues: metalness, roughness, clearcoat, clearcoatRoughness, transmission/opacity, ior, emissive.
+  * Add locality: edge wear, dirt in cavities, scratches, fingerprints, faded zones, mottling — not one flat color per part.
+  * Call out tactile response (micro bumps, brushed grain, fabric weave, casting texture, scale hierarchy).
+- Prefer hard-surface primitives + clear hierarchy; silhouette and proportions must match the subject.
+- If a reference image is implied: match silhouette, sample real colors from the photo, separate materials per part,
+  and prefer reference-derived PBR evidence over invented flat colors.
+- Finish recipes from threejs_texture_reference (use when they fit):
+  * painted-metal: metalness ~0, mid roughness, clearcoat 1
+  * brushed-steel: metalness 1, roughness ~0.35, anisotropy
+  * worn-composite / rubber: metalness 0, roughness ~0.9, mottled albedo + bump
+  * gemstone/glass: transmission + clearcoat; gem-metal / candy/anodized: moderate metalness + clearcoat (no transmission)
+- FORBIDDEN: CAD/STEP wording (extrude, loft, pocket, pad, B-rep, feature tree, wall thickness, CNC, FDM);
+  photoreal camera/HDRI scene briefs (that is Render mode).
+- For edits: which mesh parts or materials to change, what to keep.
 - Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
 - Do not mention that you are an AI or that you rewrote the prompt.
-- Keep under 1200 characters when possible; hard max 4000.
+- Keep under 1400 characters when possible; hard max 4000.
 """
 
 
@@ -18798,8 +18816,9 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
         "mesh": (
-            "Mesh mode (img2threejs): procedural Three.js rebuild with primitives, materials, and named hierarchy. "
-            "Prefer silhouette, part breakdown, and PBR materials — not CAD feature trees."
+            "Mesh mode (img2threejs GitHub look-dev): rewrite so EVERY surface looks realistic in the viewport — "
+            "named mesh parts, independent PBR (albedo/roughness/metalness/clearcoat), wear/dirt locality, "
+            "and tactile detail. Do NOT convert into Mode 2.0 CAD / STEP instructions or a photoreal camera brief."
         ),
         "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
@@ -18825,8 +18844,9 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     else:
         system_prompt = IMPROVE_CAD_PROMPT_SYSTEM
     plain_retry = (
-        "Rewrite this into a stronger Mesh-mode prompt for procedural Three.js reconstruction. "
-        "Return only the improved prompt text."
+        "Rewrite this into a stronger Mesh-mode prompt for realistic Three.js materials "
+        "(named parts, independent PBR, wear/locality — img2threejs shading_realism). "
+        "Forbidden: CAD/STEP wording and photoreal camera briefs. Return only the improved prompt text."
         if use_mesh_improve
         else (
             "Rewrite this into a stronger Render-mode prompt focused on how the object should look when rendered. "
@@ -18837,7 +18857,13 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     )
     user_content = (
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
-        f"User prompt to improve:\n{original}"
+        + (
+            "IMPORTANT: Follow img2threejs realistic material look-dev. Make every surface believable "
+            "(independent roughness/metalness, local wear, no flat toy colors). Not CAD.\n\n"
+            if use_mesh_improve
+            else ""
+        )
+        + f"User prompt to improve:\n{original}"
     )
     # Prefer fast, non-reasoning improve; the generated model still honors the
     # user's selected quality/speed when /api/projects/{id}/prompt starts.

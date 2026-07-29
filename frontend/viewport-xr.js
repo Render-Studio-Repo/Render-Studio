@@ -1,12 +1,10 @@
 /**
- * Quest AR/VR — reliable CAD viewing
+ * Quest AR/VR — Meta-style controllers + left-hand tool palette
  *
- * - Transparent passthrough (alpha canvas)
- * - Always place model in front of your headset (full gaze direction)
- * - Do NOT reparent the assembly (avoids disappearing CAD)
- * - Left-controller tool dock follows the grip every frame
- * - Gamepad trigger polling (Quest buttons) + select events
- * - Saves last room pose; restores when you re-enter AR
+ * - Official XR controller models (Quest Touch)
+ * - Tool dock parented to LEFT controller (not head-locked)
+ * - Explorer opens a world-space panel you can grab and move
+ * - AR passthrough kept clear (no black sky when looking around)
  */
 
 import * as THREE from "three";
@@ -26,8 +24,8 @@ const SPAWN_PRESETS = [
 const DOCK_TOOLS = [
   { id: "grab", label: "Move", color: 0x3b82f6, glyph: "Mv" },
   { id: "rotate", label: "Rotate", color: 0xf97316, glyph: "Ro" },
+  { id: "explorer", label: "Explorer", color: 0x64748b, glyph: "Ex" },
   { id: "front", label: "Front", color: 0xa78bfa, glyph: "Fr" },
-  { id: "restore", label: "Saved", color: 0x22c55e, glyph: "Sv" },
   { id: "zoom_in", label: "Zoom+", color: 0x14b8a6, glyph: "+" },
   { id: "zoom_out", label: "Zoom-", color: 0x0ea5e9, glyph: "-" },
   { id: "place", label: "Place", color: 0xc084fc, glyph: "Pl" },
@@ -114,6 +112,8 @@ export function createViewportXR(opts) {
     hideSceneChrome = null,
     restoreSceneChrome = null,
     getPoseStorageKey = null,
+    getExplorerItems = null,
+    onExplorerSelect = null,
   } = opts;
 
   let supported = false;
@@ -148,11 +148,8 @@ export function createViewportXR(opts) {
   faceProbe.name = "xrFaceProbe";
   faceProbe.renderOrder = 5000;
   faceProbe.frustumCulled = false;
+  faceProbe.visible = false;
   xrHud.add(faceProbe);
-  // Axis helper next to probe
-  const probeAxes = new THREE.AxesHelper(0.18);
-  probeAxes.frustumCulled = false;
-  faceProbe.add(probeAxes);
 
   const controllers = [];
   const grips = [];
@@ -185,18 +182,18 @@ export function createViewportXR(opts) {
   let measureLine = null;
   let measureLabel = null;
 
-  // Head-locked tool dock — huge solid discs (canvas overlays optional)
+  // Left-controller tool dock (Meta-style palette on the grip)
   const dock = new THREE.Group();
   dock.name = "xrToolDock";
   dock.visible = false;
   dock.frustumCulled = false;
   dock.renderOrder = 10000;
   const dockButtons = [];
-  const BTN_R = 0.065;
-  const BTN_GAP = 0.14;
+  const BTN_R = 0.018;
+  const BTN_GAP = 0.042;
   DOCK_TOOLS.forEach((tool, i) => {
     const btn = new THREE.Mesh(
-      new THREE.CircleGeometry(BTN_R, 48),
+      new THREE.CircleGeometry(BTN_R, 32),
       new THREE.MeshBasicMaterial({
         color: tool.color,
         side: THREE.DoubleSide,
@@ -211,7 +208,7 @@ export function createViewportXR(opts) {
     dock.add(btn);
     dockButtons.push(btn);
     const label = new THREE.Mesh(
-      new THREE.CircleGeometry(BTN_R * 0.92, 48),
+      new THREE.CircleGeometry(BTN_R * 0.9, 32),
       new THREE.MeshBasicMaterial({
         map: makeIconTexture(tool.glyph, tool.color, tool.label),
         transparent: true,
@@ -221,14 +218,14 @@ export function createViewportXR(opts) {
       }),
     );
     label.position.copy(btn.position);
-    label.position.z = 0.002;
+    label.position.z = 0.0015;
     label.renderOrder = 10052;
     label.frustumCulled = false;
     label.raycast = () => {};
     dock.add(label);
     btn.userData.labelMesh = label;
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(BTN_R + 0.004, BTN_R + 0.014, 48),
+      new THREE.RingGeometry(BTN_R + 0.0015, BTN_R + 0.004, 32),
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -238,27 +235,31 @@ export function createViewportXR(opts) {
       }),
     );
     ring.position.copy(btn.position);
-    ring.position.z = 0.003;
+    ring.position.z = 0.002;
     ring.renderOrder = 10053;
     ring.frustumCulled = false;
     dock.add(ring);
     btn.userData.ring = ring;
   });
   const plate = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.22, DOCK_TOOLS.length * BTN_GAP + 0.1),
+    new THREE.PlaneGeometry(0.07, DOCK_TOOLS.length * BTN_GAP + 0.03),
     new THREE.MeshBasicMaterial({
-      color: 0x020617,
+      color: 0x0f172a,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.88,
       depthTest: false,
       side: THREE.DoubleSide,
     }),
   );
-  plate.position.z = -0.015;
+  plate.position.z = -0.006;
   plate.renderOrder = 10040;
   plate.frustumCulled = false;
   dock.add(plate);
+  // Stay unparented until a left grip connects
   xrHud.add(dock);
+
+  let explorerPanel = null;
+  let sessionIsPassthrough = false;
 
   const controllerModelFactory = new XRControllerModelFactory();
   const handModelFactory = new XRHandModelFactory();
@@ -659,6 +660,10 @@ export function createViewportXR(opts) {
       openPlacePanel();
       return;
     }
+    if (id === "explorer") {
+      openExplorerPanel();
+      return;
+    }
     if (id === "exit") {
       exit();
       return;
@@ -706,6 +711,67 @@ export function createViewportXR(opts) {
     placePanel.group.quaternion.copy(_headQuat);
   }
 
+  function openExplorerPanel() {
+    const items = (() => {
+      try {
+        return (typeof getExplorerItems === "function" && getExplorerItems()) || [];
+      } catch {
+        return [];
+      }
+    })();
+    if (!explorerPanel) {
+      const canvas = drawPanelCanvas("Explorer", [], "Trigger a file · grab title to move");
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.48, 0.42),
+        new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        }),
+      );
+      plane.renderOrder = 2200;
+      plane.frustumCulled = false;
+      plane.userData.xrExplorerPanel = true;
+      // Invisible title-bar hit target (top ~18%)
+      const titleBar = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.48, 0.08),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.001,
+          depthTest: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      titleBar.position.y = 0.17;
+      titleBar.position.z = 0.002;
+      titleBar.renderOrder = 2201;
+      titleBar.frustumCulled = false;
+      titleBar.userData.xrExplorerDrag = true;
+      explorerPanel = { group: new THREE.Group(), plane, titleBar, tex, lines: [] };
+      explorerPanel.group.add(plane);
+      explorerPanel.group.add(titleBar);
+      xrHud.add(explorerPanel.group);
+    }
+    const lines = (items.length ? items : [{ id: "", label: "(no parts loaded)", active: false }]).map((it) => ({
+      id: it.id || it.name || "",
+      label: `${it.active ? "● " : "○ "}${it.label || it.name || it.id || "part"}`,
+      active: !!it.active,
+    }));
+    explorerPanel.lines = lines;
+    const canvas = drawPanelCanvas("Explorer", lines, "Trigger row · grab blue title to move");
+    explorerPanel.tex.image = canvas;
+    explorerPanel.tex.needsUpdate = true;
+    explorerPanel.group.visible = true;
+    getHeadPose();
+    const f = headForward();
+    explorerPanel.group.position.copy(_headPos).addScaledVector(f, 0.9).add(new THREE.Vector3(-0.15, 0.05, 0));
+    explorerPanel.group.quaternion.copy(_headQuat);
+  }
+
   function clearMeasure() {
     measurePoints.length = 0;
     while (measureGroup.children.length) {
@@ -726,6 +792,22 @@ export function createViewportXR(opts) {
     // Dock
     const dockHits = raycaster.intersectObjects(dockButtons, false);
     if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
+
+    // Explorer panel (title = drag, rows = select)
+    if (explorerPanel?.group.visible) {
+      const titleHits = raycaster.intersectObject(explorerPanel.titleBar, false);
+      if (titleHits.length) return { kind: "explorer-drag" };
+      const ph = raycaster.intersectObject(explorerPanel.plane, false);
+      if (ph.length) {
+        const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
+        // Plane is 0.42 tall, title ~top; rows below
+        const v = 1 - (local.y + 0.21) / 0.42;
+        if (v < 0.18) return { kind: "explorer-drag" };
+        const idx = Math.floor(((v - 0.18) / 0.72) * explorerPanel.lines.length);
+        const line = explorerPanel.lines[Math.max(0, Math.min(explorerPanel.lines.length - 1, idx))];
+        return { kind: "explorer", line };
+      }
+    }
 
     // Place panel
     if (placePanel?.group.visible) {
@@ -758,6 +840,22 @@ export function createViewportXR(opts) {
     }
     if (hit.kind === "tool") {
       setTool(hit.tool);
+      return;
+    }
+    if (hit.kind === "explorer-drag") {
+      beginPanelDrag(controller, explorerPanel.group);
+      return;
+    }
+    if (hit.kind === "explorer") {
+      const id = hit.line?.id;
+      if (id) {
+        try {
+          onExplorerSelect?.(id);
+        } catch (err) {
+          console.warn("[viewport-xr] explorer select", err);
+        }
+        openExplorerPanel();
+      }
       return;
     }
     if (hit.kind === "place") {
@@ -834,6 +932,31 @@ export function createViewportXR(opts) {
       grabState = null;
       saveRoomPose();
     }
+    if (panelDrag?.controller === controller) {
+      panelDrag = null;
+    }
+  }
+
+  function beginPanelDrag(controller, group) {
+    if (!group) return;
+    group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
+    const local = new THREE.Matrix4().multiplyMatrices(inv, group.matrixWorld);
+    const op = new THREE.Vector3();
+    const oq = new THREE.Quaternion();
+    const os = new THREE.Vector3();
+    local.decompose(op, oq, os);
+    panelDrag = { controller, group, offsetPos: op, offsetQuat: oq };
+  }
+
+  function updatePanelDrag() {
+    if (!panelDrag?.group) return;
+    const { controller, group, offsetPos, offsetQuat } = panelDrag;
+    controller.updateMatrixWorld(true);
+    const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, new THREE.Vector3(1, 1, 1));
+    const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
+    world.decompose(group.position, group.quaternion, _s);
+    group.scale.set(1, 1, 1);
   }
 
   function setupControllers() {
@@ -841,93 +964,71 @@ export function createViewportXR(opts) {
       const controller = renderer.xr.getController(i);
       controller.addEventListener("selectstart", (e) => handleSelect(e.target));
       controller.addEventListener("selectend", (e) => endGrab(e.target));
-      controller.addEventListener("connected", () => {
+      controller.addEventListener("connected", (e) => {
+        controller.userData.handedness = e.data?.handedness || "";
         controller.visible = presenting;
       });
+      controller.addEventListener("disconnected", () => {
+        controller.visible = false;
+      });
 
+      // Thin laser pointer only — no colored blobs (official grip model is the controller)
       const ray = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0, 0, -1.8),
+          new THREE.Vector3(0, 0, -1.5),
         ]),
-        new THREE.LineBasicMaterial({ color: 0x7dd3fc, depthTest: false, transparent: true, opacity: 1 }),
+        new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.65,
+          depthTest: false,
+        }),
       );
+      ray.name = "xrRay";
       ray.renderOrder = 3000;
       ray.frustumCulled = false;
       controller.add(ray);
-      const originBall = new THREE.Mesh(
-        new THREE.SphereGeometry(0.03, 14, 12),
-        new THREE.MeshBasicMaterial({
-          color: i === 0 ? 0x38bdf8 : 0xf472b6,
-          depthTest: false,
-          depthWrite: false,
-        }),
-      );
-      originBall.renderOrder = 3999;
-      originBall.frustumCulled = false;
-      controller.add(originBall);
       const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.02, 12, 10),
+        new THREE.SphereGeometry(0.006, 10, 8),
         new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
       );
-      tip.position.z = -1.8;
+      tip.position.z = -1.5;
       tip.renderOrder = 3001;
+      tip.frustumCulled = false;
       controller.add(tip);
       controller.visible = false;
       scene.add(controller);
       controllers.push(controller);
 
       const grip = renderer.xr.getControllerGrip(i);
-      grip.add(controllerModelFactory.createControllerModel(grip));
-      // Always-visible controller body (BasicMaterial + no depth test — survives CAD clip quirks)
-      const body = new THREE.Mesh(
-        new THREE.BoxGeometry(0.06, 0.03, 0.14),
-        new THREE.MeshBasicMaterial({
-          color: i === 0 ? 0x38bdf8 : 0xf472b6,
-          depthTest: false,
-          depthWrite: false,
-        }),
-      );
-      body.position.z = 0.02;
-      body.renderOrder = 4000;
-      body.frustumCulled = false;
-      grip.add(body);
-      const knob = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 16, 12),
-        new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          depthTest: false,
-          depthWrite: false,
-        }),
-      );
-      knob.position.set(0, 0.02, 0.02);
-      knob.renderOrder = 4001;
-      knob.frustumCulled = false;
-      grip.add(knob);
-      grip.addEventListener("connected", () => {
+      // Official Quest / Oculus controller mesh from WebXR input profiles
+      const model = controllerModelFactory.createControllerModel(grip);
+      model.frustumCulled = false;
+      grip.add(model);
+      grip.addEventListener("connected", (e) => {
+        grip.userData.handedness = e.data?.handedness || "";
         grip.visible = presenting;
+        // Prefer attaching the tool dock as soon as left grip appears
+        if (presenting && grip.userData.handedness === "left") attachDockToLeftGrip();
+      });
+      grip.addEventListener("disconnected", () => {
+        grip.visible = false;
       });
       grip.visible = false;
       scene.add(grip);
       grips.push(grip);
 
       const hand = renderer.xr.getHand(i);
-      hand.add(handModelFactory.createHandModel(hand, "spheres"));
-      const palm = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 14, 12),
-        new THREE.MeshBasicMaterial({
-          color: i === 0 ? 0x38bdf8 : 0xf472b6,
-          depthTest: false,
-          transparent: true,
-          opacity: 0.95,
-        }),
-      );
-      palm.renderOrder = 3002;
-      hand.add(palm);
+      hand.add(handModelFactory.createHandModel(hand, "mesh"));
       hand.addEventListener("selectstart", (e) => handleSelect(e.target));
       hand.addEventListener("selectend", (e) => endGrab(e.target));
-      hand.addEventListener("connected", () => {
+      hand.addEventListener("connected", (e) => {
+        hand.userData.handedness = e.data?.handedness || "";
         hand.visible = presenting;
+      });
+      hand.addEventListener("disconnected", () => {
+        hand.visible = false;
       });
       hand.visible = false;
       scene.add(hand);
@@ -935,18 +1036,33 @@ export function createViewportXR(opts) {
     }
   }
 
-  function attachHudToCamera() {
-    // Keep dock/probe in scene HUD — world billboard every frame (Quest-safe)
-    if (dock.parent !== xrHud) {
+  function getLeftGrip() {
+    for (const g of grips) {
+      if (g.userData.handedness === "left") return g;
+    }
+    // Fallback: Quest often reports left as index 0 before handedness arrives
+    return grips[0] || null;
+  }
+
+  function attachDockToLeftGrip() {
+    const left = getLeftGrip();
+    if (!left) return false;
+    if (dock.parent !== left) {
       if (dock.parent) dock.parent.remove(dock);
-      xrHud.add(dock);
+      left.add(dock);
     }
-    if (faceProbe.parent !== xrHud) {
-      if (faceProbe.parent) faceProbe.parent.remove(faceProbe);
-      xrHud.add(faceProbe);
-    }
+    // Meta-style: palette floats just above the left controller, facing inward/up
+    dock.position.set(0.0, 0.055, 0.02);
+    dock.rotation.set(-0.95, 0.0, 0.0);
+    dock.scale.setScalar(1);
     dock.visible = true;
-    faceProbe.visible = true;
+    return true;
+  }
+
+  function attachHudToCamera() {
+    // Tools live on the left controller — not head-locked
+    attachDockToLeftGrip();
+    faceProbe.visible = false;
   }
 
   function detachHudFromCamera() {
@@ -954,48 +1070,21 @@ export function createViewportXR(opts) {
       dock.parent.remove(dock);
       xrHud.add(dock);
     }
-    if (faceProbe.parent && faceProbe.parent !== xrHud) {
-      faceProbe.parent.remove(faceProbe);
-      xrHud.add(faceProbe);
-    }
     dock.visible = false;
     faceProbe.visible = false;
   }
 
   function updateDockFollow() {
-    attachHudToCamera();
-    getHeadPose();
-    const f = headForward();
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat).normalize();
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_headQuat).normalize();
-
-    // Large strip on the LEFT of your view, ~0.55m ahead
-    dock.position
-      .copy(_headPos)
-      .addScaledVector(f, 0.42)
-      .addScaledVector(right, -0.22)
-      .addScaledVector(up, 0.02);
-    dock.quaternion.copy(_headQuat);
-    dock.visible = true;
-    dock.scale.setScalar(1.35);
-
-    // Cyan cube ahead-right — if missing, XR is not drawing meshes
-    faceProbe.position
-      .copy(_headPos)
-      .addScaledVector(f, 0.75)
-      .addScaledVector(right, 0.18)
-      .addScaledVector(up, -0.12);
-    faceProbe.quaternion.copy(_headQuat);
-    faceProbe.scale.setScalar(0.5);
-    faceProbe.visible = true;
-
-    const pointer = controllers[1] || controllers[0];
+    attachDockToLeftGrip();
+    const pointer = controllers.find((c) => c.userData.handedness === "right")
+      || controllers[1]
+      || controllers[0];
     if (!pointer) return;
     const hit = pickWithController(pointer);
     dockButtons.forEach((btn) => {
       const hover = hit?.kind === "tool" && hit.tool === btn.userData.xrTool;
       const on = btn.userData.xrTool === activeTool;
-      btn.scale.setScalar(hover ? 1.2 : on ? 1.12 : 1);
+      btn.scale.setScalar(hover ? 1.25 : on ? 1.12 : 1);
       if (btn.userData.ring) btn.userData.ring.material.opacity = hover || on ? 1 : 0;
     });
   }
@@ -1104,6 +1193,7 @@ export function createViewportXR(opts) {
 
     const blend = session.environmentBlendMode || "";
     const passthrough = mode === "immersive-ar" || blend === "alpha-blend" || blend === "additive";
+    sessionIsPassthrough = !!passthrough;
     if (!passthrough) {
       scene.background = new THREE.Color(0x334155);
       renderer.setClearColor(0x334155, 1);
@@ -1124,11 +1214,11 @@ export function createViewportXR(opts) {
     // camera.near into XR session depthNear — that clips controllers + handheld models.
     savedNear = camera.near;
     savedFar = camera.far;
-    camera.near = 0.05;
-    camera.far = 100;
+    camera.near = 0.02;
+    camera.far = 200;
     camera.updateProjectionMatrix();
     try {
-      session.updateRenderState({ depthNear: 0.05, depthFar: 100 });
+      session.updateRenderState({ depthNear: 0.02, depthFar: 200 });
     } catch {
       /* ignore */
     }
@@ -1136,7 +1226,7 @@ export function createViewportXR(opts) {
     presenting = true;
     xrHud.visible = true;
     attachHudToCamera();
-    faceProbe.visible = true;
+    faceProbe.visible = false;
     controllers.forEach((c) => {
       c.visible = true;
     });
@@ -1177,6 +1267,9 @@ export function createViewportXR(opts) {
     xrHud.visible = false;
     dock.visible = false;
     if (placePanel) placePanel.group.visible = false;
+    if (explorerPanel) explorerPanel.group.visible = false;
+    panelDrag = null;
+    sessionIsPassthrough = false;
     controllers.forEach((c) => {
       c.visible = false;
     });
@@ -1237,15 +1330,19 @@ export function createViewportXR(opts) {
   function update() {
     if (!presenting) return;
     // Keep XR depth range room-scale every frame (desktop fitCamera can fight us)
-    if (camera.near > 0.08 || camera.far < 20) {
-      camera.near = 0.05;
-      camera.far = 100;
+    if (camera.near > 0.08 || camera.far < 50) {
+      camera.near = 0.02;
+      camera.far = 200;
       camera.updateProjectionMatrix();
     }
-    // Force overlays visible every frame (Quest can flip them off)
+    // Keep AR passthrough clear — prevents black voids when looking around
+    if (sessionIsPassthrough) {
+      scene.background = null;
+      scene.fog = null;
+      renderer.setClearColor(0x000000, 0);
+      renderer.setClearAlpha(0);
+    }
     xrHud.visible = true;
-    dock.visible = true;
-    faceProbe.visible = true;
     controllers.forEach((c) => {
       c.visible = true;
     });
@@ -1253,6 +1350,7 @@ export function createViewportXR(opts) {
       g.visible = true;
     });
     updateGrab();
+    updatePanelDrag();
     updateDockFollow();
     pollGamepads();
     if (beacon?.visible && beacon.userData.born && performance.now() - beacon.userData.born > 5000) {

@@ -1,8 +1,9 @@
-## 2026-07-29 — Mesh Improve targets materials, not CAD
+## 2026-07-29 — Mesh Improve → img2threejs realistic look-dev
 
-- Mesh-mode **Improve** tip/copy now says mesh + PBR materials (not CAD/STEP).
-- Strengthened `IMPROVE_MESH_PROMPT_SYSTEM` + user hint so rewrites stay on rendered mesh parts/materials.
-- Cache-bust `?v=20260729-mesh-improve`.
+- Mesh **Improve** follows GitHub img2threejs rendering rules (`shading_realism` + `threejs_texture_reference`):
+  independent PBR, finish recipes, wear/locality, named mesh parts — not CAD or flat toy colors.
+- Tip/status copy: “Improve for realistic mesh materials”; tip mentions Mesh / Render / 2.0.
+- Cache-bust `?v=20260729-mesh-real`; restarted `render3d.service`.
 
 ---
 
