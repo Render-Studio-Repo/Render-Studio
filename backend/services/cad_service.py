@@ -33,14 +33,30 @@ THREEMF_PRODUCTION_NS = "http://schemas.microsoft.com/3dmanufacturing/production
 THREEMF_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 THREEMF_CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 THREEMF_MODEL_REL_TYPE = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"
+THREEMF_BAMBU_NS = "http://schemas.bambulab.com/package/2021"
 THREEMF_IDENTITY_TRANSFORM = "1 0 0 0 1 0 0 0 1 0 0 0"
+# Bambu Studio plate grid (X1/P1 default bed) — matches PartPlate LOGICAL_PART_PLATE_GAP=1/5
+THREEMF_BAMBU_BED_W = 256.0
+THREEMF_BAMBU_BED_D = 256.0
+THREEMF_BAMBU_PLATE_GAP = 1.0 / 5.0
+THREEMF_BAMBU_MAX_PLATES = 36
 ET.register_namespace("", THREEMF_CORE_NS)
 ET.register_namespace("p", THREEMF_PRODUCTION_NS)
+ET.register_namespace("BambuStudio", THREEMF_BAMBU_NS)
 
 _3MF_CONTENT_TYPES_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>
+"""
+
+_3MF_BAMBU_CONTENT_TYPES_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="config" ContentType="application/octet-stream"/>
 </Types>
 """
 
@@ -3241,6 +3257,59 @@ def _seat_meshes_on_build_plate(items: list[tuple[str, trimesh.Trimesh]]) -> lis
     return seated
 
 
+def _seat_mesh_on_bambu_plate(
+    mesh: trimesh.Trimesh,
+    *,
+    bed_w: float = THREEMF_BAMBU_BED_W,
+    bed_d: float = THREEMF_BAMBU_BED_D,
+) -> trimesh.Trimesh:
+    """Seat one body on a single plate: Z=0, XY centered on the bed."""
+    copy = mesh.copy()
+    bounds = np.asarray(copy.bounds, dtype=float)
+    lo, hi = bounds[0], bounds[1]
+    shift = np.array(
+        [
+            0.5 * bed_w - 0.5 * (lo[0] + hi[0]),
+            0.5 * bed_d - 0.5 * (lo[1] + hi[1]),
+            -float(lo[2]),
+        ],
+        dtype=float,
+    )
+    copy.apply_translation(shift)
+    return copy
+
+
+def _bambu_plate_cols(count: int) -> int:
+    value = math.sqrt(max(int(count), 1))
+    round_value = round(value)
+    if value > round_value:
+        return int(round_value) + 1
+    return max(int(round_value), 1)
+
+
+def _bambu_plate_origin(index: int, count: int) -> tuple[float, float]:
+    cols = _bambu_plate_cols(count)
+    row, col = divmod(int(index), cols)
+    stride_x = THREEMF_BAMBU_BED_W * (1.0 + THREEMF_BAMBU_PLATE_GAP)
+    stride_y = THREEMF_BAMBU_BED_D * (1.0 + THREEMF_BAMBU_PLATE_GAP)
+    return col * stride_x, -row * stride_y
+
+
+def _transform_12_from_matrix(matrix: np.ndarray) -> str:
+    m = np.asarray(matrix, dtype=float)
+    vals = [
+        m[0, 0], m[0, 1], m[0, 2],
+        m[1, 0], m[1, 1], m[1, 2],
+        m[2, 0], m[2, 1], m[2, 2],
+        m[0, 3], m[1, 3], m[2, 3],
+    ]
+    return " ".join(_fmt_float(float(v)) for v in vals)
+
+
+def _translation_transform(tx: float, ty: float, tz: float = 0.0) -> str:
+    return f"1 0 0 0 1 0 0 0 1 {_fmt_float(tx)} {_fmt_float(ty)} {_fmt_float(tz)}"
+
+
 def _meshes_from_scene(
     scene: trimesh.Scene,
     *,
@@ -3277,22 +3346,7 @@ def _meshes_from_scene(
     return items
 
 
-def _append_3mf_mesh_object(
-    resources: ET.Element,
-    build: ET.Element,
-    *,
-    object_id: int,
-    name: str,
-    mesh: trimesh.Trimesh,
-) -> None:
-    obj_attrs = {
-        "id": str(object_id),
-        "type": "model",
-        "name": name,
-        f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
-    }
-    obj = ET.SubElement(resources, f"{{{THREEMF_CORE_NS}}}object", obj_attrs)
-    mesh_el = ET.SubElement(obj, f"{{{THREEMF_CORE_NS}}}mesh")
+def _append_3mf_mesh_geometry(mesh_el: ET.Element, mesh: trimesh.Trimesh) -> None:
     verts_el = ET.SubElement(mesh_el, f"{{{THREEMF_CORE_NS}}}vertices")
     for vertex in np.asarray(mesh.vertices, dtype=float):
         ET.SubElement(
@@ -3315,25 +3369,130 @@ def _append_3mf_mesh_object(
                 "v3": str(int(face[2])),
             },
         )
+
+
+def _append_3mf_mesh_object(
+    resources: ET.Element,
+    build: ET.Element,
+    *,
+    object_id: int,
+    name: str,
+    mesh: trimesh.Trimesh,
+    transform: str = THREEMF_IDENTITY_TRANSFORM,
+) -> None:
+    obj_attrs = {
+        "id": str(object_id),
+        "type": "model",
+        "name": name,
+        f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+    }
+    obj = ET.SubElement(resources, f"{{{THREEMF_CORE_NS}}}object", obj_attrs)
+    mesh_el = ET.SubElement(obj, f"{{{THREEMF_CORE_NS}}}mesh")
+    _append_3mf_mesh_geometry(mesh_el, mesh)
     ET.SubElement(
         build,
         f"{{{THREEMF_CORE_NS}}}item",
         {
             "objectid": str(object_id),
-            "transform": THREEMF_IDENTITY_TRANSFORM,
+            "transform": transform,
             "partnumber": name,
             f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
         },
     )
 
 
-def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
-    """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers."""
-    scene_items = _meshes_from_scene(scene)
-    if not scene_items:
-        raise ValueError("no geometry to export to 3MF")
+def _build_object_model_xml(mesh: trimesh.Trimesh, *, mesh_object_id: int = 1) -> bytes:
+    model = ET.Element(
+        f"{{{THREEMF_CORE_NS}}}model",
+        {
+            "unit": "millimeter",
+            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
+            "requiredextensions": "p",
+        },
+    )
+    ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "BambuStudio:3mfVersion"}).text = "1"
+    resources = ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}resources")
+    obj = ET.SubElement(
+        resources,
+        f"{{{THREEMF_CORE_NS}}}object",
+        {
+            "id": str(mesh_object_id),
+            "type": "model",
+            f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+        },
+    )
+    mesh_el = ET.SubElement(obj, f"{{{THREEMF_CORE_NS}}}mesh")
+    _append_3mf_mesh_geometry(mesh_el, mesh)
+    ET.SubElement(model, f"{{{THREEMF_CORE_NS}}}build")
+    return _xml_bytes(model)
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+
+def _build_bambu_model_settings(
+    bodies: list[dict[str, Any]],
+) -> str:
+    """Bambu Studio Metadata/model_settings.config — one plate per body."""
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<config>"]
+    for body in bodies:
+        oid = int(body["object_id"])
+        name = str(body["name"])
+        lines.append(f'  <object id="{oid}">')
+        lines.append(f'    <metadata key="name" value="{_xml_attr_escape(name)}"/>')
+        lines.append('    <metadata key="extruder" value="1"/>')
+        lines.append('    <part id="1" subtype="normal_part">')
+        lines.append(f'      <metadata key="name" value="{_xml_attr_escape(name)}"/>')
+        lines.append('      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>')
+        lines.append('      <metadata key="source_file" value=""/>')
+        lines.append('      <metadata key="source_object_id" value="0"/>')
+        lines.append('      <metadata key="source_volume_id" value="0"/>')
+        lines.append('      <mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>')
+        lines.append("    </part>")
+        lines.append("  </object>")
+
+    for body in bodies:
+        plate_id = int(body["plate_id"])
+        oid = int(body["object_id"])
+        identify = int(body.get("identify_id") or plate_id)
+        plate_name = _xml_attr_escape(str(body.get("plate_name") or body["name"]))
+        lines.append("  <plate>")
+        lines.append(f'    <metadata key="plater_id" value="{plate_id}"/>')
+        lines.append(f'    <metadata key="plater_name" value="{plate_name}"/>')
+        lines.append('    <metadata key="locked" value="false"/>')
+        lines.append("    <model_instance>")
+        lines.append(f'      <metadata key="object_id" value="{oid}"/>')
+        lines.append('      <metadata key="instance_id" value="0"/>')
+        lines.append(f'      <metadata key="identify_id" value="{identify}"/>')
+        lines.append("    </model_instance>")
+        lines.append("  </plate>")
+
+    lines.append("  <assemble>")
+    for body in bodies:
+        oid = int(body["object_id"])
+        assemble_tf = str(body.get("assemble_transform") or THREEMF_IDENTITY_TRANSFORM)
+        lines.append(
+            f'   <assemble_item object_id="{oid}" instance_id="0" '
+            f'transform="{assemble_tf}" offset="0 0 0" />'
+        )
+    lines.append("  </assemble>")
+    lines.append("</config>")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _xml_attr_escape(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _export_generic_scene_3mf(
+    prepared: list[tuple[str, trimesh.Trimesh]],
+    path: Path,
+) -> Path:
+    """Single-plate generic 3MF (one build, all bodies together)."""
     model = ET.Element(
         f"{{{THREEMF_CORE_NS}}}model",
         {
@@ -3348,16 +3507,7 @@ def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
         f"{{{THREEMF_CORE_NS}}}build",
         {f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4())},
     )
-
     object_id = 1
-    exported = 0
-    prepared: list[tuple[str, trimesh.Trimesh]] = []
-    for name, raw_mesh in scene_items:
-        mesh = _prepare_mesh_for_3mf(raw_mesh)
-        if mesh is None:
-            continue
-        prepared.append((name, mesh))
-    prepared = _seat_meshes_on_build_plate(prepared)
     for name, mesh in prepared:
         _append_3mf_mesh_object(
             resources,
@@ -3367,16 +3517,250 @@ def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
             mesh=mesh,
         )
         object_id += 1
-        exported += 1
-
-    if exported == 0:
-        raise ValueError("no exportable geometry for 3MF")
-
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", _3MF_CONTENT_TYPES_XML)
         zf.writestr("_rels/.rels", _3MF_RELS_XML)
         zf.writestr("3D/3dmodel.model", _xml_bytes(model))
     return path
+
+
+def _export_bambu_multiplate_3mf(
+    prepared: list[tuple[str, trimesh.Trimesh]],
+    path: Path,
+    *,
+    assemble_centers: list[np.ndarray] | None = None,
+) -> Path:
+    """Bambu Studio project 3MF: each body on its own plate (Maker World style)."""
+    n = len(prepared)
+    if n > THREEMF_BAMBU_MAX_PLATES:
+        logger.warning(
+            "3MF has %s bodies; Bambu supports %s plates — packing overflow onto later plates",
+            n,
+            THREEMF_BAMBU_MAX_PLATES,
+        )
+
+    # Assembly centers for Assembly view (original relative layout)
+    if assemble_centers is None or len(assemble_centers) != n:
+        assemble_centers = []
+        for _, mesh in prepared:
+            bounds = np.asarray(mesh.bounds, dtype=float)
+            assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
+    assemble_origin = np.mean(np.vstack(assemble_centers), axis=0) if assemble_centers else np.zeros(3)
+
+    plate_count = min(n, THREEMF_BAMBU_MAX_PLATES)
+    bodies_meta: list[dict[str, Any]] = []
+    object_files: list[tuple[str, bytes]] = []
+
+    root_model = ET.Element(
+        f"{{{THREEMF_CORE_NS}}}model",
+        {
+            "unit": "millimeter",
+            "{http://www.w3.org/XML/1998/namespace}lang": "en-US",
+            "requiredextensions": "p",
+        },
+    )
+    ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "Application"}).text = "Render Studio"
+    ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}metadata", {"name": "BambuStudio:3mfVersion"}).text = "1"
+    resources = ET.SubElement(root_model, f"{{{THREEMF_CORE_NS}}}resources")
+    build = ET.SubElement(
+        root_model,
+        f"{{{THREEMF_CORE_NS}}}build",
+        {f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4())},
+    )
+
+    rel_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<Relationships xmlns="{THREEMF_REL_NS}">',
+    ]
+
+    for idx, (name, raw_mesh) in enumerate(prepared):
+        plate_idx = min(idx, THREEMF_BAMBU_MAX_PLATES - 1)
+        # Bambu pattern: mesh lives in Objects/object_K.model as id=1;
+        # root wrapper object id = 2*(K) with a component reference.
+        file_index = idx + 1
+        wrapper_id = file_index * 2
+        mesh_path = f"/3D/Objects/object_{file_index}.model"
+
+        seated = _seat_mesh_on_bambu_plate(raw_mesh)
+        object_files.append((f"3D/Objects/object_{file_index}.model", _build_object_model_xml(seated)))
+
+        wrapper = ET.SubElement(
+            resources,
+            f"{{{THREEMF_CORE_NS}}}object",
+            {
+                "id": str(wrapper_id),
+                "type": "model",
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+            },
+        )
+        components = ET.SubElement(wrapper, f"{{{THREEMF_CORE_NS}}}components")
+        ET.SubElement(
+            components,
+            f"{{{THREEMF_CORE_NS}}}component",
+            {
+                f"{{{THREEMF_PRODUCTION_NS}}}path": mesh_path,
+                "objectid": "1",
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+                "transform": THREEMF_IDENTITY_TRANSFORM,
+            },
+        )
+
+        ox, oy = _bambu_plate_origin(plate_idx, plate_count)
+        # Overflow bodies on the last plate get a small XY nudge so they don't stack.
+        if idx >= THREEMF_BAMBU_MAX_PLATES:
+            overflow = idx - THREEMF_BAMBU_MAX_PLATES + 1
+            ox += (overflow % 4) * 40.0
+            oy -= (overflow // 4) * 40.0
+
+        ET.SubElement(
+            build,
+            f"{{{THREEMF_CORE_NS}}}item",
+            {
+                "objectid": str(wrapper_id),
+                f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
+                "transform": _translation_transform(ox, oy, 0.0),
+                "printable": "1",
+            },
+        )
+        rel_lines.append(
+            f' <Relationship Target="/3D/Objects/object_{file_index}.model" '
+            f'Id="rel-{file_index}" Type="{THREEMF_MODEL_REL_TYPE}"/>'
+        )
+
+        center = np.asarray(assemble_centers[idx], dtype=float)
+        assemble_tf = np.eye(4)
+        assemble_tf[0:3, 3] = center - assemble_origin
+        bodies_meta.append(
+            {
+                "object_id": wrapper_id,
+                "name": name,
+                "plate_id": plate_idx + 1,
+                "plate_name": name,
+                "identify_id": wrapper_id,
+                "assemble_transform": _transform_12_from_matrix(assemble_tf),
+            }
+        )
+
+    rel_lines.append("</Relationships>")
+    rel_lines.append("")
+
+    settings_xml = _build_bambu_model_settings(bodies_meta)
+
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", _3MF_BAMBU_CONTENT_TYPES_XML)
+        zf.writestr("_rels/.rels", _3MF_RELS_XML)
+        zf.writestr("3D/3dmodel.model", _xml_bytes(root_model))
+        zf.writestr("3D/_rels/3dmodel.model.rels", "\n".join(rel_lines))
+        for arcname, payload in object_files:
+            zf.writestr(arcname, payload)
+        zf.writestr("Metadata/model_settings.config", settings_xml)
+    return path
+
+
+def export_scene_3mf(scene: trimesh.Scene, path: Path) -> Path:
+    """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
+
+    Multi-body scenes become a Bambu project with **one body per plate** (like
+    Maker World gripper kits). Single-body scenes stay a compact generic 3MF.
+    """
+    scene_items = _meshes_from_scene(scene)
+    if not scene_items:
+        raise ValueError("no geometry to export to 3MF")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prepared: list[tuple[str, trimesh.Trimesh]] = []
+    assemble_centers: list[np.ndarray] = []
+    for name, raw_mesh in scene_items:
+        mesh = _prepare_mesh_for_3mf(raw_mesh)
+        if mesh is None:
+            continue
+        bounds = np.asarray(mesh.bounds, dtype=float)
+        assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
+        prepared.append((name, mesh))
+
+    if not prepared:
+        raise ValueError("no exportable geometry for 3MF")
+
+    if len(prepared) == 1:
+        seated = _seat_meshes_on_build_plate(prepared)
+        return _export_generic_scene_3mf(seated, path)
+
+    return _export_bambu_multiplate_3mf(prepared, path, assemble_centers=assemble_centers)
+
+
+def scene_for_3mf_export(project_path: Path, src: Path) -> trimesh.Scene:
+    """Load a scene that preserves separate bodies for multi-plate Bambu 3MF export."""
+    project_path = Path(project_path)
+    src = Path(src)
+    stem = src.stem
+
+    def _part_sidecars_for(stem_name: str) -> list[Path]:
+        def _part_key(p: Path) -> tuple[int, str]:
+            m = re.search(r"__part_(\d+)_", p.stem, flags=re.I)
+            return (int(m.group(1)) if m else 10**9, p.name.lower())
+
+        parts = sorted(project_path.glob(f"{stem_name}__part_*.glb"), key=_part_key)
+        if parts:
+            return parts
+        root = re.sub(r"_edited(?:_\d+)?$", "", stem_name, flags=re.I)
+        if root != stem_name:
+            return sorted(project_path.glob(f"{root}__part_*.glb"), key=_part_key)
+        return []
+
+    def _scene_from_parts(part_files: list[Path]) -> trimesh.Scene | None:
+        scene = trimesh.Scene()
+        for part in part_files:
+            try:
+                geom = load_mesh(part)
+                label = re.sub(r"^.*?__part_\d+_", "", part.stem, flags=re.I) or part.stem
+                label = _safe_object_name(label.replace("_", " "), part.stem)
+                scene.add_geometry(geom, geom_name=label, node_name=label)
+            except Exception as exc:
+                logger.debug("skip part %s: %s", part.name, exc)
+        return scene if len(scene.geometry) > 0 else None
+
+    # Prefer named __part_ sidecars (Maker World-style body labels on plates).
+    part_files = _part_sidecars_for(stem)
+    if len(part_files) >= 2:
+        built = _scene_from_parts(part_files)
+        if built is not None:
+            return built
+
+    # Prefer the viewer GLB — keeps separate meshes that STEP dumps often flatten.
+    try:
+        viewer_name = viewer_filename_for_model(src.name, project_path)
+        viewer_path = project_path / viewer_name
+        if viewer_path.is_file():
+            if viewer_path.suffix.lower() in {".glb", ".gltf", ".obj", ".stl", ".ply", ".off", ".3mf"}:
+                scene = load_scene(viewer_path)
+                bodies = _meshes_from_scene(scene, source_path=viewer_path)
+                if len(bodies) >= 2:
+                    return scene
+                if len(bodies) == 1 and not part_files:
+                    return scene
+    except Exception as exc:
+        logger.debug("viewer scene for 3MF failed (%s): %s", src.name, exc)
+
+    if part_files:
+        built = _scene_from_parts(part_files)
+        if built is not None:
+            return built
+
+    if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
+        return load_scene(src)
+
+    try:
+        scene = load_scene(src)
+        if _meshes_from_scene(scene, source_path=src):
+            return scene
+    except Exception:
+        pass
+
+    mesh = load_mesh(src)
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, geom_name=src.stem, node_name=src.stem)
+    return scene
+
 
 
 def _bake_face_colors_to_vertices(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -4788,26 +5172,37 @@ def _legacy_3mf_needs_regeneration(path: Path) -> bool:
     """True when an on-disk 3MF predates the Bambu-compatible mesh writer."""
     try:
         with zipfile.ZipFile(path) as zf:
-            if "3D/3dmodel.model" not in zf.namelist():
+            names = zf.namelist()
+            if "3D/3dmodel.model" not in names:
                 return True
             rels = zf.read("_rels/.rels").decode("utf-8", errors="replace")
             if "ns0:" in rels or "xmlns:ns0" in rels:
                 return True
             root = ET.fromstring(zf.read("3D/3dmodel.model"))
-        items = root.findall(f".//{{{THREEMF_CORE_NS}}}item")
-        if not items:
-            return True
-        if not any(item.get("transform") for item in items):
-            return True
-        tris = root.findall(f".//{{{THREEMF_CORE_NS}}}triangle")
-        if not tris:
-            return True
-        first = tris[0]
-        if first.get("p2") is not None or first.get("p3") is not None:
-            return True
-        objs = root.findall(f".//{{{THREEMF_CORE_NS}}}object[@type='model']")
-        if objs and objs[0].get("type") != "model":
-            return True
+            items = root.findall(f".//{{{THREEMF_CORE_NS}}}item")
+            if not items:
+                return True
+            if not any(item.get("transform") for item in items):
+                return True
+            # Multi-body files without Bambu plate metadata need a multi-plate rewrite.
+            objs = root.findall(f".//{{{THREEMF_CORE_NS}}}object[@type='model']")
+            mesh_objs = [o for o in objs if o.find(f"{{{THREEMF_CORE_NS}}}mesh") is not None]
+            if len(items) > 1 or len(mesh_objs) > 1:
+                if "Metadata/model_settings.config" not in names:
+                    return True
+                settings = zf.read("Metadata/model_settings.config").decode("utf-8", errors="replace")
+                if settings.count("<plate>") < 2 and (len(items) > 1 or len(mesh_objs) > 1):
+                    return True
+            # Geometry may live only in Objects/*.model for Bambu packages.
+            tris = root.findall(f".//{{{THREEMF_CORE_NS}}}triangle")
+            if not tris:
+                has_object_models = any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names)
+                if not has_object_models:
+                    return True
+            else:
+                first = tris[0]
+                if first.get("p2") is not None or first.get("p3") is not None:
+                    return True
     except Exception:
         return True
     return False
@@ -4867,12 +5262,17 @@ def ensure_mesh_exports(project_path: Path, filename: str, *, missing_only: bool
         if not missing_only and dest.is_file() and not _export_is_stale(src_mtime, dest, fmt):
             continue
         try:
-            if mesh is None:
-                mesh = load_mesh(src)
-            if fmt == "step":
-                export_mesh_step(mesh, dest)
+            if fmt == "3mf":
+                # Keep separate bodies so Bambu gets one plate per body.
+                scene = scene_for_3mf_export(project_path, src)
+                export_scene_3mf(scene, dest)
             else:
-                export_mesh(mesh, dest)
+                if mesh is None:
+                    mesh = load_mesh(src)
+                if fmt == "step":
+                    export_mesh_step(mesh, dest)
+                else:
+                    export_mesh(mesh, dest)
             logger.info("Generated %s export for %s", fmt.upper(), safe)
         except Exception as exc:
             logger.warning("Could not generate %s for %s: %s", fmt, safe, exc)

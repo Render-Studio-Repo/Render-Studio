@@ -91,7 +91,7 @@ import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260727-share-btn-top";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-plates";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -1558,6 +1558,7 @@ function applyPromptModeUI(mode = promptMode) {
   }
   syncCodexToggleVisibility(promptMode);
   syncElectronicsToggleVisibility(promptMode);
+  syncSpiceTipForPromptMode(promptMode);
 }
 
 function selectedPromptSupportsElectronics(mode = promptMode) {
@@ -5223,13 +5224,81 @@ function setSpiceEnabled(enabled, { persist = true } = {}) {
   if (btn) {
     btn.setAttribute("aria-pressed", on ? "true" : "false");
     btn.classList.toggle("is-on", on);
-    btn.title = on ? "Improve prompt with AI — on" : "Improve prompt with AI — off";
+    syncSpiceTipForPromptMode(promptMode);
   }
   if (persist) {
     try {
       localStorage.setItem(SPICE_KEY, on ? "1" : "0");
     } catch {
       /* ignore */
+    }
+  }
+}
+
+function syncSpiceTipForPromptMode(mode = promptMode) {
+  const tip = document.getElementById("prompt-spice-tip");
+  const btn = document.getElementById("prompt-spice");
+  const titleEl = tip?.querySelector(".prompt-spice-tip-title");
+  const bodyEl = tip?.querySelector(".prompt-spice-tip-body");
+  const listEl = tip?.querySelector(".prompt-spice-tip-list");
+  const normalized = String(mode || "").toLowerCase();
+  const on = isSpiceEnabled();
+  let title = "Improve prompt with AI";
+  let body = "";
+  let items = [];
+  let btnTitle = on ? "Improve prompt with AI — on" : "Improve prompt with AI — off";
+
+  if (normalized === "mesh" || normalized === "fusion") {
+    title = "Improve for mesh + materials";
+    body =
+      "In <b>Mesh</b>, Improve rewrites your prompt for rendered meshes and PBR materials "
+      + "(named parts, silhouette, color, metalness, roughness) — <b>not</b> CAD / STEP / Mode 2.0.";
+    items = [
+      "Focus on mesh parts and materials for the viewport",
+      "Not extrudes, pockets, or parametric CAD wording",
+      "Tap to turn improve on or off",
+    ];
+    btnTitle = on
+      ? "Improve mesh + materials prompt — on"
+      : "Improve mesh + materials prompt — off";
+  } else if (normalized === "render" || normalized === "standard") {
+    title = "Improve for photoreal render";
+    body =
+      "In <b>Render</b>, Improve rewrites for a clearer photoreal image: scene, lighting, materials, and camera.";
+    items = [
+      "Scene, lighting, and camera wording",
+      "Keeps the current model as the subject",
+      "Tap to turn improve on or off",
+    ];
+    btnTitle = on
+      ? "Improve render prompt — on"
+      : "Improve render prompt — off";
+  } else {
+    title = "Improve for CAD (Mode 2.0)";
+    body =
+      "In <b>2.0</b>, Improve rewrites for parametric CAD: dimensions, named features, and clear solids.";
+    items = [
+      "Dimensions and named CAD features",
+      "Mode 2.0 / Architect builds",
+      "Tap to turn improve on or off",
+    ];
+    btnTitle = on
+      ? "Improve CAD prompt — on"
+      : "Improve CAD prompt — off";
+  }
+
+  if (titleEl) titleEl.textContent = title;
+  if (bodyEl) bodyEl.innerHTML = body;
+  if (listEl) {
+    listEl.innerHTML = items.map((item) => `<li>${item}</li>`).join("");
+  }
+  if (btn) {
+    btn.title = btnTitle;
+    const label = btn.querySelector(".prompt-spice-btn-label");
+    if (label) {
+      label.textContent = (normalized === "mesh" || normalized === "fusion")
+        ? "Improve"
+        : "Improve";
     }
   }
 }
@@ -5476,9 +5545,12 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     return { prompt: original, originalPrompt: original, promptImproved: false };
   }
   // Explicit forceMode (e.g. scene-render path). Otherwise honor the active UI
-  // mode so Mode 2.0 always gets CAD improve — never silently rewrite as Render.
-  const improveMode = forceMode
+  // mode so Mode 2.0 always gets CAD improve — Mesh gets mesh/materials improve.
+  let improveMode = forceMode
     || (promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE);
+  if (improveMode === "fusion" || improveMode === "img2threejs" || improveMode === "threejs") {
+    improveMode = "mesh";
+  }
   if (statusEl) {
     statusEl.className = "status loading";
     statusEl.textContent = "Improving prompt with AI…";
@@ -5490,8 +5562,8 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     thinking:
       improveMode === "render"
         ? "Rewriting your prompt for a clearer photoreal scene…"
-        : improveMode === "mesh" || improveMode === "fusion"
-        ? "Rewriting your prompt for a clearer procedural mesh rebuild…"
+        : improveMode === "mesh"
+        ? "Rewriting for mesh parts + PBR materials (not CAD)…"
         : improveMode === "v2" || improveMode === "architect"
         ? "Rewriting your prompt for clearer parametric CAD…"
         : improveMode === "draw"
@@ -5554,11 +5626,24 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
       pct: 8,
       stage: "analyze",
       label: "Prompt improved — generating…",
-      thinking: "Using the improved prompt for CAD generation…",
+      thinking:
+        improveMode === "mesh"
+          ? "Using the improved mesh + materials prompt…"
+          : improveMode === "render"
+            ? "Using the improved prompt for the photoreal render…"
+            : "Using the improved prompt for CAD generation…",
       improved_prompt: improved,
       activity: [
         { text: "Prompt improved with AI", stage: "analyze" },
-        { text: "Starting CAD generation…", stage: "analyze" },
+        {
+          text:
+            improveMode === "mesh"
+              ? "Starting mesh generation…"
+              : improveMode === "render"
+                ? "Starting render…"
+                : "Starting CAD generation…",
+          stage: "analyze",
+        },
       ],
     });
     return { prompt: improved, originalPrompt: original, promptImproved: true };

@@ -671,8 +671,8 @@ export async function openFileExportMenu({
   const mobile = isMobileClient();
   const bambuLabel = bambuTargetLabel();
   const defaultHint = mobile
-    ? `Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to ${bambuLabel} — or copy a public preview link.`
-    : "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio — or copy a public preview link.";
+    ? `Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to ${bambuLabel} (multi-body → one plate each) — or copy a public preview link.`
+    : "Download GLB, STL, STEP, or 3MF — send a plate-ready 3MF to Bambu Studio (multi-body → one plate each) — or copy a public preview link.";
 
   const menu = document.createElement("div");
   menu.className = `file-export-menu${mobile ? " file-export-menu--mobile" : ""}`;
@@ -702,8 +702,8 @@ export async function openFileExportMenu({
         <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
         Fusion 360
       </button>` : ""}
-      <button type="button" class="btn file-export-bambu" title="${mobile ? `Prepare a plate-ready 3MF and send it to ${bambuLabel}` : "Open this model as 3MF in local Bambu Studio and place it on the build plate"}">
-        <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a plate-ready 3MF and opens it in local Bambu Studio so the part lands on the build plate." kind=feature href="/" -->
+      <button type="button" class="btn file-export-bambu" title="${mobile ? `Prepare a plate-ready 3MF and send it to ${bambuLabel}. Multi-body models get one body per plate.` : "Open in Bambu Studio. Multi-body models land on separate plates (like Maker World kits)."}">
+        <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a plate-ready 3MF and opens it in local Bambu Studio. Multi-body CAD gets one body per plate." kind=feature href="/" -->
         <span class="file-export-bambu-mark" aria-hidden="true">B</span>
         Send to ${bambuLabel}
       </button>
@@ -1375,7 +1375,8 @@ async function ensureThreeMfExport({ projectId, filename, exports, forceRefresh 
     )
     : null;
 
-  // Always regenerate when sending to Bambu so the 3MF is plate-seated (Z=0) and fresh.
+  // Always regenerate when sending to Bambu so the 3MF is plate-seated (Z=0),
+  // multi-body plates are fresh, and legacy single-plate assemblies are rewritten.
   try {
     await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,

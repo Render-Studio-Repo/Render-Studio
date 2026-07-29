@@ -1,3 +1,11 @@
+## 2026-07-29 — Mesh Improve targets materials, not CAD
+
+- Mesh-mode **Improve** tip/copy now says mesh + PBR materials (not CAD/STEP).
+- Strengthened `IMPROVE_MESH_PROMPT_SYSTEM` + user hint so rewrites stay on rendered mesh parts/materials.
+- Cache-bust `?v=20260729-mesh-improve`.
+
+---
+
 ## 2026-07-29 — Hide GPT-5.5 Pro for Sam / a1projects
 
 - Removed **GPT-5.5 Pro** from model pickers for a1projects admin emails.
