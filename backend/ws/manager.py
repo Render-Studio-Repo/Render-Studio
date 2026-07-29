@@ -199,6 +199,14 @@ class CollabHub:
             self._user_sockets.setdefault(user["id"], set()).add(websocket)
         try:
             await websocket.send_json({"type": "user.sync"})
+            # Flush any XR captures waiting for a logged-in desktop session
+            try:
+                from backend.services import xr_capture_inbox
+
+                for item in xr_capture_inbox.list_pending(user["id"]):
+                    await websocket.send_json(item)
+            except Exception as exc:
+                logger.debug("xr capture inbox flush failed: %s", exc)
             while True:
                 await websocket.receive_text()
         finally:

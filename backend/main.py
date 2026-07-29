@@ -6591,6 +6591,53 @@ def get_my_email_preferences(user: dict[str, Any] = Depends(get_current_user)):
     return {"preferences": email_notification_service.get_preferences(user["id"])}
 
 
+class XrCaptureReadyBody(BaseModel):
+    kind: str = Field("video", max_length=32)
+    filename: str = Field(..., min_length=1, max_length=255)
+    url: str | None = Field(None, max_length=512)
+    mode_label: str | None = Field(None, max_length=32)
+    source_client_id: str | None = Field(None, max_length=64)
+
+
+@app.post("/api/projects/{project_id}/xr-capture-ready")
+def publish_xr_capture_ready(
+    project_id: str,
+    body: XrCaptureReadyBody,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Quest posts here after saving a clip — all logged-in sessions get Share-to-X."""
+    from backend.services import xr_capture_inbox
+
+    _require_project(user, project_id)
+    filename = Path(body.filename).name
+    url = (body.url or "").strip() or f"/api/projects/{project_id}/files/{filename}"
+    entry = xr_capture_inbox.push_capture(
+        user["id"],
+        project_id=project_id,
+        kind=body.kind,
+        filename=filename,
+        url=url,
+        mode_label=body.mode_label,
+        source_client_id=body.source_client_id,
+    )
+    _notify_user(user["id"], entry)
+    return {"ok": True, "capture": entry}
+
+
+@app.get("/api/me/xr-captures/pending")
+def list_xr_captures_pending(user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import xr_capture_inbox
+
+    return {"captures": xr_capture_inbox.list_pending(user["id"])}
+
+
+@app.post("/api/me/xr-captures/{capture_id}/ack")
+def ack_xr_capture(capture_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import xr_capture_inbox
+
+    return {"ok": xr_capture_inbox.ack_capture(user["id"], capture_id)}
+
+
 @app.put("/api/users/me/email-preferences")
 @app.patch("/api/users/me/email-preferences")
 def update_my_email_preferences(body: EmailPreferencesRequest, user: dict[str, Any] = Depends(get_current_user)):

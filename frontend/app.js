@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-xr-fix3";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-xr-sync4";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-fix3";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-sync4";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3372,9 +3372,11 @@ const viewportXR = createViewportXR({
       try {
         if (viewportVideoRecorder?.isRecording?.()) void viewportVideoRecorder.stopRecording?.();
       } catch (_) {}
+      try { viewportXR?.saveOpenWindowsLayout?.(); } catch (_) {}
       void flushPendingXrScreenshotShare();
       void flushPendingXrVideoShare?.();
-      hideXrCaptureReadyBanner?.();
+      // If still on this device after exit, open any pending share studio
+      void flushPendingRemoteXrCaptures();
     } else {
       syncXrCaptureDockFromRecorder?.();
     }
@@ -3385,6 +3387,21 @@ window.Render3DViewportXR = viewportXR;
 let pendingXrScreenshotUrl = null;
 let pendingXrCaptureMode = "AR";
 let pendingXrVideoOpen = false;
+const XR_CLIENT_ID_KEY = "render3d:xr-client-id:v1";
+const handledXrCaptureIds = new Set();
+
+function xrClientId() {
+  try {
+    let id = localStorage.getItem(XR_CLIENT_ID_KEY);
+    if (!id) {
+      id = `c_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      localStorage.setItem(XR_CLIENT_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return `c_${Date.now()}`;
+  }
+}
 
 function ensureXrCaptureReadyBanner() {
   let el = document.getElementById("xr-capture-ready-banner");
@@ -3532,14 +3549,113 @@ async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel 
     );
     viewportXR?.setMenuFooterHint?.(
       kind === "video"
-        ? `Video saved to AR captures (${filename})`
-        : `Screenshot saved to AR captures (${filename})`,
+        ? `Video saved — Share to X opening on your PC`
+        : `Screenshot saved — Share to X opening on your PC`,
     );
+    try {
+      await publishXrCaptureReady({
+        kind,
+        filename: data?.filename || filename,
+        url: data?.url || `/api/projects/${projectId}/files/${encodeURIComponent(data?.filename || filename)}`,
+        modeLabel: mode,
+      });
+    } catch (err) {
+      console.warn("[xr] publish capture ready failed", err);
+    }
     return data;
   } catch (err) {
     console.warn("[xr] save capture failed", err);
     setEditStatus("error", err?.message || "Could not save AR capture to references.");
     return null;
+  }
+}
+
+async function publishXrCaptureReady({ kind, filename, url, modeLabel } = {}) {
+  if (!projectId || !filename || !getToken?.()) return null;
+  const res = await api(`/api/projects/${projectId}/xr-capture-ready`, {
+    method: "POST",
+    body: JSON.stringify({
+      kind: kind === "video" ? "video" : "screenshot",
+      filename,
+      url,
+      mode_label: modeLabel || currentXrCaptureModeLabel(),
+      source_client_id: xrClientId(),
+    }),
+  });
+  return res?.capture || null;
+}
+
+async function ackXrCapture(captureId) {
+  if (!captureId || !getToken?.()) return;
+  try {
+    await api(`/api/me/xr-captures/${encodeURIComponent(captureId)}/ack`, { method: "POST" });
+  } catch (_) {}
+}
+
+async function openRemoteXrCaptureShare(msg = {}) {
+  const id = msg.id || `${msg.project_id}:${msg.filename}`;
+  if (!id || handledXrCaptureIds.has(id)) return;
+  handledXrCaptureIds.add(id);
+  const kind = msg.kind === "video" ? "video" : "screenshot";
+  const mode = msg.mode_label || msg.modeLabel || "AR";
+  const url = msg.url || (msg.project_id && msg.filename
+    ? `/api/projects/${msg.project_id}/files/${encodeURIComponent(msg.filename)}`
+    : null);
+  if (!url) return;
+
+  // Headset session that created it: keep local banner only; PC gets the editor
+  const fromSelf = msg.source_client_id && msg.source_client_id === xrClientId();
+  if (fromSelf && viewportXR?.isPresenting?.()) {
+    showXrCaptureReadyBanner({ kind, modeLabel: mode });
+    viewportXR?.setMenuFooterHint?.("Opened on your PC — mark up & Share to X");
+    return;
+  }
+
+  try {
+    if (msg.project_id && msg.project_id !== projectId) {
+      try { await openProjectById?.(msg.project_id); } catch (_) {}
+    }
+    const res = await rawFetch(url);
+    if (!res.ok) throw new Error(`Could not download capture (${res.status})`);
+    const blob = await res.blob();
+    if (kind === "video") {
+      await viewportVideoRecorder?.openShareModal?.(blob);
+      showXrCaptureReadyBanner({ kind: "video", modeLabel: mode });
+      setEditStatus("ok", `${mode} XR video ready — mark up or Share to X.`);
+    } else {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Could not read screenshot"));
+        reader.readAsDataURL(blob);
+      });
+      if (screenshotMarkup?.open) {
+        await screenshotMarkup.open(dataUrl, { modeLabel: `${mode} POV screenshot` });
+      }
+      showXrCaptureReadyBanner({ kind: "screenshot", modeLabel: mode });
+      setEditStatus("ok", `${mode} XR screenshot ready — mark up or Share to X.`);
+    }
+    await ackXrCapture(msg.id);
+  } catch (err) {
+    console.warn("[xr] open remote capture failed", err);
+    handledXrCaptureIds.delete(id);
+    showXrCaptureReadyBanner({ kind, modeLabel: mode });
+    setEditStatus("error", err?.message || "Could not open XR capture on this PC.");
+  }
+}
+
+async function flushPendingRemoteXrCaptures() {
+  if (!getToken?.()) return;
+  try {
+    const data = await api("/api/me/xr-captures/pending");
+    const items = data?.captures || [];
+    for (const item of items) {
+      // Prefer opening on non-XR windows
+      if (viewportXR?.isPresenting?.()) continue;
+      await openRemoteXrCaptureShare(item);
+    }
+  } catch (err) {
+    console.warn("[xr] pending captures poll failed", err);
   }
 }
 
@@ -5309,6 +5425,10 @@ function connectUserRealtime() {
       return;
     }
     handleRealtimeEvent(msg);
+  };
+  ws.onopen = () => {
+    // Catch captures published while this PC tab was offline
+    window.setTimeout(() => { void flushPendingRemoteXrCaptures(); }, 400);
   };
   ws.onclose = () => {
     if (userRealtimeSocket === ws) {
@@ -22657,6 +22777,11 @@ function handleRealtimeEvent(msg = {}) {
     if (msg.project_id && msg.project_id !== projectId) {
       projectChat?.handleRealtime?.({ ...msg, type: "project.chat.mention", mention: true });
     }
+    return;
+  }
+
+  if (msg.type === "xr.capture.ready") {
+    void openRemoteXrCaptureShare(msg);
     return;
   }
 

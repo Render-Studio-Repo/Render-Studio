@@ -646,25 +646,57 @@ export function createViewportXR(opts) {
   let aiPanel = null;
   let aiPanelRefreshAt = 0;
   let editModelPickActive = false;
-  const LS_PANEL_POSES = "render3d:xr-panel-poses:v1";
+  const LS_PANEL_POSES = "render3d:xr-panel-layout:v2";
+
+  function panelPoseStorageKey() {
+    try {
+      const base = (typeof getPoseStorageKey === "function" && getPoseStorageKey()) || LS_POSE;
+      return `${LS_PANEL_POSES}:${base}`;
+    } catch {
+      return LS_PANEL_POSES;
+    }
+  }
 
   function loadAllPanelPoses() {
     try {
-      return JSON.parse(localStorage.getItem(LS_PANEL_POSES) || "{}") || {};
+      return JSON.parse(localStorage.getItem(panelPoseStorageKey()) || "{}") || {};
     } catch {
       return {};
     }
   }
 
+  function persistPanelLayout(all) {
+    try {
+      localStorage.setItem(panelPoseStorageKey(), JSON.stringify(all || {}));
+    } catch (_) {}
+  }
+
+  /** Save window pose relative to current head — survives headset off / new XR session origin. */
   function savePanelPose(kind, group) {
     if (!group) return;
     try {
+      getHeadPose();
+      const f = headForwardFlat(new THREE.Vector3());
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat);
+      right.y = 0;
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      else right.normalize();
+      const delta = group.position.clone().sub(_headPos);
       const all = loadAllPanelPoses();
       all[kind] = {
-        position: group.position.toArray(),
-        quaternion: group.quaternion.toArray(),
+        v: 2,
+        visible: !!group.visible,
+        forward: delta.dot(f),
+        right: delta.dot(right),
+        up: group.position.y - _headPos.y,
+        tab: kind === "menu" ? (menuTab || "projects") : undefined,
       };
-      localStorage.setItem(LS_PANEL_POSES, JSON.stringify(all));
+      if (kind === "ai") all.aiOpen = !!group.visible;
+      if (kind === "menu") {
+        all.menuOpen = !!group.visible;
+        all.menuTab = menuTab || "projects";
+      }
+      persistPanelLayout(all);
     } catch (_) {}
   }
 
@@ -672,12 +704,72 @@ export function createViewportXR(opts) {
     if (!group) return false;
     try {
       const data = loadAllPanelPoses()[kind];
-      if (!data?.position || !data?.quaternion) return false;
-      group.position.fromArray(data.position);
-      group.quaternion.fromArray(data.quaternion);
-      return true;
+      if (!data) return false;
+      getHeadPose();
+      // v2: head-relative (required after headset off / browser re-entry)
+      if (data.v === 2 && Number.isFinite(data.forward)) {
+        const f = headForwardFlat(new THREE.Vector3());
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat);
+        right.y = 0;
+        if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+        else right.normalize();
+        group.position
+          .copy(_headPos)
+          .addScaledVector(f, Number(data.forward) || 0.7)
+          .addScaledVector(right, Number(data.right) || 0);
+        group.position.y = _headPos.y + (Number.isFinite(data.up) ? data.up : -0.02);
+        const toHead = _headPos.clone().sub(group.position).setY(0);
+        if (toHead.lengthSq() > 1e-6) {
+          group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), toHead.normalize());
+        } else {
+          group.quaternion.copy(_headQuat);
+        }
+        return true;
+      }
+      // Legacy absolute poses are invalid across XR sessions — ignore
+      return false;
     } catch {
       return false;
+    }
+  }
+
+  function saveOpenWindowsLayout() {
+    try {
+      const all = loadAllPanelPoses();
+      if (aiPanel?.group) {
+        savePanelPose("ai", aiPanel.group);
+      } else {
+        all.aiOpen = false;
+      }
+      if (explorerPanel?.group) {
+        savePanelPose("menu", explorerPanel.group);
+      } else {
+        all.menuOpen = false;
+      }
+      all.menuTab = menuTab || "projects";
+      // savePanelPose already persisted; ensure flags even if groups missing
+      const again = loadAllPanelPoses();
+      again.aiOpen = !!aiPanel?.group?.visible;
+      again.menuOpen = !!explorerPanel?.group?.visible;
+      again.menuTab = menuTab || "projects";
+      persistPanelLayout(again);
+    } catch (_) {}
+  }
+
+  function restoreOpenWindowsLayout() {
+    const all = loadAllPanelPoses();
+    const wantAi = all.aiOpen !== false; // default open AI prompt
+    const wantMenu = all.menuOpen === true;
+    if (all.menuTab) menuTab = all.menuTab;
+    if (wantAi) {
+      openAiPromptPanel({ keepPose: true, forcePlace: !all.ai });
+    } else if (aiPanel) {
+      aiPanel.group.visible = false;
+    }
+    if (wantMenu) {
+      openMenuConsole({ tab: menuTab || "projects", keepPose: true, forcePlace: !all.menu });
+    } else if (explorerPanel) {
+      explorerPanel.group.visible = false;
     }
   }
 
@@ -1798,7 +1890,12 @@ export function createViewportXR(opts) {
     panel.group.visible = true;
     const forcePlace = opts.forcePlace === true;
     if (!forcePlace) {
-      if (applySavedPanelPose("ai", panel.group) || opts.keepPose) {
+      if (applySavedPanelPose("ai", panel.group)) {
+        aiPanelRefreshAt = performance.now();
+        return;
+      }
+      // keepPose only skips re-place when the panel already has a real position
+      if (opts.keepPose && panel.group.position.lengthSq() > 0.01) {
         aiPanelRefreshAt = performance.now();
         return;
       }
@@ -1826,7 +1923,10 @@ export function createViewportXR(opts) {
   }
 
   function closeAiPromptPanel() {
-    if (aiPanel) aiPanel.group.visible = false;
+    if (aiPanel) {
+      aiPanel.group.visible = false;
+      try { savePanelPose("ai", aiPanel.group); } catch (_) {}
+    }
   }
 
   function pickAiFromCanvasPx(px, py) {
@@ -2157,11 +2257,8 @@ export function createViewportXR(opts) {
     syncMenuRowHits(panel, lines);
     const forcePlace = opts.forcePlace === true;
     if (!forcePlace) {
-      if (opts.keepPose) {
-        applySavedPanelPose("menu", panel.group);
-        return;
-      }
       if (applySavedPanelPose("menu", panel.group)) return;
+      if (opts.keepPose && panel.group.position.lengthSq() > 0.01) return;
     }
     getHeadPose();
     const f = headForwardFlat();
@@ -3237,18 +3334,22 @@ export function createViewportXR(opts) {
     userZoom = 1;
     saved = null;
     placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
-    // Restore last AI panel pose if any; otherwise place once to the right
-    openAiPromptPanel({ forcePlace: !loadAllPanelPoses().ai });
+    // Restore AI + menu windows (head-relative poses survive headset off)
+    restoreOpenWindowsLayout();
     setTimeout(() => {
       if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
     }, 400);
     setTimeout(() => {
-      if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+      if (presenting) {
+        placeInFront({ spawnId: "eye", keepZoom: false });
+        // Re-apply head-relative window poses after tracking settles
+        restoreOpenWindowsLayout();
+      }
     }, 1000);
     setTimeout(() => {
       if (presenting) {
         placeInFront({ spawnId: "eye", keepZoom: false });
-        if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
+        restoreOpenWindowsLayout();
       }
     }, 1800);
 
@@ -3260,6 +3361,7 @@ export function createViewportXR(opts) {
   }
 
   function onSessionEnd() {
+    try { saveOpenWindowsLayout(); } catch (_) {}
     saveRoomPose();
     presenting = false;
     session = null;
@@ -3467,6 +3569,8 @@ export function createViewportXR(opts) {
     saveRoomPose,
     capturePovDataUrl,
     setCaptureState,
+    saveOpenWindowsLayout,
+    restoreOpenWindowsLayout,
     openMenuConsole,
     openAiPromptPanel,
     closeAiPromptPanel,
