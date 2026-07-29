@@ -17,7 +17,27 @@ function isDxfEntry(entry) {
 }
 
 function referenceSectionItems(browser = {}) {
-  return [...(browser.drawings || []), ...(browser.references || [])];
+  const drawings = [...(browser.drawings || [])];
+  const refs = [...(browser.references || [])];
+  const arKids = refs.filter((r) => String(r.folder || "").toUpperCase() === "AR");
+  const rest = refs.filter((r) => String(r.folder || "").toUpperCase() !== "AR");
+  const items = [...drawings, ...rest];
+  if (arKids.length) {
+    items.push({
+      id: "folder:AR",
+      name: "AR",
+      label: "AR captures",
+      children_label: "AR captures",
+      virtual_folder: true,
+      folder: "AR",
+      children: arKids.map((child) => ({
+        ...child,
+        label: child.label || child.name,
+        parent_folder: "AR",
+      })),
+    });
+  }
+  return items;
 }
 
 function iconSvg(type) {
@@ -187,6 +207,10 @@ export function createProjectTree(options = {}) {
           list.appendChild(empty);
         }
         for (const entry of items) {
+          if (section.id === "references" && entry.virtual_folder && entry.children?.length) {
+            list.appendChild(renderChildGroup(entry, section.id));
+            continue;
+          }
           list.appendChild(renderItem(entry, section.id));
           if (section.id === "components" && entry.children?.length) {
             list.appendChild(renderChildGroup(entry, section.id));

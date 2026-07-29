@@ -1,3 +1,12 @@
+## 2026-07-29 — VR/AR captures → Reference Files / AR
+
+- Screenshots and videos taken in WebXR save into `references/AR/` with names like `AR-screenshot-…png` / `VR-video-….webm`.
+- Project browser groups them under **Reference Files → AR captures**.
+- Upload accepts `reference_folder=AR`; video suffixes allowed as references; reference viewer plays clips.
+- Cache-bust `?v=20260729-ar-captures`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — Bambu Studio: single-body 3MF was empty
 
 - Root cause: single-body export used a generic 3MF (no `Metadata/model_settings.config`), so Bambu opened an empty plate; multi-body used the plate project format.

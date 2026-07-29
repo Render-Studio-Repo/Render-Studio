@@ -11,6 +11,7 @@ function escapeHtml(value) {
 function kindFromName(filename = "") {
   const lower = String(filename).toLowerCase();
   if (/\.(png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(lower)) return "image";
+  if (/\.(webm|mp4|mov|m4v)$/i.test(lower)) return "video";
   if (/\.pdf$/i.test(lower)) return "pdf";
   if (/\.(txt|md|csv|tsv|log|json|ya?ml|html?|rtf)$/i.test(lower)) return "text";
   return "file";
@@ -461,6 +462,13 @@ export function createReferenceFilesViewer(options = {}) {
               <img class="ref-image" src="${escapeHtml(tab.blobUrl || "")}" alt="${escapeHtml(tab.label || tab.filename)}" draggable="false" />
               <svg class="ref-markup-svg" xmlns="http://www.w3.org/2000/svg">${strokeSvg(tab.strokes, 0)}</svg>
             </div>
+          </div>
+        </div>`;
+    } else if (kind === "video") {
+      bodyHtml = `
+        <div class="ref-viewer-stage-wrap">
+          <div class="ref-viewer-stage ref-viewer-stage--video">
+            <video class="ref-video" src="${escapeHtml(tab.blobUrl || "")}" controls playsinline preload="metadata"></video>
           </div>
         </div>`;
     } else if (kind === "pdf") {
@@ -1678,5 +1686,5 @@ export function createReferenceFilesViewer(options = {}) {
 }
 
 export function isReferenceFilename(name = "") {
-  return /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?)$/i.test(String(name || ""));
+  return /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?|webm|mp4|mov|m4v)$/i.test(String(name || ""));
 }

@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-mobile-capture-x";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-ar-captures";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-gravity";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-grip";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -109,7 +109,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260724-select-whole";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
-import { createProjectTree } from "./project-tree.js?v=20260721-show-hidden";
+import { createProjectTree } from "./project-tree.js?v=20260729-ar-captures";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -117,7 +117,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260716-mobile-share-sheet";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260729-ar-captures";
 import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260725-bright-cad";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
@@ -3091,12 +3091,20 @@ const viewportXR = createViewportXR({
   },
   hideSceneChrome: () => {
     try {
+      // Always force design grid off in AR (leave gridVisible alone so restore works)
       if (gridHelper) gridHelper.visible = false;
       if (gridAxesGroup) gridAxesGroup.visible = false;
       if (gridDotsGroup) gridDotsGroup.visible = false;
       scene.traverse((o) => {
-        if (o?.userData?.isFloor || o?.userData?.isShadowFloor) o.visible = false;
+        if (!o) return;
+        if (o.userData?.isFloor || o.userData?.isShadowFloor) o.visible = false;
+        if (o.userData?.isArchitectBay || o.userData?.isArchitectGrid) o.visible = false;
+        if (o.isGridHelper || o.type === "GridHelper") o.visible = false;
+        if (o.name === "large-grid-axes" || o.name === "grid-dots") o.visible = false;
       });
+      try {
+        architectBayGrid?.setActive?.(false);
+      } catch (_) {}
       try {
         transformControls?.detach?.();
         const helper = transformControls?.getHelper?.();
@@ -3313,6 +3321,64 @@ const viewportXR = createViewportXR({
 window.Render3DViewportXR = viewportXR;
 
 let pendingXrScreenshotUrl = null;
+let pendingXrCaptureMode = "AR";
+
+function currentXrCaptureModeLabel() {
+  const mode = String(viewportXR?.getSessionMode?.() || "").toLowerCase();
+  return mode.includes("vr") ? "VR" : "AR";
+}
+
+function xrCaptureStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel = null, mime = null } = {}) {
+  if (!blob || !projectId) return null;
+  const mode = modeLabel || currentXrCaptureModeLabel();
+  const stamp = xrCaptureStamp();
+  let ext = "png";
+  let type = mime || blob.type || "image/png";
+  if (kind === "video") {
+    if (/mp4|m4v/i.test(type)) ext = "mp4";
+    else if (/quicktime|mov/i.test(type)) ext = "mov";
+    else ext = "webm";
+    type = type || (ext === "mp4" ? "video/mp4" : "video/webm");
+  } else {
+    ext = "png";
+    type = "image/png";
+  }
+  const filename = `${mode}-${kind}-${stamp}.${ext}`;
+  const file = new File([blob], filename, { type });
+  try {
+    const data = await uploadReferenceProjectFile(file, {
+      destination: "current",
+      projectId,
+      referenceFolder: "AR",
+      silent: true,
+    });
+    setEditStatus(
+      "ok",
+      `Saved ${filename} under Reference Files → AR captures.`,
+    );
+    viewportXR?.setMenuFooterHint?.(
+      kind === "video"
+        ? `Video saved to AR captures (${filename})`
+        : `Screenshot saved to AR captures (${filename})`,
+    );
+    return data;
+  } catch (err) {
+    console.warn("[xr] save capture failed", err);
+    setEditStatus("error", err?.message || "Could not save AR capture to references.");
+    return null;
+  }
+}
 
 async function captureXrScreenshotForShare() {
   try {
@@ -3325,8 +3391,15 @@ async function captureXrScreenshotForShare() {
       return;
     }
     pendingXrScreenshotUrl = dataUrl;
-    viewportXR?.setMenuFooterHint?.("POV saved — exit VR to mark up & Share to X");
-    setEditStatus("ok", "VR screenshot saved — exit VR to Share to X.");
+    pendingXrCaptureMode = currentXrCaptureModeLabel();
+    try {
+      const blob = await dataUrlToBlob(dataUrl);
+      await saveXrCaptureToReferences(blob, { kind: "screenshot", modeLabel: pendingXrCaptureMode });
+    } catch (err) {
+      console.warn("[xr] immediate reference save failed", err);
+    }
+    viewportXR?.setMenuFooterHint?.("POV saved to AR captures — exit to mark up & Share to X");
+    setEditStatus("ok", `${pendingXrCaptureMode} screenshot saved to Reference Files → AR.`);
   } catch (err) {
     setEditStatus("error", err?.message || "Could not capture VR screenshot.");
   }
@@ -3334,14 +3407,15 @@ async function captureXrScreenshotForShare() {
 
 async function flushPendingXrScreenshotShare() {
   const url = pendingXrScreenshotUrl;
+  const mode = pendingXrCaptureMode || "AR";
   pendingXrScreenshotUrl = null;
   if (!url) return;
   try {
     if (screenshotMarkup?.open) {
-      await screenshotMarkup.open(url, { modeLabel: "VR POV screenshot" });
-      setEditStatus("ok", "VR screenshot ready — mark up or Share to X.");
+      await screenshotMarkup.open(url, { modeLabel: `${mode} POV screenshot` });
+      setEditStatus("ok", `${mode} screenshot ready — mark up or Share to X (also in AR captures).`);
     } else {
-      downloadDataUrl(url, "render3d-vr-screenshot");
+      downloadDataUrl(url, `render3d-${mode.toLowerCase()}-screenshot`);
     }
   } catch (err) {
     console.warn("[xr] pending screenshot share failed", err);
@@ -13648,7 +13722,7 @@ resize();
 
 const IMPORT_ACCEPT = /\.(stl|obj|glb|gltf|ply|off|3mf|step|stp|iges|igs|brep|brp|f3z|zip)$/i;
 const DXF_ACCEPT = /\.dxf$/i;
-const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?)$/i;
+const REFERENCE_ACCEPT = /\.(pdf|txt|md|csv|tsv|log|json|ya?ml|html?|rtf|docx?|xlsx?|pptx?|png|jpe?g|webp|gif|bmp|svg|tiff?|webm|mp4|mov|m4v)$/i;
 
 function isViewportImportFile(name = "") {
   return IMPORT_ACCEPT.test(name) || DXF_ACCEPT.test(name) || REFERENCE_ACCEPT.test(name);
@@ -26199,6 +26273,8 @@ async function uploadDxfProjectFile(file, choice = {}) {
 
 async function uploadReferenceProjectFile(file, choice = {}) {
   const destination = choice.destination || "current";
+  const silent = !!choice.silent;
+  const referenceFolder = choice.referenceFolder || choice.folder || null;
   let targetProjectId;
 
   if (destination === "new") {
@@ -26223,6 +26299,7 @@ async function uploadReferenceProjectFile(file, choice = {}) {
 
   const form = new FormData();
   form.append("file", file);
+  if (referenceFolder) form.append("reference_folder", String(referenceFolder));
   const res = await rawFetch(`/api/projects/${targetProjectId}/upload`, { method: "POST", body: form });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -26232,14 +26309,16 @@ async function uploadReferenceProjectFile(file, choice = {}) {
   saveActiveModelPromptState();
   selectedFile = data.filename;
   await refreshFiles();
-  projectTree.setSelected(data.filename);
-  dxfViewer?.hideViewerOnly?.();
-  await referenceFilesViewer.openTab(data.filename, {
-    projectId: targetProjectId,
-    label: file.name.replace(/\.[^.]+$/, ""),
-    kind: data.kind,
-  });
-  setEditStatus("ok", `Opened ${data.filename} in a tab.`);
+  if (!silent) {
+    projectTree.setSelected(data.filename);
+    dxfViewer?.hideViewerOnly?.();
+    await referenceFilesViewer.openTab(data.filename, {
+      projectId: targetProjectId,
+      label: file.name.replace(/\.[^.]+$/, ""),
+      kind: data.kind,
+    });
+    setEditStatus("ok", `Opened ${data.filename} in a tab.`);
+  }
   return data;
 }
 
@@ -26826,6 +26905,19 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   getToken,
   getProjectId: () => projectId,
   isFreeTrialCredits: () => isOnFreeTrialCredits(aiStatus),
+  isXrPresenting: () => !!viewportXR?.isPresenting?.(),
+  getXrModeLabel: () => currentXrCaptureModeLabel(),
+  onSaveClip: async (blob, meta = {}) => {
+    if (!blob) return null;
+    if (meta?.xr || viewportXR?.isPresenting?.() || meta?.forceArFolder) {
+      return saveXrCaptureToReferences(blob, {
+        kind: "video",
+        modeLabel: meta?.modeLabel || currentXrCaptureModeLabel(),
+        mime: blob.type,
+      });
+    }
+    return null;
+  },
 });
 try {
   viewportVideoRecorder.bind();

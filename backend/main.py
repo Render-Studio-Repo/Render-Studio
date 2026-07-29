@@ -14099,7 +14099,7 @@ def put_reference_markup(
     project_path = _require_project(user, project_id)
     safe = Path(filename).name
     file_path = cad_service.resolve_project_file(project_path, safe)
-    if file_path is None or file_path.parent.name not in cad_service.MARKUP_FOLDER_NAMES:
+    if file_path is None or not cad_service.is_markup_path(project_path, file_path):
         raise HTTPException(404, "Reference file not found")
     if not cad_service.is_reference_suffix(file_path.suffix):
         raise HTTPException(404, "Reference file not found")
@@ -19597,13 +19597,13 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
             alt = project_path / "references" / source_name
             if alt.is_file():
                 dest = alt
-        if dest.parent.name not in cad_service.MARKUP_FOLDER_NAMES:
+        if not cad_service.is_markup_path(project_path, dest):
             raise HTTPException(400, "Can only replace files under renders/ or references/")
         dest.write_bytes(render_bytes)
         filename = dest.name
         url = (
             f"/api/projects/{project_id}/files/{filename}"
-            if dest.parent.name == "references"
+            if dest.parent.name == "references" or dest.parent.name in cad_service.REFERENCE_SUBFOLDERS
             else f"/api/projects/{project_id}/renders/{filename}"
         )
     else:

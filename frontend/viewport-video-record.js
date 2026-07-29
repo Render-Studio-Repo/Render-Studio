@@ -65,6 +65,9 @@ export function createViewportVideoRecorder({
   getToken,
   getProjectId,
   isFreeTrialCredits,
+  isXrPresenting = null,
+  getXrModeLabel = null,
+  onSaveClip = null,
 } = {}) {
   let prefs = readPrefs();
   let recorder = null;
@@ -91,6 +94,22 @@ export function createViewportVideoRecorder({
 
   function setStatus(ok, msg) {
     onStatus?.(ok, msg);
+  }
+
+  async function saveClipToProject(blob, meta = {}) {
+    if (!blob || typeof onSaveClip !== "function") return null;
+    try {
+      const xr = !!(meta.xr || isXrPresenting?.());
+      return await onSaveClip(blob, {
+        ...meta,
+        xr,
+        forceArFolder: xr || !!meta.forceArFolder,
+        modeLabel: meta.modeLabel || (xr ? (getXrModeLabel?.() || "AR") : null),
+      });
+    } catch (err) {
+      console.warn("[viewport-video] save clip failed", err);
+      return null;
+    }
   }
 
   function closeMenu() {
@@ -982,8 +1001,23 @@ export function createViewportVideoRecorder({
       cleanupStreams();
       recorder = null;
       if (blob.size > 0) {
+        lastBlob = blob;
+        sourceBlob = blob;
+        const xr = !!isXrPresenting?.();
+        if (xr) {
+          void saveClipToProject(blob, {
+            label: "XR viewport clip",
+            xr: true,
+            modeLabel: getXrModeLabel?.() || "AR",
+          });
+        }
         void openShareModal(blob);
-        setStatus(true, `${qualityLabel(prefs.quality)} clip ready — download or share to X.`);
+        setStatus(
+          true,
+          xr
+            ? `${qualityLabel(prefs.quality)} clip saved to AR captures — download or share to X.`
+            : `${qualityLabel(prefs.quality)} clip ready — download or share to X.`,
+        );
       } else {
         setStatus(false, "Recording was empty — nothing saved.");
       }

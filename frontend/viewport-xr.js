@@ -16,10 +16,10 @@ const LS_POSE = "render3d:xr-room-pose";
 const LS_SPAWN = "render3d:xr-spawn-preset";
 
 const SPAWN_PRESETS = [
-  { id: "eye", label: "In front of you", distance: 0.7, sizeM: 0.2 },
-  { id: "near", label: "Near (arm)", distance: 0.45, sizeM: 0.14 },
-  { id: "far", label: "Farther", distance: 1.2, sizeM: 0.25 },
-  { id: "floor", label: "Lower / floor", distance: 0.9, sizeM: 0.2, yMode: "floor" },
+  { id: "eye", label: "In front of you", distance: 0.55, sizeM: 0.12 },
+  { id: "near", label: "Near (arm)", distance: 0.4, sizeM: 0.09 },
+  { id: "far", label: "Farther", distance: 0.85, sizeM: 0.16 },
+  { id: "floor", label: "Lower / floor", distance: 0.65, sizeM: 0.12, yMode: "floor" },
 ];
 
 const QUICK_DOCK = [
@@ -371,6 +371,7 @@ export function createViewportXR(opts) {
   let menuFooterHint = "";
   let lastSelectAt = 0;
   let scaleGrab = null;
+  let gripRotate = null; // single-grip yaw → rotate model in front of you
   let prevSqueeze = [false, false];
 
   const xrHud = new THREE.Group();
@@ -597,6 +598,15 @@ export function createViewportXR(opts) {
     return out;
   }
 
+  /** Horizontal gaze — place object directly in front at eye height. */
+  function headForwardFlat(out = _fwd) {
+    out.set(0, 0, -1).applyQuaternion(_headQuat);
+    out.y = 0;
+    if (out.lengthSq() < 1e-6) out.set(0, 0, -1);
+    else out.normalize();
+    return out;
+  }
+
   async function waitForHead(frames = 40) {
     for (let i = 0; i < frames; i += 1) {
       await new Promise((r) => requestAnimationFrame(r));
@@ -725,14 +735,16 @@ export function createViewportXR(opts) {
     }
     const size0 = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
-    const targetM = Math.min(preset.sizeM || 0.2, 0.22) * Math.max(userZoom, 0.12);
+    const targetM = Math.min(preset.sizeM || 0.12, 0.14) * Math.max(Math.min(userZoom, 1.35), 0.45);
 
     getHeadPose();
     if (!Number.isFinite(_headPos.y) || _headPos.y < 0.2) _headPos.set(0, 1.55, 0);
-    const forward = headForward();
-    const dist = preset.distance || 0.7;
+    const forward = headForwardFlat();
+    const dist = preset.distance || 0.55;
     const target = _headPos.clone().addScaledVector(forward, dist);
+    // Keep at eye height so it sits directly in front (not at feet / ceiling)
     if (preset.yMode === "floor") target.y = Math.max(0.12, targetM * 0.5);
+    else target.y = _headPos.y - 0.05;
 
     const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
     const flatBack = forward.clone();
@@ -767,7 +779,7 @@ export function createViewportXR(opts) {
 
     presentationScale = Math.abs(mesh.scale.x) || factor;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
-    enforceHandheldSize(mesh, Math.min(targetM, 0.22));
+    enforceHandheldSize(mesh, Math.min(targetM, 0.14));
 
     // Bright marker so a black PBR model still has a visible anchor
     let marker = mesh.getObjectByName("xrModelMarker");
@@ -797,28 +809,31 @@ export function createViewportXR(opts) {
     return true;
   }
 
-  function enforceHandheldSize(mesh, targetMax = 0.2) {
+  function enforceHandheldSize(mesh, targetMax = 0.14) {
     mesh.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(mesh);
+    let box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3());
     const maxD = Math.max(size.x, size.y, size.z);
     if (!(maxD > 1e-8)) return;
     const factor = targetMax / maxD;
-    if (!Number.isFinite(factor) || factor <= 0) return;
-    if (Math.abs(1 - factor) < 0.02) return;
-    const center = box.getCenter(new THREE.Vector3());
     const parent = mesh.parent;
-    const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
-    mesh.scale.multiplyScalar(factor);
-    mesh.position.sub(localCenter).multiplyScalar(factor).add(localCenter);
-    presentationScale = Math.abs(mesh.scale.x) || presentationScale * factor;
-    baseScale = presentationScale / Math.max(userZoom, 1e-6);
-    mesh.updateMatrixWorld(true);
+    if (Number.isFinite(factor) && factor > 0 && Math.abs(1 - factor) >= 0.01) {
+      const center = box.getCenter(new THREE.Vector3());
+      const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
+      mesh.scale.multiplyScalar(factor);
+      mesh.position.sub(localCenter).multiplyScalar(factor).add(localCenter);
+      presentationScale = Math.abs(mesh.scale.x) || presentationScale * factor;
+      baseScale = presentationScale / Math.max(userZoom, 1e-6);
+      mesh.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(mesh);
+    }
+    // Always pin to eye-level in front of the headset
     getHeadPose();
-    const f = headForward();
-    const want = _headPos.clone().addScaledVector(f, 0.7);
-    const c2 = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    const f = headForwardFlat();
+    const want = _headPos.clone().addScaledVector(f, 0.55);
+    want.y = _headPos.y - 0.05;
+    const c2 = box.getCenter(new THREE.Vector3());
     const dlt = want.sub(c2);
     if (parent) {
       const worldPos = mesh.getWorldPosition(new THREE.Vector3()).add(dlt);
@@ -843,7 +858,7 @@ export function createViewportXR(opts) {
     presentationScale = mesh.scale.x || 1;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
     mesh.updateMatrixWorld(true);
-    enforceHandheldSize(mesh, 0.22);
+    enforceHandheldSize(mesh, 0.14);
     showBeacon(mesh.getWorldPosition(new THREE.Vector3()));
     return true;
   }
@@ -872,7 +887,7 @@ export function createViewportXR(opts) {
   function applyZoom(factor) {
     const mesh = getLiveMesh();
     if (!mesh || !presenting) return;
-    userZoom = THREE.MathUtils.clamp(userZoom * factor, 0.25, 3);
+    userZoom = THREE.MathUtils.clamp(userZoom * factor, 0.35, 1.8);
     const next = baseScale * userZoom;
     const ratio = next / Math.max(presentationScale, 1e-9);
     presentationScale = next;
@@ -1133,7 +1148,7 @@ export function createViewportXR(opts) {
     if (menuTab === "files") return "Open / link project files";
     if (menuTab === "ai") return "Transcribe with mic · run prompt · link models";
     if (menuTab === "view") return "Capture & view tools · Share to X after capture";
-    return "Tools · squeeze both grips to resize · undo/redo on left controller";
+    return "Tools · grip rotates · both grips resize · undo/redo on left";
   }
 
   function openMenuConsole(opts = {}) {
@@ -1709,33 +1724,82 @@ export function createViewportXR(opts) {
     }
 
     // Triggers are handled by WebXR selectstart/selectend on the correct controller.
-    // Do NOT re-fire from gamepad polling — handedness/index mismatch was always
-    // activating the left dock Menu / first console row ("start position").
     for (let handIndex = 0; handIndex < 2; handIndex += 1) {
       prevTrigger[handIndex] = triggers[handIndex];
     }
 
-    // Left squeeze alone opens console; both squeezes reserved for resize
-    if (squeezes[0] && !squeezes[1] && !prevSqueeze[0]) {
-      openMenuConsole({ tab: menuTab || "projects" });
+    // Stick zoom only (grip buttons own rotation)
+    if (!(squeezes[0] && squeezes[1]) && !gripRotate) {
+      for (const source of sess.inputSources) {
+        const gp = source.gamepad;
+        if (!gp) continue;
+        const ax = gp.axes || [];
+        const axisY = ax.length >= 4 ? ax[3] : ax[1];
+        if (Math.abs(axisY || 0) > 0.25) applyZoom(Math.exp(-axisY * 0.03));
+      }
     }
+
     prevSqueeze[0] = squeezes[0];
     prevSqueeze[1] = squeezes[1];
+  }
 
-    // Stick zoom / rotate (right hand preferred)
+  /** Hold either grip to yaw-rotate the model (both grips = resize). */
+  function updateGripRotate() {
+    if (scaleGrab) {
+      gripRotate = null;
+      return;
+    }
+    const sess = renderer.xr.getSession?.();
+    const mesh = getLiveMesh();
+    if (!sess || !mesh) {
+      gripRotate = null;
+      return;
+    }
+
+    const squeezes = [false, false];
+    const sourcesByHand = [null, null];
+    let gi = 0;
     for (const source of sess.inputSources) {
       const gp = source.gamepad;
       if (!gp) continue;
-      if (squeezes[0] && squeezes[1]) break;
-      const ax = gp.axes || [];
-      const axisX = ax.length >= 4 ? ax[2] : ax[0];
-      const axisY = ax.length >= 4 ? ax[3] : ax[1];
-      if (Math.abs(axisY || 0) > 0.25) applyZoom(Math.exp(-axisY * 0.03));
-      if (Math.abs(axisX || 0) > 0.25 && getLiveMesh()) {
-        getLiveMesh().rotation.y -= axisX * 0.045;
-        saveRoomPose();
-      }
+      const handIndex = source.handedness === "left" ? 0 : source.handedness === "right" ? 1 : gi;
+      squeezes[handIndex] = !!(gp.buttons?.[1]?.pressed || (gp.buttons?.[1]?.value || 0) > 0.7);
+      sourcesByHand[handIndex] = source;
+      gi += 1;
     }
+
+    if (squeezes[0] && squeezes[1]) {
+      gripRotate = null;
+      return;
+    }
+
+    const hand = squeezes[0] ? 0 : squeezes[1] ? 1 : -1;
+    if (hand < 0) {
+      if (gripRotate) {
+        saveRoomPose();
+        gripRotate = null;
+      }
+      return;
+    }
+
+    const ctrl = controllers[hand];
+    if (!ctrl) return;
+    ctrl.updateMatrixWorld(true);
+    const yaw = new THREE.Euler().setFromQuaternion(
+      ctrl.getWorldQuaternion(new THREE.Quaternion()),
+      "YXZ",
+    ).y;
+
+    if (!gripRotate || gripRotate.hand !== hand) {
+      gripRotate = {
+        hand,
+        startCtrlYaw: yaw,
+        startMeshYaw: mesh.rotation.y,
+      };
+      return;
+    }
+
+    mesh.rotation.y = gripRotate.startMeshYaw + (yaw - gripRotate.startCtrlYaw);
   }
 
   function updateGrab() {
@@ -1829,7 +1893,7 @@ export function createViewportXR(opts) {
       return;
     }
 
-    const factor = THREE.MathUtils.clamp(dist / scaleGrab.startDist, 0.25, 4);
+    const factor = THREE.MathUtils.clamp(dist / scaleGrab.startDist, 0.4, 2.2);
     const nextScale = scaleGrab.startScale * factor;
     const ratio = nextScale / Math.max(presentationScale, 1e-9);
     presentationScale = nextScale;
@@ -1947,13 +2011,17 @@ export function createViewportXR(opts) {
       /* ignore */
     }
 
-    await waitForHead(50);
+    await waitForHead(60);
 
-    // Always re-place in front after tracking settles (saved pose is optional via Saved tool)
+    // Always re-place in front after tracking settles (ignore saved room pose / zoom)
+    userZoom = 1;
     placeInFront({ spawnId: "eye", keepZoom: false });
     setTimeout(() => {
-      if (presenting) placeInFront({ spawnId: "eye", keepZoom: true });
-    }, 500);
+      if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+    }, 350);
+    setTimeout(() => {
+      if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+    }, 900);
 
     activeTool = "grab";
     syncDock();
@@ -1983,6 +2051,7 @@ export function createViewportXR(opts) {
     });
     grabState = null;
     scaleGrab = null;
+    gripRotate = null;
     clearMeasure();
     restoreMeshMaterials();
     restoreDesktop();
@@ -2053,10 +2122,17 @@ export function createViewportXR(opts) {
       g.visible = true;
     });
     updateTwoHandScale();
+    updateGripRotate();
     updateGrab();
     updatePanelDrag();
     updateDockFollow();
     pollGamepads();
+    // Grid / floors must stay off for the entire AR session
+    try {
+      hideSceneChrome?.();
+    } catch {
+      /* ignore */
+    }
     if (beacon?.visible && beacon.userData.born && performance.now() - beacon.userData.born > 5000) {
       beacon.visible = false;
     }

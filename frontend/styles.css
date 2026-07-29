@@ -41892,3 +41892,19 @@ body.xr-presenting .mobile-showcase-bar {
 #viewport canvas {
   background: transparent !important;
 }
+
+/* AR / VR capture video preview in reference viewer */
+.ref-viewer-stage--video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.ref-video {
+  max-width: min(100%, 960px);
+  max-height: min(70vh, 720px);
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  background: #0b1220;
+}
