@@ -79,8 +79,12 @@ def get_user_key(user_id: str) -> str | None:
 
 def resolve_api_key_for_user(user: dict[str, Any]) -> str | None:
     if uses_shared_server_key(user.get("email", "")):
-        return settings.openai_api_key or None
-    return get_user_key(user["id"])
+        return (getattr(settings, "openai_api_key", None) or None) or None
+    user_key = get_user_key(user["id"])
+    if user_key:
+        return user_key
+    # Fall back to platform key for features like Whisper transcription
+    return (getattr(settings, "openai_api_key", None) or None) or None
 
 
 def key_hint(api_key: str) -> str:

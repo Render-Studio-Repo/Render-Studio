@@ -9725,7 +9725,11 @@ async def transcribe_audio(
 
     from backend.services.user_keys_service import resolve_api_key_for_user
 
-    api_key = (resolve_api_key_for_user(user) or settings.openai_api_key or "").strip()
+    api_key = (
+        resolve_api_key_for_user(user)
+        or getattr(settings, "openai_api_key", "")
+        or ""
+    ).strip()
     if not api_key:
         raise HTTPException(status_code=400, detail="No OpenAI API key configured for transcription.")
 
