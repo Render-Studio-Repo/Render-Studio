@@ -1,11 +1,12 @@
-## 2026-07-29 — Bambu: real virtual plates 01/02/… (not black mesh “plates”)
+## 2026-07-29 — Bambu: unique mesh IDs so each plate shows the real part
 
-- Root cause: Studio only builds multi-plate UI when `Application` starts with `BambuStudio-` **and** `Metadata/project_settings.config` exists. Without that it geometry-loads onto plate 01; plate-grid offsets look like black plate meshes off-bed.
-- 3MF now sets `Application=BambuStudio-01.10.00.87`, embeds X1C `project_settings.config`, keeps body packing across plates, uses Bambu UUID suffixes.
-- Verified drone 3MF has project_settings + 10 plates + BambuStudio Application.
-- Cache-bust `?v=20260729-bambu-real-plates`; restarted `render3d.service`.
+- Multi-plate UI worked, but every plate showed the same Bottom-Plate-like mesh.
+- Cause: all `3D/Objects/object_*.model` used `object id="1"`; Studio conflates those (known Bambu quirk).
+- Each body now gets a unique mesh object id (`1,3,5…`) matched by component `objectid` and `model_settings` `<part id>`.
+- Cache-bust `?v=20260729-bambu-unique-mesh-ids`; restarted `render3d.service`.
 
 ---
+
 
 
 
