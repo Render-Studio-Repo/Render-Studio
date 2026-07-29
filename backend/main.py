@@ -2357,6 +2357,9 @@ def _get_ai_for_user(
                 model = key_model
             else:
                 model = settings.openai_model_quality
+            # Sam / a1projects: never run GPT-5.5 Pro (Quality pin or default).
+            if _is_a1projects_admin(user) and "gpt-5.5-pro" in str(model or "").lower():
+                model = settings.openai_model
         else:
             model = (effective.get("model") or "").strip() or settings.anthropic_model
         return AIService(model=model, api_key=effective["api_key"], provider=provider)

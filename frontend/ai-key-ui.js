@@ -83,7 +83,7 @@ function formatCents(cents) {
   return formatUsd(Number(cents || 0) / 100);
 }
 
-export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
+export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey, blockGpt55Pro = null }) {
   const modal = document.getElementById("ai-key-modal");
   const form = document.getElementById("ai-key-form");
   const providerInput = document.getElementById("ai-key-provider");
@@ -107,22 +107,46 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   let teams = [];
   let selectedTeamFilter = "all";
   let creditTab = "buy";
+
+  function shouldBlockGpt55Pro() {
+    try {
+      return typeof blockGpt55Pro === "function" ? !!blockGpt55Pro() : !!blockGpt55Pro;
+    } catch {
+      return false;
+    }
+  }
+
+  function openaiModelOptions() {
+    let options = MODEL_OPTIONS.openai || [];
+    if (shouldBlockGpt55Pro()) {
+      options = options.filter((o) => String(o.value || "").toLowerCase() !== "gpt-5.5-pro");
+    }
+    return options;
+  }
   let creditAmount = 2000;
   let creditTransactions = [];
   let creditTxLoading = false;
 
   function renderModelOptions(provider, selectedModel = "") {
     if (!modelInput) return;
-    let options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    let options = String(provider || "").toLowerCase() === "openai"
+      ? openaiModelOptions()
+      : (MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai);
     const trial = status?.credits?.trial || {};
     const onTrial = !!(status?.credits?.on_free_trial || trial.on_free_trial
       || (trial.granted && !trial.reclaimed_at && Number(status?.credits?.balance_cents || 0) > 0 && !status?.credits?.last_purchase_cents));
     if (onTrial && String(provider || "").toLowerCase() === "openai") {
-      const blocked = new Set((trial.quality_blocked_openai_models || ["gpt-5.5", "gpt-5.5-pro"]).map((m) => String(m).toLowerCase()));
       // Keep GPT-5.5 available for Speed; Quality is enforced server-side. Still de-emphasize Pro on trial.
       options = options.filter((o) => String(o.value).toLowerCase() !== "gpt-5.5-pro");
     }
-    const selected = selectedModel || defaultModel(provider);
+    let selected = selectedModel || defaultModel(provider);
+    if (
+      shouldBlockGpt55Pro()
+      && String(provider || "").toLowerCase() === "openai"
+      && String(selected || "").toLowerCase() === "gpt-5.5-pro"
+    ) {
+      selected = "gpt-5.5";
+    }
     modelInput.innerHTML = "";
     options.forEach((model) => {
       const opt = document.createElement("option");
@@ -130,7 +154,7 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
       opt.textContent = model.label;
       modelInput.appendChild(opt);
     });
-    if (selected && !options.some((m) => m.value === selected)) {
+    if (selected && !options.some((m) => m.value === selected) && String(selected).toLowerCase() !== "gpt-5.5-pro") {
       const custom = document.createElement("option");
       custom.value = selected;
       custom.textContent = `${selected} (saved)`;
@@ -237,19 +261,31 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey }) {
   }
 
   function modelOptionsHTML(provider, currentModel) {
-    const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    const options = String(provider || "").toLowerCase() === "openai"
+      ? openaiModelOptions()
+      : (MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai);
     const knownValues = options.map((o) => o.value);
+    let selected = currentModel;
+    if (
+      shouldBlockGpt55Pro()
+      && String(provider || "").toLowerCase() === "openai"
+      && String(selected || "").toLowerCase() === "gpt-5.5-pro"
+    ) {
+      selected = "gpt-5.5";
+    }
     let html = options.map((o) =>
-      `<option value="${esc(o.value)}"${o.value === currentModel ? " selected" : ""}>${esc(o.label)}</option>`
+      `<option value="${esc(o.value)}"${o.value === selected ? " selected" : ""}>${esc(o.label)}</option>`
     ).join("");
-    if (currentModel && !knownValues.includes(currentModel)) {
-      html += `<option value="${esc(currentModel)}" selected>${esc(currentModel)}</option>`;
+    if (selected && !knownValues.includes(selected) && String(selected).toLowerCase() !== "gpt-5.5-pro") {
+      html += `<option value="${esc(selected)}" selected>${esc(selected)}</option>`;
     }
     return html;
   }
 
   function allowedModelsChecklistHTML(provider, allowedModels, { teamId, teamKeyId, userId, disabled = false } = {}) {
-    const options = MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai;
+    const options = String(provider || "").toLowerCase() === "openai"
+      ? openaiModelOptions()
+      : (MODEL_OPTIONS[provider] || MODEL_OPTIONS.openai);
     const allowed = new Set(
       Array.isArray(allowedModels) && allowedModels.length
         ? allowedModels

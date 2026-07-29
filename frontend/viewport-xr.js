@@ -174,6 +174,8 @@ export function createViewportXR(opts) {
   let savedBackground = null;
   let savedFog = null;
   let savedShadowMap = null;
+  let savedNear = null;
+  let savedFar = null;
   let frustumBackup = [];
 
   // Measure
@@ -369,6 +371,12 @@ export function createViewportXR(opts) {
   function restoreDesktop() {
     if (!saved?.mesh) return;
     const { mesh, pos, quat, scale } = saved;
+    const marker = mesh.getObjectByName("xrModelMarker");
+    if (marker) {
+      mesh.remove(marker);
+      marker.geometry?.dispose?.();
+      marker.material?.dispose?.();
+    }
     mesh.position.copy(pos);
     mesh.quaternion.copy(quat);
     mesh.scale.copy(scale);
@@ -391,15 +399,25 @@ export function createViewportXR(opts) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
         if (!m) continue;
-        if (m.emissive && m.emissiveIntensity != null) {
-          if (!m.userData._xrEmissiveBak) {
-            m.userData._xrEmissiveBak = {
-              color: m.emissive.clone(),
-              intensity: m.emissiveIntensity,
-            };
-            m.emissive.setHex(0x222222);
-            m.emissiveIntensity = Math.max(m.emissiveIntensity || 0, 0.15);
-          }
+        if (m.emissive && m.emissiveIntensity != null && !m.userData._xrEmissiveBak) {
+          m.userData._xrEmissiveBak = {
+            color: m.emissive.clone(),
+            intensity: m.emissiveIntensity,
+          };
+          m.emissive.setHex(0x555555);
+          m.emissiveIntensity = Math.max(m.emissiveIntensity || 0, 0.45);
+        }
+        if (m.metalness != null && m.metalness > 0.5 && m.userData._xrMetalBak == null) {
+          m.userData._xrMetalBak = m.metalness;
+          m.metalness = Math.min(m.metalness, 0.25);
+        }
+        if (m.envMapIntensity != null) {
+          m.envMapIntensity = Math.max(m.envMapIntensity || 0, 0.8);
+        }
+        // Guaranteed unlit fallback for pitch-black CAD in AR
+        if (!m.userData._xrColorBak && m.color) {
+          m.userData._xrColorBak = m.color.clone();
+          m.color.offsetHSL(0, 0, 0.08);
         }
       }
     });
@@ -412,10 +430,19 @@ export function createViewportXR(opts) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
         const bak = m?.userData?._xrEmissiveBak;
-        if (!bak) continue;
-        m.emissive.copy(bak.color);
-        m.emissiveIntensity = bak.intensity;
-        delete m.userData._xrEmissiveBak;
+        if (bak) {
+          m.emissive.copy(bak.color);
+          m.emissiveIntensity = bak.intensity;
+          delete m.userData._xrEmissiveBak;
+        }
+        if (m?.userData?._xrMetalBak != null) {
+          m.metalness = m.userData._xrMetalBak;
+          delete m.userData._xrMetalBak;
+        }
+        if (m?.userData?._xrColorBak) {
+          m.color.copy(m.userData._xrColorBak);
+          delete m.userData._xrColorBak;
+        }
       }
     });
   }
@@ -491,6 +518,22 @@ export function createViewportXR(opts) {
     presentationScale = Math.abs(mesh.scale.x) || factor;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
     enforceHandheldSize(mesh, Math.min(targetM, 0.22));
+
+    // Bright marker so a black PBR model still has a visible anchor
+    let marker = mesh.getObjectByName("xrModelMarker");
+    if (!marker) {
+      marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xfff200, depthTest: false, depthWrite: false }),
+      );
+      marker.name = "xrModelMarker";
+      marker.renderOrder = 4500;
+      marker.frustumCulled = false;
+      mesh.add(marker);
+    }
+    marker.visible = true;
+    const ms = Math.max(Math.abs(mesh.scale.x), 1e-9);
+    marker.scale.setScalar(0.05 / ms); // ~5cm in world space
 
     console.info("[viewport-xr] placed", {
       maxDimBefore: maxDim,
@@ -810,9 +853,21 @@ export function createViewportXR(opts) {
         new THREE.LineBasicMaterial({ color: 0x7dd3fc, depthTest: false, transparent: true, opacity: 1 }),
       );
       ray.renderOrder = 3000;
+      ray.frustumCulled = false;
       controller.add(ray);
+      const originBall = new THREE.Mesh(
+        new THREE.SphereGeometry(0.03, 14, 12),
+        new THREE.MeshBasicMaterial({
+          color: i === 0 ? 0x38bdf8 : 0xf472b6,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      originBall.renderOrder = 3999;
+      originBall.frustumCulled = false;
+      controller.add(originBall);
       const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.01, 10, 8),
+        new THREE.SphereGeometry(0.02, 12, 10),
         new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
       );
       tip.position.z = -1.8;
@@ -824,13 +879,31 @@ export function createViewportXR(opts) {
 
       const grip = renderer.xr.getControllerGrip(i);
       grip.add(controllerModelFactory.createControllerModel(grip));
-      // Always-visible controller body
+      // Always-visible controller body (BasicMaterial + no depth test — survives CAD clip quirks)
       const body = new THREE.Mesh(
-        new THREE.BoxGeometry(0.045, 0.02, 0.1),
-        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xf472b6 }),
+        new THREE.BoxGeometry(0.06, 0.03, 0.14),
+        new THREE.MeshBasicMaterial({
+          color: i === 0 ? 0x38bdf8 : 0xf472b6,
+          depthTest: false,
+          depthWrite: false,
+        }),
       );
       body.position.z = 0.02;
+      body.renderOrder = 4000;
+      body.frustumCulled = false;
       grip.add(body);
+      const knob = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 16, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      knob.position.set(0, 0.02, 0.02);
+      knob.renderOrder = 4001;
+      knob.frustumCulled = false;
+      grip.add(knob);
       grip.addEventListener("connected", () => {
         grip.visible = presenting;
       });
@@ -1047,6 +1120,19 @@ export function createViewportXR(opts) {
     savedShadowMap = renderer.shadowMap?.enabled;
     if (renderer.shadowMap) renderer.shadowMap.enabled = false;
 
+    // CRITICAL: desktop CAD uses large near planes (often meters+). Three.js pushes
+    // camera.near into XR session depthNear — that clips controllers + handheld models.
+    savedNear = camera.near;
+    savedFar = camera.far;
+    camera.near = 0.05;
+    camera.far = 100;
+    camera.updateProjectionMatrix();
+    try {
+      session.updateRenderState({ depthNear: 0.05, depthFar: 100 });
+    } catch {
+      /* ignore */
+    }
+
     presenting = true;
     xrHud.visible = true;
     attachHudToCamera();
@@ -1107,6 +1193,13 @@ export function createViewportXR(opts) {
     scene.background = savedBackground;
     scene.fog = savedFog;
     if (renderer.shadowMap && savedShadowMap != null) renderer.shadowMap.enabled = savedShadowMap;
+    if (savedNear != null) {
+      camera.near = savedNear;
+      camera.far = savedFar ?? camera.far;
+      camera.updateProjectionMatrix();
+      savedNear = null;
+      savedFar = null;
+    }
     renderer.setClearColor(0x000000, 0);
     detachHudFromCamera();
     if (controls) controls.enabled = true;
@@ -1143,6 +1236,12 @@ export function createViewportXR(opts) {
 
   function update() {
     if (!presenting) return;
+    // Keep XR depth range room-scale every frame (desktop fitCamera can fight us)
+    if (camera.near > 0.08 || camera.far < 20) {
+      camera.near = 0.05;
+      camera.far = 100;
+      camera.updateProjectionMatrix();
+    }
     // Force overlays visible every frame (Quest can flip them off)
     xrHud.visible = true;
     dock.visible = true;

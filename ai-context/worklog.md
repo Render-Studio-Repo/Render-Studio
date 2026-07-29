@@ -1,3 +1,11 @@
+## 2026-07-29 — Hide GPT-5.5 Pro for Sam / a1projects
+
+- Removed **GPT-5.5 Pro** from model pickers for a1projects admin emails.
+- Server also remaps any pinned gpt-5.5-pro → gpt-5.5 for those accounts (Quality included).
+- Cache-bust `?v=20260729-no-pro-a1`.
+
+---
+
 ## 2026-07-28 — GPT-5.5 Pro defaults Mode to Speed
 
 - Selecting **GPT-5.5 Pro** auto-sets Mode to **Speed** so Quality ($30/$180) is not left on by accident.

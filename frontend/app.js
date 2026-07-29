@@ -75,7 +75,7 @@ import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-pr
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-prep-popup";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-tiny2";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-depth";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -85,7 +85,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260727-mobile-share-copy";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260727-no-free-week-popup";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260729-no-pro-a1";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
@@ -3051,7 +3051,15 @@ const viewportXR = createViewportXR({
   camera,
   controls,
   transformControls,
-  getMeshRoot: () => projectAssembly?.getRoot?.() || currentMesh || null,
+  getMeshRoot: () => {
+    try {
+      const root = projectAssembly?.getRoot?.();
+      if (root && (projectAssembly?.count?.() || 0) > 0) return root;
+      return currentMesh || root || null;
+    } catch {
+      return currentMesh || null;
+    }
+  },
   getMmPerUnit: () => currentMmPerModelUnit(),
   formatLength,
   fitCamera: () => {
@@ -16994,18 +17002,31 @@ const BADGE_CLASS_MAP = {
 
 function buildModelOptionsHTML(provider, currentModel, allowedModels = null) {
   let opts = PROMPT_KEY_MODEL_OPTIONS[provider] || PROMPT_KEY_MODEL_OPTIONS.openai;
+  // Sam / a1projects: never offer GPT-5.5 Pro (too easy to blow budget on Quality).
+  if (String(provider || "").toLowerCase() === "openai" && isA1ProjectsAdminUser()) {
+    opts = opts.filter((o) => String(o.value || "").toLowerCase() !== "gpt-5.5-pro");
+  }
   if (Array.isArray(allowedModels) && allowedModels.length) {
     const allow = new Set(allowedModels);
     const filtered = opts.filter((o) => allow.has(o.value));
     if (filtered.length) opts = filtered;
   }
   const known = opts.map((o) => o.value);
+  // If Pro was previously pinned, fall back to GPT-5.5 in the selector for a1projects.
+  let selected = currentModel;
+  if (
+    isA1ProjectsAdminUser()
+    && String(provider || "").toLowerCase() === "openai"
+    && String(selected || "").toLowerCase() === "gpt-5.5-pro"
+  ) {
+    selected = "gpt-5.5";
+  }
   let html = opts.map((o) =>
-    `<option value="${o.value}"${o.value === currentModel ? " selected" : ""}>${o.label}</option>`
+    `<option value="${o.value}"${o.value === selected ? " selected" : ""}>${o.label}</option>`
   ).join("");
-  if (currentModel && !known.includes(currentModel)) {
-    const fallbackLabel = formatModelLabel(currentModel, provider) || currentModel;
-    html += `<option value="${currentModel}" selected>${fallbackLabel}</option>`;
+  if (selected && !known.includes(selected) && String(selected).toLowerCase() !== "gpt-5.5-pro") {
+    const fallbackLabel = formatModelLabel(selected, provider) || selected;
+    html += `<option value="${selected}" selected>${fallbackLabel}</option>`;
   }
   return html;
 }
@@ -17423,7 +17444,14 @@ function initPromptKeyPopup() {
     e.stopPropagation();
     const keyId = modelSel.dataset.keyId;
     const source = modelSel.dataset.source;
-    const newModel = modelSel.value;
+    let newModel = modelSel.value;
+    if (
+      isA1ProjectsAdminUser()
+      && String(newModel || "").toLowerCase() === "gpt-5.5-pro"
+    ) {
+      newModel = "gpt-5.5";
+      modelSel.value = newModel;
+    }
     const selectedValue = promptKeyOptionValue(source, keyId);
     const hiddenSelect = document.getElementById("prompt-ai-key-select");
     if (hiddenSelect) {
@@ -28846,6 +28874,7 @@ window.addEventListener("keydown", (e) => {
     api,
     getProjects: () => allProjects,
     getCurrentProjectId: () => projectId,
+    blockGpt55Pro: () => isA1ProjectsAdminUser(),
     onStatusChange: (status) => {
       renderAIStatus(status);
       void refreshWorkspaceAiUsage();
