@@ -361,13 +361,18 @@ function wrapTextLines(ctx, text, maxWidth, maxLines = 8) {
   return lines;
 }
 
-function drawAiPromptCanvas(state = {}) {
+// Reused across refreshes — avoids allocating a 1080×1280 canvas ~5×/sec in AR
+let _aiPromptCanvas = null;
+
+function drawAiPromptCanvas(state = {}, targetCanvas = null) {
   const width = AI_CANVAS.w;
   const height = AI_CANVAS.h;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  const canvas = targetCanvas || _aiPromptCanvas || document.createElement("canvas");
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  if (!targetCanvas) _aiPromptCanvas = canvas;
   const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
 
   const body = ctx.createLinearGradient(0, 0, width, height);
   body.addColorStop(0, "#0b1220");
@@ -805,10 +810,18 @@ export function createViewportXR(opts) {
   }
 
   function getHeadPose() {
-    const xrCam = renderer.xr.getCamera?.();
+    const xrCam = renderer.xr.getCamera?.(camera);
+    if (xrCam?.cameras?.length >= 2) {
+      // Average both eyes — more stable than left-only on Quest
+      const a = xrCam.cameras[0].getWorldPosition(new THREE.Vector3());
+      const b = xrCam.cameras[1].getWorldPosition(new THREE.Vector3());
+      _headPos.copy(a).add(b).multiplyScalar(0.5);
+      xrCam.getWorldQuaternion(_headQuat);
+      return true;
+    }
     if (xrCam?.cameras?.[0]) {
       xrCam.cameras[0].getWorldPosition(_headPos);
-      xrCam.cameras[0].getWorldQuaternion(_headQuat);
+      xrCam.getWorldQuaternion(_headQuat);
       return true;
     }
     if (xrCam) {
@@ -979,12 +992,8 @@ export function createViewportXR(opts) {
       return false;
     }
     const size0 = box.getSize(new THREE.Vector3());
-    let maxDim = Math.max(size0.x, size0.y, size0.z, 1e-6);
-    // If content looks like raw mm (huge), normalize into meters for sizing
-    if (maxDim > 5) {
-      // keep measuring in current units — targetM still clamps world size
-    }
-    const targetM = Math.min(preset.sizeM || 0.11, 0.13) * Math.max(Math.min(userZoom, 1.25), 0.55);
+    let maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
+    const targetM = Math.min(preset.sizeM || 0.11, 0.12) * Math.max(Math.min(userZoom, 1.2), 0.6);
 
     getHeadPose();
     if (!Number.isFinite(_headPos.y) || _headPos.y < 0.15) _headPos.set(0, 1.55, 0);
@@ -1014,7 +1023,7 @@ export function createViewportXR(opts) {
       mesh.quaternion.copy(worldQuat);
     }
 
-    const factor = targetM / maxDim;
+    const factor = THREE.MathUtils.clamp(targetM / maxDim, 1e-7, 80);
     mesh.scale.setScalar(factor);
     mesh.updateMatrixWorld(true);
 
@@ -1229,6 +1238,7 @@ export function createViewportXR(opts) {
       return;
     }
     if (id === "grab" || id === "rotate") {
+      if (activeTool === "measure") clearMeasure();
       activeTool = id;
       syncDock();
       return;
@@ -1303,7 +1313,49 @@ export function createViewportXR(opts) {
     try {
       if (typeof isTranscribing === "function") state.listening = !!isTranscribing();
     } catch (_) {}
+    if (aiPanel?.status) {
+      state.draft = state.draft
+        ? `${state.draft}`
+        : String(aiPanel.status);
+      if (state.draft && aiPanel.status && !String(state.draft).includes(aiPanel.status) && state.listening) {
+        /* keep live transcript; status shown via listening chrome */
+      } else if (!state.listening && aiPanel.status && !state.draft) {
+        state.draft = aiPanel.status;
+      } else if (!state.listening && aiPanel.status && state.draft === aiPanel.status) {
+        /* ok */
+      } else if (state.listening && !state.draft) {
+        state.draft = aiPanel.status || "Listening…";
+      }
+    }
     return state;
+  }
+
+  function aiCanvasToLocal(px, py) {
+    return new THREE.Vector3(
+      (px / AI_CANVAS.w - 0.5) * AI_PLANE.w,
+      (0.5 - py / AI_CANVAS.h) * AI_PLANE.h,
+      0.006,
+    );
+  }
+
+  function makeAiHitTarget(id, px, py, pw, ph) {
+    const w = (pw / AI_CANVAS.w) * AI_PLANE.w;
+    const h = (ph / AI_CANVAS.h) * AI_PLANE.h;
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.max(w, 0.025), Math.max(h, 0.025)),
+      new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.001,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    mesh.position.copy(aiCanvasToLocal(px + pw / 2, py + ph / 2));
+    mesh.renderOrder = 2310;
+    mesh.frustumCulled = false;
+    mesh.userData.xrAiHit = id;
+    return mesh;
   }
 
   function ensureAiPanel() {
@@ -1324,6 +1376,32 @@ export function createViewportXR(opts) {
     plane.renderOrder = 2300;
     plane.frustumCulled = false;
     plane.userData.xrAiPanel = true;
+
+    const hits = [];
+    hits.push(makeAiHitTarget("hide", AI_CANVAS.w - 150, 16, 120, 64));
+    hits.push(makeAiHitTarget("drag", 8, 8, AI_CANVAS.w - 170, AI_LAYOUT.headerEnd - 12));
+    const mic = AI_LAYOUT.mic;
+    hits.push(makeAiHitTarget(
+      "mic",
+      mic.cx - mic.r * 1.25,
+      mic.cy - mic.r * 1.25,
+      mic.r * 2.5,
+      mic.r * 2.5 + 55,
+    ));
+
+    function addPillHits(y, ids) {
+      const n = ids.length;
+      const gap = 16;
+      const bw = (AI_CANVAS.w - 96 - gap * (n - 1)) / n;
+      ids.forEach((hid, i) => {
+        hits.push(makeAiHitTarget(hid, 48 + i * (bw + gap), y, bw, 72));
+      });
+    }
+    addPillHits(AI_LAYOUT.modeY, ["mode:render", "mode:v2", "mode:mesh"]);
+    addPillHits(AI_LAYOUT.speedY, ["speed:fast", "speed:quality"]);
+    addPillHits(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
+    hits.push(makeAiHitTarget("run", 48, AI_LAYOUT.run.y, AI_CANVAS.w - 96, AI_LAYOUT.run.h));
+
     const titleBar = new THREE.Mesh(
       new THREE.PlaneGeometry(AI_PLANE.w, 0.055),
       new THREE.MeshBasicMaterial({
@@ -1335,13 +1413,16 @@ export function createViewportXR(opts) {
       }),
     );
     titleBar.position.y = AI_PLANE.h / 2 - 0.028;
-    titleBar.position.z = 0.002;
+    titleBar.position.z = 0.007;
     titleBar.renderOrder = 2301;
     titleBar.frustumCulled = false;
     titleBar.userData.xrAiDrag = true;
-    aiPanel = { group: new THREE.Group(), plane, titleBar, tex };
+    titleBar.userData.xrAiHit = "drag";
+
+    aiPanel = { group: new THREE.Group(), plane, titleBar, tex, canvas, hits, status: "" };
     aiPanel.group.add(plane);
     aiPanel.group.add(titleBar);
+    hits.forEach((h) => aiPanel.group.add(h));
     aiPanel.group.visible = false;
     xrHud.add(aiPanel.group);
     return aiPanel;
@@ -1349,8 +1430,9 @@ export function createViewportXR(opts) {
 
   function refreshAiPromptPanel() {
     if (!aiPanel?.group.visible) return;
-    const canvas = drawAiPromptCanvas(readAiState());
-    aiPanel.tex.image = canvas;
+    const canvas = drawAiPromptCanvas(readAiState(), aiPanel.canvas || null);
+    aiPanel.canvas = canvas;
+    if (aiPanel.tex.image !== canvas) aiPanel.tex.image = canvas;
     aiPanel.tex.needsUpdate = true;
   }
 
@@ -1385,14 +1467,8 @@ export function createViewportXR(opts) {
     if (aiPanel) aiPanel.group.visible = false;
   }
 
-  function pickAiFromLocalPoint(local) {
-    const halfW = AI_PLANE.w / 2;
-    const halfH = AI_PLANE.h / 2;
-    const u = (local.x + halfW) / AI_PLANE.w;
-    const fromTop = (halfH - local.y) / AI_PLANE.h;
-    if (u < 0 || u > 1 || fromTop < 0 || fromTop > 1) return null;
-    const px = u * AI_CANVAS.w;
-    const py = fromTop * AI_CANVAS.h;
+  function pickAiFromCanvasPx(px, py) {
+    if (!(px >= 0 && py >= 0 && px <= AI_CANVAS.w && py <= AI_CANVAS.h)) return null;
     if (py < AI_LAYOUT.headerEnd) {
       if (px > AI_CANVAS.w - 160) return { kind: "ai-action", id: "hide" };
       return { kind: "ai-drag" };
@@ -1400,19 +1476,21 @@ export function createViewportXR(opts) {
     const mic = AI_LAYOUT.mic;
     const dx = px - mic.cx;
     const dy = py - mic.cy;
-    if (dx * dx + dy * dy <= mic.r * mic.r * 1.15) return { kind: "ai-action", id: "mic" };
-
+    const micR = mic.r * 1.4;
+    if (dx * dx + dy * dy <= micR * micR) return { kind: "ai-action", id: "mic" };
+    if (py >= mic.cy + mic.r && py <= mic.cy + mic.r + 70 && Math.abs(dx) < 280) {
+      return { kind: "ai-action", id: "mic" };
+    }
     function pillHit(y, ids) {
       const n = ids.length;
       const gap = 16;
-      const totalGap = gap * (n - 1);
-      const bw = (AI_CANVAS.w - 96 - totalGap) / n;
-      if (py < y || py > y + 64) return null;
-      const i = Math.floor((px - 48) / (bw + gap));
-      if (i < 0 || i >= n) return null;
-      const x0 = 48 + i * (bw + gap);
-      if (px < x0 || px > x0 + bw) return null;
-      return ids[i];
+      const bw = (AI_CANVAS.w - 96 - gap * (n - 1)) / n;
+      if (py < y || py > y + 72) return null;
+      for (let i = 0; i < n; i += 1) {
+        const x0 = 48 + i * (bw + gap);
+        if (px >= x0 && px <= x0 + bw) return ids[i];
+      }
+      return null;
     }
     let id = pillHit(AI_LAYOUT.modeY, ["mode:render", "mode:v2", "mode:mesh"]);
     if (id) return { kind: "ai-action", id };
@@ -1427,14 +1505,50 @@ export function createViewportXR(opts) {
     return null;
   }
 
+  function pickAiFromLocalPoint(local) {
+    const halfW = AI_PLANE.w / 2;
+    const halfH = AI_PLANE.h / 2;
+    const u = (local.x + halfW) / AI_PLANE.w;
+    const fromTop = (halfH - local.y) / AI_PLANE.h;
+    if (u < 0 || u > 1 || fromTop < 0 || fromTop > 1) return null;
+    return pickAiFromCanvasPx(u * AI_CANVAS.w, fromTop * AI_CANVAS.h);
+  }
+
   function handleAiAction(id) {
+    if (!id || id === "noop") return;
     if (id === "hide") {
       closeAiPromptPanel();
       return;
     }
     if (id === "mic") {
-      try { onTranscribeToggle?.(); } catch (err) { console.warn("[viewport-xr] mic", err); }
-      setTimeout(() => refreshAiPromptPanel(), 180);
+      if (aiPanel) aiPanel.status = "Starting mic…";
+      refreshAiPromptPanel();
+      try {
+        const result = onTranscribeToggle?.();
+        Promise.resolve(result).then((res) => {
+          if (aiPanel) {
+            if (res && res.ok === false && res.error) {
+              aiPanel.status = String(res.error);
+            } else if (res?.listening) {
+              aiPanel.status = "Listening — speak now";
+            } else {
+              aiPanel.status = "";
+            }
+          }
+          refreshAiPromptPanel();
+          if (explorerPanel?.group.visible && menuTab === "ai") {
+            openMenuConsole({ tab: "ai", keepPose: true });
+          }
+        }).catch((err) => {
+          console.warn("[viewport-xr] mic", err);
+          if (aiPanel) aiPanel.status = err?.message || "Mic failed";
+          refreshAiPromptPanel();
+        });
+      } catch (err) {
+        console.warn("[viewport-xr] mic", err);
+        if (aiPanel) aiPanel.status = err?.message || "Mic failed";
+        refreshAiPromptPanel();
+      }
       return;
     }
     if (id === "run") {
@@ -1634,10 +1748,16 @@ export function createViewportXR(opts) {
     measureEdges.length = 0;
     measureHoverEdge = null;
     while (measureGroup.children.length) {
-      const c = measureGroup.children.pop();
+      const c = measureGroup.children[measureGroup.children.length - 1];
+      measureGroup.remove(c);
       c.geometry?.dispose?.();
-      c.material?.map?.dispose?.();
-      c.material?.dispose?.();
+      if (c.material) {
+        const mats = Array.isArray(c.material) ? c.material : [c.material];
+        for (const mat of mats) {
+          mat.map?.dispose?.();
+          mat.dispose?.();
+        }
+      }
     }
     measureLine = null;
     measureLabel = null;
@@ -1672,38 +1792,52 @@ export function createViewportXR(opts) {
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
 
-    // Dedicated AI prompt panel (to the right)
+    // Dedicated AI prompt panel — physical hit meshes first (reliable on Quest)
     if (aiPanel?.group.visible) {
-      const titleHits = raycaster.intersectObject(aiPanel.titleBar, false);
-      if (titleHits.length) return { kind: "ai-drag" };
+      aiPanel.group.updateMatrixWorld(true);
+      const hitMeshes = [aiPanel.titleBar, ...(aiPanel.hits || [])].filter(Boolean);
+      const hh = raycaster.intersectObjects(hitMeshes, false);
+      if (hh.length) {
+        const id = hh[0].object.userData.xrAiHit;
+        if (id === "drag") return { kind: "ai-drag", distance: hh[0].distance };
+        if (id) return { kind: "ai-action", id, distance: hh[0].distance };
+      }
       const ph = raycaster.intersectObject(aiPanel.plane, false);
       if (ph.length) {
-        const local = aiPanel.plane.worldToLocal(ph[0].point.clone());
-        const aiHit = pickAiFromLocalPoint(local);
-        if (aiHit) return aiHit;
+        const uv = ph[0].uv;
+        let mapped = null;
+        if (uv) mapped = pickAiFromCanvasPx(uv.x * AI_CANVAS.w, (1 - uv.y) * AI_CANVAS.h);
+        if (!mapped) {
+          const local = aiPanel.plane.worldToLocal(ph[0].point.clone());
+          mapped = pickAiFromLocalPoint(local);
+        }
+        return { ...(mapped || { kind: "ai-action", id: "noop" }), distance: ph[0].distance };
       }
     }
 
     // XR console first when open — otherwise the left-hand Menu chip steals every select
     if (explorerPanel?.group.visible) {
       const titleHits = raycaster.intersectObject(explorerPanel.titleBar, false);
-      if (titleHits.length) return { kind: "explorer-drag" };
+      if (titleHits.length) return { kind: "explorer-drag", distance: titleHits[0].distance };
       for (const tabHit of explorerPanel.tabHits || []) {
-        if (raycaster.intersectObject(tabHit, false).length) {
-          return { kind: "menu-tab", tab: tabHit.userData.xrMenuTab };
+        const th = raycaster.intersectObject(tabHit, false);
+        if (th.length) {
+          return { kind: "menu-tab", tab: tabHit.userData.xrMenuTab, distance: th[0].distance };
         }
       }
       const ph = raycaster.intersectObject(explorerPanel.plane, false);
       if (ph.length) {
         const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
-        const menuHit = pickMenuFromLocalPoint(local);
-        if (menuHit) return menuHit;
+        const mapped = pickMenuFromLocalPoint(local) || { kind: "menu-row", line: { kind: "hint" } };
+        return { ...mapped, distance: ph[0].distance };
       }
     }
 
     // Dock chips on the left grip (only when not hitting the open console)
     const dockHits = raycaster.intersectObjects(dockButtons, false);
-    if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
+    if (dockHits.length) {
+      return { kind: "tool", tool: dockHits[0].object.userData.xrTool, distance: dockHits[0].distance };
+    }
 
     // Place panel
     if (placePanel?.group.visible) {
@@ -1736,7 +1870,7 @@ export function createViewportXR(opts) {
             console.warn("[viewport-xr] edge snap", err);
           }
         }
-        return { kind: "mesh", point: hit.point.clone() };
+        return { kind: "mesh", point: hit.point.clone(), distance: hit.distance };
       }
     }
     return null;
@@ -1829,16 +1963,12 @@ export function createViewportXR(opts) {
   function handleSelect(controller) {
     const now = performance.now();
     // Debounce double-fire from selectstart + leftover gamepad edges
-    if (now - lastSelectAt < 160) return;
+    if (now - lastSelectAt < 90) return;
     lastSelectAt = now;
 
     const hit = pickWithController(controller);
-    if (!hit) {
-      if (activeTool === "grab" || activeTool === "rotate") {
-        beginGrab(controller);
-      }
-      return;
-    }
+    // Trigger only moves the model when the laser is actually on it
+    if (!hit) return;
     if (hit.kind === "tool") {
       setTool(hit.tool);
       return;
@@ -1872,7 +2002,6 @@ export function createViewportXR(opts) {
               // Fresh mesh: re-place in front, then show AI prompt on the right
               setTimeout(() => {
                 if (!presenting) return;
-                saved = null; // force remeasure new project content
                 placeInFront({ spawnId: "eye", keepZoom: false });
                 openAiPromptPanel();
                 try { onProjectOpened?.(line.id); } catch (_) {}
@@ -1974,7 +2103,8 @@ export function createViewportXR(opts) {
         return;
       }
       // Fallback: point pick if no edge snap
-      measurePoints.push(hit.point);
+      if (measurePoints.length >= 2) clearMeasure();
+      measurePoints.push(hit.point.clone());
       const m = new THREE.Mesh(
         new THREE.SphereGeometry(0.01, 12, 10),
         new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false }),
@@ -2008,7 +2138,9 @@ export function createViewportXR(opts) {
       }
       return;
     }
-    if (hit.kind === "mesh") beginGrab(controller);
+    if (hit.kind === "mesh" && (activeTool === "grab" || activeTool === "rotate" || !activeTool)) {
+      beginGrab(controller);
+    }
   }
 
   function beginGrab(controller) {
@@ -2177,8 +2309,36 @@ export function createViewportXR(opts) {
     faceProbe.visible = false;
   }
 
+  function updateControllerRays() {
+    for (const controller of controllers) {
+      if (!controller?.visible) continue;
+      const ray = controller.getObjectByName("xrRay");
+      const tip = controller.children.find((c) => c.isMesh && c.geometry?.type === "SphereGeometry");
+      const hit = pickWithController(controller);
+      const dist = hit?.distance && Number.isFinite(hit.distance)
+        ? Math.min(Math.max(hit.distance, 0.05), 3.0)
+        : 1.5;
+      if (ray?.geometry?.setFromPoints) {
+        ray.geometry.setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -dist),
+        ]);
+      }
+      if (tip) tip.position.z = -dist;
+      // Highlight AI hit targets under the laser
+      if (aiPanel?.hits) {
+        for (const h of aiPanel.hits) {
+          const on = !!(hit?.kind === "ai-action" && hit.id && h.userData.xrAiHit === hit.id);
+          h.material.opacity = on ? 0.22 : 0.001;
+          h.material.color.setHex(on ? 0x38bdf8 : 0x38bdf8);
+        }
+      }
+    }
+  }
+
   function updateDockFollow() {
     attachDockToLeftGrip();
+    updateControllerRays();
     const pointer = controllers.find((c) => c.userData.handedness === "right")
       || controllers[1]
       || controllers[0];
@@ -2277,7 +2437,12 @@ export function createViewportXR(opts) {
     mesh.updateMatrixWorld(true);
 
     if (!gripGrab || gripGrab.hand !== hand) {
-      // Cancel trigger-grab while grip-holding
+      // Only grab when pointing at the model (same rule as trigger)
+      const aim = pickWithController(ctrl);
+      if (aim?.kind !== "mesh") {
+        gripGrab = null;
+        return;
+      }
       grabState = null;
       const inv = new THREE.Matrix4().copy(ctrl.matrixWorld).invert();
       const local = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
@@ -2634,10 +2799,14 @@ export function createViewportXR(opts) {
     updatePanelDrag();
     updateDockFollow();
     pollGamepads();
-    // Live transcript while AI panel is open
-    if (aiPanel?.group.visible && performance.now() - aiPanelRefreshAt > 220) {
-      refreshAiPromptPanel();
-      aiPanelRefreshAt = performance.now();
+    // Live transcript while AI panel is open (fast while mic is on)
+    if (aiPanel?.group.visible) {
+      const listening = !!(typeof isTranscribing === "function" && isTranscribing());
+      const interval = listening ? 100 : 800;
+      if (performance.now() - aiPanelRefreshAt > interval) {
+        refreshAiPromptPanel();
+        aiPanelRefreshAt = performance.now();
+      }
     }
     // Grid / floors must stay off for the entire AR session
     try {

@@ -3336,6 +3336,37 @@ def _prepare_mesh_for_3mf(raw_mesh: trimesh.Trimesh) -> trimesh.Trimesh | None:
     return mesh
 
 
+def _orient_mesh_for_print(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Lay a body flat for printing (thinnest axis → height).
+
+    Assembly pose leaves plates/arms in as-built orientation, so multi-plate
+    export looked like empty build plates. Choose the axis-aligned orientation
+    with minimal Z height (then minimal XY footprint).
+    """
+    if not isinstance(mesh, trimesh.Trimesh) or mesh.is_empty:
+        return mesh
+    rots = [
+        np.eye(4),
+        trimesh.transformations.rotation_matrix(math.pi, [1.0, 0.0, 0.0]),
+        trimesh.transformations.rotation_matrix(math.pi / 2.0, [1.0, 0.0, 0.0]),
+        trimesh.transformations.rotation_matrix(-math.pi / 2.0, [1.0, 0.0, 0.0]),
+        trimesh.transformations.rotation_matrix(math.pi / 2.0, [0.0, 1.0, 0.0]),
+        trimesh.transformations.rotation_matrix(-math.pi / 2.0, [0.0, 1.0, 0.0]),
+    ]
+    best_mesh = mesh
+    best_key: tuple[float, float] | None = None
+    for mat in rots:
+        candidate = mesh.copy()
+        if not np.allclose(mat, np.eye(4)):
+            candidate.apply_transform(mat)
+        extents = np.asarray(candidate.extents, dtype=float)
+        key = (float(extents[2]), float(max(extents[0], 1.0) * max(extents[1], 1.0)))
+        if best_key is None or key < best_key:
+            best_key = key
+            best_mesh = candidate
+    return best_mesh
+
+
 def _seat_meshes_on_build_plate(items: list[tuple[str, trimesh.Trimesh]]) -> list[tuple[str, trimesh.Trimesh]]:
     """Center XY and drop the combined assembly onto Z=0 so slicers place it on the bed."""
     if not items:
@@ -3557,15 +3588,16 @@ def _build_bambu_model_settings(
         lines.append("    </part>")
         lines.append("  </object>")
 
-    # One <plate> per plater_id (multiple bodies may share a plate when packing).
+    # One <plate> per plater_id — always sorted 1..N so Bambu's virtual plate
+    # grid matches build-item transforms (unsorted ids left empty plate frames).
     plates: dict[int, list[dict[str, Any]]] = {}
     for body in bodies:
         plates.setdefault(int(body["plate_id"]), []).append(body)
-    for plate_id, members in plates.items():
-        if len(members) == 1:
-            plate_name = _xml_attr_escape(str(members[0].get("plate_name") or members[0]["name"]))
-        else:
-            plate_name = _xml_attr_escape(f"Plate {plate_id}")
+    for plate_id in sorted(plates):
+        members = plates[plate_id]
+        # Never name a virtual plate after a part ("Bottom Plate") — that reads
+        # as if we exported a 3D plate mesh instead of a Studio plate slot.
+        plate_name = _xml_attr_escape(f"Plate {plate_id}")
         lines.append("  <plate>")
         lines.append(f'    <metadata key="plater_id" value="{plate_id}"/>')
         lines.append(f'    <metadata key="plater_name" value="{plate_name}"/>')
@@ -3876,6 +3908,10 @@ def _export_bambu_multiplate_3mf(
     plate_of = _assign_bambu_plates_packed(meshes)
     if not plate_of:
         plate_of = _assign_bambu_plate_indices(n)
+    # Densify to 0..N-1 so plater_id 1..N matches grid slot order in Studio.
+    unique_plates = sorted(set(int(p) for p in plate_of))
+    remap = {old: i for i, old in enumerate(unique_plates)}
+    plate_of = [remap[int(p)] for p in plate_of]
     plate_count = (max(plate_of) + 1) if plate_of else 1
     if plate_count > 1:
         logger.info(
@@ -3977,7 +4013,7 @@ def _export_bambu_multiplate_3mf(
                 "object_id": wrapper_id,
                 "name": name,
                 "plate_id": plate_idx + 1,
-                "plate_name": name if len(members_by_plate.get(plate_idx, [])) == 1 else f"Plate {plate_idx + 1}",
+                "plate_name": f"Plate {plate_idx + 1}",
                 "identify_id": wrapper_id,
                 "assemble_transform": _transform_12_from_matrix(assemble_tf),
             }
@@ -4052,6 +4088,11 @@ def export_scene_3mf(
 
     if use_multiplate and project_path is not None and source_path is not None:
         prepared = _relabel_bodies_from_step(Path(project_path), Path(source_path), prepared)
+
+    if use_multiplate and len(prepared) >= 1:
+        # Print orientation (not assembly pose) so parts sit on virtual plates
+        # instead of looking like empty bed frames in Bambu's multi-plate view.
+        prepared = [(name, _orient_mesh_for_print(mesh)) for name, mesh in prepared]
 
     if not use_multiplate and len(prepared) > 1:
         # Collapse tessellation fragments of one solid into one seated printable.

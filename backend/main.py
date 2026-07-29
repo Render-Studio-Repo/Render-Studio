@@ -9715,6 +9715,48 @@ def get_user_ai_key_status(user: dict[str, Any] = Depends(get_current_user)):
     return {"ai": _ai_status_for_user(user)}
 
 
+@app.post("/api/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Speech-to-text for Quest XR / browsers without Web Speech API."""
+    import httpx
+
+    from backend.services.user_keys_service import resolve_api_key_for_user
+
+    api_key = (resolve_api_key_for_user(user) or settings.openai_api_key or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No OpenAI API key configured for transcription.")
+
+    raw = await file.read()
+    if not raw or len(raw) < 64:
+        raise HTTPException(status_code=400, detail="Empty audio clip.")
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio clip too large (max 25MB).")
+
+    filename = file.filename or "speech.webm"
+    content_type = file.content_type or "audio/webm"
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, raw, content_type)},
+                data={"model": "whisper-1", "language": "en", "response_format": "json"},
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Transcription request failed: {exc}") from exc
+
+    if resp.status_code >= 400:
+        detail = resp.text[:300] if resp.text else f"OpenAI error {resp.status_code}"
+        raise HTTPException(status_code=502, detail=detail)
+
+    payload = resp.json() if resp.content else {}
+    text = str(payload.get("text") or "").strip()
+    return {"text": text, "ok": True}
+
+
 @app.get("/api/user/ai-credits")
 def get_user_ai_credits(user: dict[str, Any] = Depends(get_current_user)):
     return {"credits": ai_credit_service.status(user)}
