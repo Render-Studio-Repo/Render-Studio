@@ -7,10 +7,14 @@
 
 ---
 
+## 2026-07-29 — Bambu: unique mesh IDs so each plate shows the real part
 
+- Multi-plate UI worked, but every plate showed the same Bottom-Plate-like mesh.
+- Cause: all `3D/Objects/object_*.model` used `object id="1"`; Studio conflates those (known Bambu quirk).
+- Each body now gets a unique mesh object id (`1,3,5…`) matched by component `objectid` and `model_settings` `<part id>`.
+- Cache-bust `?v=20260729-bambu-unique-mesh-ids`; restarted `render3d.service`.
 
-
-
+---
 
 ## 2026-07-29 — Bambu 3MF: one assembled plate (not fragment plates)
 
