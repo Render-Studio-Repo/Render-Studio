@@ -10,6 +10,7 @@
 
 import * as THREE from "three";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
+import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
 
 const DOCK_TOOLS = [
   { id: "grab", label: "Move", color: 0x3b82f6, glyph: "✋" },
@@ -204,6 +205,7 @@ export function createViewportXR(opts) {
 
   const controllers = [];
   const grips = [];
+  const hands = [];
   const raycaster = new THREE.Raycaster();
   const tempMatrix = new THREE.Matrix4();
   const _v = new THREE.Vector3();
@@ -287,6 +289,37 @@ export function createViewportXR(opts) {
   dock.add(plate);
 
   const controllerModelFactory = new XRControllerModelFactory();
+  const handModelFactory = new XRHandModelFactory();
+
+  function attachDockTo(parent, { isHand = false } = {}) {
+    if (!parent || dock.parent === parent) {
+      if (parent) parent.add(dock);
+      return;
+    }
+    parent.add(dock);
+    if (isHand) {
+      // Sit above the palm, facing outward for pointing
+      dock.position.set(0, 0.04, 0.08);
+      dock.rotation.set(-Math.PI / 2.4, 0, 0);
+    } else {
+      dock.position.set(0.02, 0.1, -0.08);
+      dock.rotation.set(-0.55, 0.15, 0.08);
+    }
+    dock.visible = presenting;
+  }
+
+  function setInputVisible(on) {
+    controllers.forEach((c) => {
+      c.visible = !!on;
+    });
+    grips.forEach((g) => {
+      g.visible = !!on;
+    });
+    hands.forEach((h) => {
+      h.visible = !!on;
+    });
+    dock.visible = !!on;
+  }
 
   /** @type {Map<string, {group: THREE.Group, plane: THREE.Mesh, titleHit: THREE.Mesh, kind: string, tex: THREE.CanvasTexture, lines: any[]}>} */
   const panels = new Map();
@@ -789,38 +822,98 @@ export function createViewportXR(opts) {
       const controller = renderer.xr.getController(i);
       controller.addEventListener("selectstart", onSelectStart);
       controller.addEventListener("selectend", onSelectEnd);
+      controller.addEventListener("connected", (event) => {
+        controller.visible = presenting;
+        // Controllers provide a target ray; keep it bright in passthrough
+        const style = event?.data?.targetRayMode;
+        controller.userData.targetRayMode = style || "";
+      });
+      controller.addEventListener("disconnected", () => {
+        controller.visible = false;
+      });
+
       const lineGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
         new THREE.Vector3(0, 0, -1.5),
       ]);
       const line = new THREE.Line(
         lineGeo,
-        new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85 }),
+        new THREE.LineBasicMaterial({
+          color: 0x7dd3fc,
+          transparent: true,
+          opacity: 0.95,
+          depthTest: false,
+        }),
       );
       line.name = "xrRay";
+      line.renderOrder = 1005;
       controller.add(line);
-      // Cursor tip
       const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.006, 12, 10),
-        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+        new THREE.SphereGeometry(0.008, 12, 10),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
       );
       tip.position.z = -1.5;
+      tip.renderOrder = 1006;
       controller.add(tip);
       controller.visible = false;
       scene.add(controller);
       controllers.push(controller);
 
       const grip = renderer.xr.getControllerGrip(i);
-      grip.add(controllerModelFactory.createControllerModel(grip));
+      const ctrlModel = controllerModelFactory.createControllerModel(grip);
+      grip.add(ctrlModel);
+      // Always-on bright marker so a hand/controller is visible even if GLTF models fail
+      const fallback = new THREE.Group();
+      fallback.name = "xrGripFallback";
+      const palm = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, 0.015, 0.08),
+        new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xf472b6 }),
+      );
+      palm.position.z = 0.02;
+      fallback.add(palm);
+      const knuckle = new THREE.Mesh(
+        new THREE.SphereGeometry(0.012, 12, 10),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      );
+      knuckle.position.set(0, 0.01, -0.02);
+      fallback.add(knuckle);
+      grip.add(fallback);
+      grip.addEventListener("connected", (event) => {
+        grip.visible = presenting;
+        // Hide crude fallback once a real controller model profile connects
+        const hasGamepad = !!event?.data?.gamepad;
+        fallback.visible = !hasGamepad;
+        if (i === 0) attachDockTo(grip, { isHand: false });
+      });
+      grip.addEventListener("disconnected", () => {
+        grip.visible = false;
+      });
       grip.visible = false;
       scene.add(grip);
       grips.push(grip);
 
+      // Tracked hands (Quest hand tracking — put controllers down / enable Hand Tracking)
+      const hand = renderer.xr.getHand(i);
+      // Sphere joints always render (no GLB fetch). Visible in passthrough AR.
+      hand.add(handModelFactory.createHandModel(hand, "spheres"));
+      hand.addEventListener("selectstart", onSelectStart);
+      hand.addEventListener("selectend", onSelectEnd);
+      hand.addEventListener("connected", (event) => {
+        hand.visible = presenting;
+        if (event?.data?.hand && i === 0) {
+          attachDockTo(hand, { isHand: true });
+        }
+      });
+      hand.addEventListener("disconnected", () => {
+        hand.visible = false;
+      });
+      hand.visible = false;
+      scene.add(hand);
+      hands.push(hand);
+
       if (i === 0) {
-        // Left hand: persistent tool dock, readable when looking at palm/forward
-        grip.add(dock);
-        dock.position.set(0.02, 0.1, -0.08);
-        dock.rotation.set(-0.55, 0.15, 0.08);
+        // Default dock on left grip until a hand/controller connects
+        attachDockTo(grip, { isHand: false });
       }
     }
   }
@@ -939,19 +1032,22 @@ export function createViewportXR(opts) {
         renderer.setClearAlpha?.(0);
       }
       session = await navigator.xr.requestSession(mode, {
-        optionalFeatures: ["local-floor", "bounded-floor", "hand-tracking", "layers", "dom-overlay", "hit-test"],
+        optionalFeatures: [
+          "local-floor",
+          "bounded-floor",
+          "hand-tracking",
+          "layers",
+          "dom-overlay",
+          "hit-test",
+        ],
       });
       await renderer.xr.setSession(session);
       presenting = true;
       userZoom = 1;
       xrRoot.visible = true;
-      dock.visible = true;
-      controllers.forEach((c) => {
-        c.visible = true;
-      });
-      grips.forEach((g) => {
-        g.visible = true;
-      });
+      setInputVisible(true);
+      // If hand tracking is available, Quest will fire hand `connected` and show mesh hands.
+      // Keep controllers visible too when Touch controllers are in use.
       if (controls) controls.enabled = false;
       if (transformControls) transformControls.enabled = false;
       try {
@@ -982,13 +1078,7 @@ export function createViewportXR(opts) {
     presenting = false;
     session = null;
     xrRoot.visible = false;
-    dock.visible = false;
-    controllers.forEach((c) => {
-      c.visible = false;
-    });
-    grips.forEach((g) => {
-      g.visible = false;
-    });
+    setInputVisible(false);
     grabState = null;
     panelDrag = null;
     clearMeasure();
