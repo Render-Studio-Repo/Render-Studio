@@ -26,8 +26,8 @@ def _decrypt_compat(enc: str) -> str | None:
 
 
 def _owner_emails() -> set[str]:
-    raw = settings.openai_owner_emails or ""
-    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+    raw = getattr(settings, "openai_owner_emails", None) or ""
+    return {e.strip().lower() for e in str(raw).split(",") if e.strip()}
 
 
 def uses_shared_server_key(email: str) -> bool:

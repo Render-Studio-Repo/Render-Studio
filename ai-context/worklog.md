@@ -1,12 +1,13 @@
-## 2026-07-29 — Bambu: split bodies + auto-arrange on plates
+## 2026-07-29 — Bambu: bodies on ONE plate (not empty virtual plates)
 
-- Multi-body assemblies (e.g. drone 40 bodies) export as **separate objects**, not one giant mesh.
-- Small parts are **bin-packed** onto shared plates when they fit; large parts get their own plate.
-- Single-solid models (tessellation fragments) still merge to one plate.
-- Object labels prefer STEP names (Bottom Plate, Arm…).
-- Cache-bust `?v=20260729-bambu-pack`; restarted `render3d.service`.
+- User saw ~10 empty Bambu plate outlines: we were inventing multiple virtual plates (Studio’s “Add plate”), not the 3D body parts.
+- Multi-body 3MF now keeps **separate body objects** packed onto **one** plate; overflow stays visible so users can Add Plate / Arrange in Studio.
+- Single-solid models still merge to one object / one plate.
+- Verified drone → 1 plate / 40 objects with meshes; horn → 1 plate / 1 object.
+- Cache-bust `?v=20260729-bambu-one-plate-bodies`; restarted `render3d.service`.
 
 ---
+
 
 ## 2026-07-29 — Bambu 3MF: one assembled plate (not fragment plates)
 

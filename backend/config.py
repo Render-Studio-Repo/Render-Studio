@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.5"
     openai_model_quality: str = "gpt-5.5-pro"
     openai_reasoning_effort: str = "low"
+    # Comma-separated emails that use the shared server OPENAI_API_KEY
+    openai_owner_emails: str = ""
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
     anthropic_model_quality: str = "claude-opus-4-8"
