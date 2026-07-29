@@ -3798,8 +3798,15 @@ def _pack_offsets_on_plate(
     bed_d: float = THREEMF_BAMBU_BED_D,
     margin: float = 6.0,
     gap: float = 4.0,
+    allow_overflow: bool = True,
 ) -> list[tuple[float, float]]:
-    """Shelf-pack mesh XY extents onto one bed; returns per-mesh center targets."""
+    """Shelf-pack mesh XY extents; returns per-mesh center targets.
+
+    When ``allow_overflow`` is True (default), parts that do not fit on the bed
+    continue onto further rows past the bed edge so every body stays visible.
+    Bambu's Add Plate / Arrange can then split them — we must not invent empty
+    virtual plates ourselves.
+    """
     if len(meshes) == 1:
         return [(0.5 * bed_w, 0.5 * bed_d)]
     cursor_x = margin
@@ -3820,8 +3827,8 @@ def _pack_offsets_on_plate(
             cursor_x = margin
             cursor_y += row_h + gap
             row_h = 0.0
-        if cursor_y + d > bed_d - margin:
-            # Fall back to centered stack with small jitter so parts stay printable.
+        if not allow_overflow and cursor_y + d > bed_d - margin:
+            # Legacy: stack near center when forced to stay on-bed.
             centers.append((0.5 * bed_w + (len(centers) % 3 - 1) * 8.0, 0.5 * bed_d))
             continue
         centers.append((cursor_x + 0.5 * w, cursor_y + 0.5 * d))
@@ -3857,10 +3864,11 @@ def _export_bambu_multiplate_3mf(
     *,
     assemble_centers: list[np.ndarray] | None = None,
 ) -> Path:
-    """Bambu Studio project 3MF: separate objects, auto-arranged onto plates.
+    """Bambu Studio project 3MF: separate body objects on ONE virtual plate.
 
-    Bodies stay as distinct objects (Split / rearrange in Studio). Small parts
-    share a plate when their XY footprints fit; large parts get their own plate.
+    Bambu's “Add plate” creates empty virtual beds — we must not invent those.
+    Each CAD body is a distinct printable object, shelf-packed on plate 1.
+    Overflow past the bed stays visible so the user can Add Plate / Arrange in Studio.
     """
     n = len(prepared)
     meshes = [mesh for _, mesh in prepared]
@@ -3873,27 +3881,10 @@ def _export_bambu_multiplate_3mf(
             assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
     assemble_origin = np.mean(np.vstack(assemble_centers), axis=0) if assemble_centers else np.zeros(3)
 
-    plate_of = _assign_bambu_plates_packed(meshes)
-    if not plate_of:
-        plate_of = _assign_bambu_plate_indices(n)
-    plate_count = (max(plate_of) + 1) if plate_of else 1
-    if plate_count > 1:
-        logger.info(
-            "3MF packed %s bodies onto %s Bambu plate(s)",
-            n,
-            plate_count,
-        )
-    members_by_plate: dict[int, list[int]] = {}
-    for idx, plate_idx in enumerate(plate_of):
-        members_by_plate.setdefault(plate_idx, []).append(idx)
-
-    # Precompute plate-local XY targets (multi-part plates get shelf-packed).
-    seat_xy: dict[int, tuple[float, float]] = {}
-    for plate_idx, members in members_by_plate.items():
-        meshes = [prepared[i][1] for i in members]
-        centers = _pack_offsets_on_plate(meshes)
-        for member_idx, center in zip(members, centers):
-            seat_xy[member_idx] = center
+    # Always one virtual plate — pack bodies in XY (may overflow the bed).
+    seat_centers = _pack_offsets_on_plate(meshes, allow_overflow=True)
+    if n >= 2:
+        logger.info("3MF packed %s bodies onto 1 Bambu plate (separate objects)", n)
 
     bodies_meta: list[dict[str, Any]] = []
     object_files: list[tuple[str, bytes]] = []
@@ -3921,14 +3912,16 @@ def _export_bambu_multiplate_3mf(
     ]
 
     for idx, (name, raw_mesh) in enumerate(prepared):
-        plate_idx = plate_of[idx]
         # Bambu pattern: mesh lives in Objects/object_K.model as id=1;
         # root wrapper object id = 2*(K) with a component reference.
         file_index = idx + 1
         wrapper_id = file_index * 2
         mesh_path = f"/3D/Objects/object_{file_index}.model"
 
-        cx, cy = seat_xy.get(idx, (0.5 * THREEMF_BAMBU_BED_W, 0.5 * THREEMF_BAMBU_BED_D))
+        cx, cy = seat_centers[idx] if idx < len(seat_centers) else (
+            0.5 * THREEMF_BAMBU_BED_W,
+            0.5 * THREEMF_BAMBU_BED_D,
+        )
         seated = _seat_mesh_at_plate_xy(raw_mesh, cx, cy)
         object_files.append((f"3D/Objects/object_{file_index}.model", _build_object_model_xml(seated)))
 
@@ -3953,14 +3946,14 @@ def _export_bambu_multiplate_3mf(
             },
         )
 
-        ox, oy = _bambu_plate_origin(plate_idx, plate_count)
+        # All objects on plate 1 → identity build transform (XY baked into mesh).
         ET.SubElement(
             build,
             f"{{{THREEMF_CORE_NS}}}item",
             {
                 "objectid": str(wrapper_id),
                 f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
-                "transform": _translation_transform(ox, oy, 0.0),
+                "transform": THREEMF_IDENTITY_TRANSFORM,
                 "printable": "1",
             },
         )
@@ -3976,8 +3969,8 @@ def _export_bambu_multiplate_3mf(
             {
                 "object_id": wrapper_id,
                 "name": name,
-                "plate_id": plate_idx + 1,
-                "plate_name": name if len(members_by_plate.get(plate_idx, [])) == 1 else f"Plate {plate_idx + 1}",
+                "plate_id": 1,
+                "plate_name": name if n == 1 else "Plate 1",
                 "identify_id": wrapper_id,
                 "assemble_transform": _transform_12_from_matrix(assemble_tf),
             }
@@ -4010,11 +4003,11 @@ def export_scene_3mf(
 ) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
-    Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + plates).
+    Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + one plate).
 
     - Single CAD solid / tessellation fragments → one merged printable on one plate.
-    - Real multi-body assemblies → separate objects, auto-arranged onto plates
-      (small parts share a plate when they fit; large parts get their own).
+    - Real multi-body assemblies → separate objects packed onto **one** virtual plate
+      (Studio's Add Plate is for splitting further — we do not invent empty plates).
 
     ``multiplate=True`` forces the split path (``__part_`` kits or detected
     multi-solid assemblies).

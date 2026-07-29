@@ -885,14 +885,25 @@ export function createViewportXR(opts) {
     return out;
   }
 
-  async function waitForHead(frames = 40) {
+  async function waitForHead(frames = 60) {
+    let lastFwd = null;
+    let stable = 0;
     for (let i = 0; i < frames; i += 1) {
       await new Promise((r) => requestAnimationFrame(r));
+      // Force XR camera matrices to update before reading pose
+      try { renderer.xr.updateCamera?.(camera); } catch (_) {}
       getHeadPose();
-      if (_headPos.y > 0.4) return;
+      const f = headForwardFlat(new THREE.Vector3());
+      if (_headPos.y > 0.4 && f.lengthSq() > 0.5) {
+        if (lastFwd && lastFwd.dot(f) > 0.98) stable += 1;
+        else stable = 0;
+        lastFwd = f.clone();
+        if (stable >= 3) return;
+      }
     }
-    _headPos.set(0, 1.55, 0);
-    _headQuat.identity();
+    if (!(_headPos.y > 0.4)) _headPos.set(0, 1.55, 0);
+    // Keep whatever quat we have; only identity if completely unset
+    if (_headQuat.lengthSq() < 0.5) _headQuat.identity();
   }
 
   function captureDesktop(mesh) {
@@ -986,6 +997,29 @@ export function createViewportXR(opts) {
   }
 
   /**
+   * Content-only world size (ignore markers / lights / non-mesh helpers).
+   */
+  function contentBoxFromMesh(mesh) {
+    const box = new THREE.Box3();
+    let any = false;
+    mesh.updateMatrixWorld(true);
+    mesh.traverse((o) => {
+      if (!o?.isMesh || !o.geometry) return;
+      if (o.name === "xrModelMarker") return;
+      if (o.userData?.xrIgnoreBounds) return;
+      const b = new THREE.Box3().setFromObject(o);
+      if (b.isEmpty()) return;
+      if (!any) {
+        box.copy(b);
+        any = true;
+      } else {
+        box.union(b);
+      }
+    });
+    return any ? box : new THREE.Box3().setFromObject(mesh);
+  }
+
+  /**
    * Always put the CAD assembly directly in front of the headset at handheld size.
    * Measures content at identity scale so desktop/XR transforms cannot balloon size.
    */
@@ -996,7 +1030,7 @@ export function createViewportXR(opts) {
       return false;
     }
     // Capture desktop pose once before we mutate for XR (needed for exit restore)
-    if (!saved || saved.mesh !== mesh) {
+    if (!saved || saved.mesh !== mesh || opts.recaptureDesktop) {
       saved = null;
       captureDesktop(mesh);
     }
@@ -1005,46 +1039,39 @@ export function createViewportXR(opts) {
     const spawnId = opts.spawnId || activeSpawnId || "eye";
     const preset = SPAWN_PRESETS.find((p) => p.id === spawnId) || SPAWN_PRESETS[0];
     activeSpawnId = preset.id;
-    if (!opts.keepZoom) userZoom = opts.userZoom || 1;
+    if (!opts.keepZoom) userZoom = 1;
 
     const marker = mesh.getObjectByName("xrModelMarker");
     if (marker) marker.visible = false;
 
     // Intrinsic content size (ignore current XR/desktop root scale)
-    const prevPos = mesh.position.clone();
-    const prevQuat = mesh.quaternion.clone();
-    const prevScale = mesh.scale.clone();
     mesh.position.set(0, 0, 0);
     mesh.quaternion.identity();
     mesh.scale.set(1, 1, 1);
     mesh.updateMatrixWorld(true);
 
-    let box = new THREE.Box3().setFromObject(mesh);
+    let box = contentBoxFromMesh(mesh);
     if (box.isEmpty()) {
-      mesh.position.copy(prevPos);
-      mesh.quaternion.copy(prevQuat);
-      mesh.scale.copy(prevScale);
       if (marker) marker.visible = true;
       return false;
     }
     const size0 = box.getSize(new THREE.Vector3());
     let maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
-    // Same heuristic as units.js mmPerModelUnit, but on *unscaled* CAD extent
     xrMmPerUnit = maxDim >= 1.0 ? 1 : 1000;
-    const targetM = Math.min(preset.sizeM || 0.11, 0.12) * Math.max(Math.min(userZoom, 1.2), 0.6);
+    // Hard handheld target — never let AR models fill the room
+    const targetM = Math.min(preset.sizeM || 0.1, 0.12);
 
     getHeadPose();
     if (!Number.isFinite(_headPos.y) || _headPos.y < 0.15) _headPos.set(0, 1.55, 0);
-    const forward = headForwardFlat();
-    // Guard: identity quat can leave forward as (0,0,-1) which is fine; if length bad, fix
+    let forward = headForwardFlat();
     if (forward.lengthSq() < 0.5) forward.set(0, 0, -1);
 
-    const dist = preset.distance || 0.5;
+    const dist = preset.distance || 0.55;
     const target = _headPos.clone().addScaledVector(forward, dist);
     if (preset.yMode === "floor") target.y = Math.max(0.1, targetM * 0.45);
     else target.y = _headPos.y - 0.08;
 
-    // CAD Z-up → Y-up, face the user (model +Z toward headset)
+    // CAD Z-up → Y-up, face the user
     const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
     const toUser = forward.clone().multiplyScalar(-1);
     toUser.y = 0;
@@ -1055,86 +1082,111 @@ export function createViewportXR(opts) {
 
     const parent = mesh.parent;
     if (parent) {
+      parent.updateMatrixWorld(true);
       const pwq = parent.getWorldQuaternion(new THREE.Quaternion());
       mesh.quaternion.copy(pwq.clone().invert().multiply(worldQuat));
     } else {
       mesh.quaternion.copy(worldQuat);
     }
 
-    const factor = THREE.MathUtils.clamp(targetM / maxDim, 1e-7, 80);
+    const factor = THREE.MathUtils.clamp(targetM / maxDim, 1e-8, 50);
     mesh.scale.setScalar(factor);
     mesh.updateMatrixWorld(true);
 
-    box.setFromObject(mesh);
-    let c1 = box.getCenter(new THREE.Vector3());
-    // If somehow centered behind the head, force to front
-    const toCenter = c1.clone().sub(_headPos);
-    if (toCenter.dot(forward) < 0.05) {
-      c1 = _headPos.clone().addScaledVector(forward, dist);
-      c1.y = target.y;
-    }
-    const delta = target.clone().sub(box.getCenter(new THREE.Vector3()));
-    if (parent) {
-      const wp = mesh.getWorldPosition(new THREE.Vector3()).add(delta);
-      mesh.position.copy(parent.worldToLocal(wp));
-    } else {
-      mesh.position.add(delta);
-    }
-    mesh.updateMatrixWorld(true);
+    // Center on target in front of headset
+    const moveCenterTo = (want) => {
+      box = contentBoxFromMesh(mesh);
+      const c = box.getCenter(new THREE.Vector3());
+      const dlt = want.clone().sub(c);
+      if (parent) {
+        const wp = mesh.getWorldPosition(new THREE.Vector3()).add(dlt);
+        mesh.position.copy(parent.worldToLocal(wp));
+      } else {
+        mesh.position.add(dlt);
+      }
+      mesh.updateMatrixWorld(true);
+    };
+    moveCenterTo(target);
 
-    // Re-center precisely on target after move
-    box.setFromObject(mesh);
-    const c2 = box.getCenter(new THREE.Vector3());
-    const d2 = target.clone().sub(c2);
-    if (parent) {
-      const wp = mesh.getWorldPosition(new THREE.Vector3()).add(d2);
-      mesh.position.copy(parent.worldToLocal(wp));
-    } else {
-      mesh.position.add(d2);
+    // If still behind the user, flip to current gaze forward and retry
+    box = contentBoxFromMesh(mesh);
+    let center = box.getCenter(new THREE.Vector3());
+    getHeadPose();
+    forward = headForwardFlat();
+    if (center.clone().sub(_headPos).dot(forward) < 0.15) {
+      const retry = _headPos.clone().addScaledVector(forward, dist);
+      retry.y = _headPos.y - 0.08;
+      moveCenterTo(retry);
+      box = contentBoxFromMesh(mesh);
+      center = box.getCenter(new THREE.Vector3());
     }
-    mesh.updateMatrixWorld(true);
 
     presentationScale = Math.abs(mesh.scale.x) || factor;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
-    enforceHandheldSize(mesh, Math.min(targetM, 0.13), { pinFront: true, distance: dist, floor: preset.yMode === "floor" });
+    enforceHandheldSize(mesh, Math.min(targetM, 0.12), {
+      pinFront: true,
+      distance: dist,
+      floor: preset.yMode === "floor",
+    });
+
+    // Absolute hard clamp — never leave AR with a room-scale CAD model
+    box = contentBoxFromMesh(mesh);
+    const worldMax = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+    if (worldMax > 0.16) {
+      const shrink = 0.11 / worldMax;
+      const c = box.getCenter(new THREE.Vector3());
+      const localCenter = parent ? parent.worldToLocal(c.clone()) : c.clone();
+      mesh.scale.multiplyScalar(shrink);
+      mesh.position.sub(localCenter).multiplyScalar(shrink).add(localCenter);
+      presentationScale = Math.abs(mesh.scale.x);
+      baseScale = presentationScale / Math.max(userZoom, 1e-6);
+      mesh.updateMatrixWorld(true);
+      getHeadPose();
+      forward = headForwardFlat();
+      const want = _headPos.clone().addScaledVector(forward, dist);
+      want.y = _headPos.y - 0.08;
+      moveCenterTo(want);
+    }
 
     if (!marker) {
       const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.03, 16, 12),
+        new THREE.SphereGeometry(0.02, 12, 10),
         new THREE.MeshBasicMaterial({ color: 0xfff200, depthTest: false, depthWrite: false }),
       );
       m.name = "xrModelMarker";
+      m.userData.xrIgnoreBounds = true;
       m.renderOrder = 4500;
       m.frustumCulled = false;
       mesh.add(m);
     }
     const mk = mesh.getObjectByName("xrModelMarker");
     if (mk) {
+      mk.userData.xrIgnoreBounds = true;
       mk.visible = true;
       const ms = Math.max(Math.abs(mesh.scale.x), 1e-9);
-      mk.scale.setScalar(0.04 / ms);
+      mk.scale.setScalar(0.035 / ms);
     }
 
-    const finalSize = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
+    const finalSize = contentBoxFromMesh(mesh).getSize(new THREE.Vector3());
     console.info("[viewport-xr] placed", {
       maxDimBefore: maxDim,
       targetM,
       scale: mesh.scale.x,
       worldSize: finalSize.toArray(),
       head: _headPos.toArray(),
-      target: target.toArray(),
+      forward: forward.toArray(),
     });
 
-    showBeacon(target);
+    showBeacon(contentBoxFromMesh(mesh).getCenter(new THREE.Vector3()));
     saveRoomPose();
     return true;
   }
 
-  function enforceHandheldSize(mesh, targetMax = 0.13, pin = {}) {
+  function enforceHandheldSize(mesh, targetMax = 0.12, pin = {}) {
     mesh.updateMatrixWorld(true);
     const marker = mesh.getObjectByName("xrModelMarker");
     if (marker) marker.visible = false;
-    let box = new THREE.Box3().setFromObject(mesh);
+    let box = contentBoxFromMesh(mesh);
     if (marker) marker.visible = true;
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3());
@@ -1142,7 +1194,7 @@ export function createViewportXR(opts) {
     if (!(maxD > 1e-8)) return;
     const factor = targetMax / maxD;
     const parent = mesh.parent;
-    if (Number.isFinite(factor) && factor > 0 && (factor < 0.98 || factor > 1.02)) {
+    if (Number.isFinite(factor) && factor > 0 && (factor < 0.97 || factor > 1.03)) {
       const center = box.getCenter(new THREE.Vector3());
       const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
       mesh.scale.multiplyScalar(factor);
@@ -1150,12 +1202,12 @@ export function createViewportXR(opts) {
       presentationScale = Math.abs(mesh.scale.x) || presentationScale * factor;
       baseScale = presentationScale / Math.max(userZoom, 1e-6);
       mesh.updateMatrixWorld(true);
-      box = new THREE.Box3().setFromObject(mesh);
+      box = contentBoxFromMesh(mesh);
     }
     if (pin.pinFront === false) return;
     getHeadPose();
     const f = headForwardFlat();
-    const dist = pin.distance || 0.5;
+    const dist = pin.distance || 0.55;
     const want = _headPos.clone().addScaledVector(f, dist);
     if (pin.floor) want.y = Math.max(0.1, targetMax * 0.45);
     else want.y = _headPos.y - 0.08;
@@ -1184,8 +1236,14 @@ export function createViewportXR(opts) {
     presentationScale = mesh.scale.x || 1;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
     mesh.updateMatrixWorld(true);
-    enforceHandheldSize(mesh, 0.13, { pinFront: true });
-    showBeacon(mesh.getWorldPosition(new THREE.Vector3()));
+    const box = contentBoxFromMesh(mesh);
+    const worldMax = Math.max(...box.getSize(new THREE.Vector3()).toArray(), 0);
+    // Bad/outdated room poses often store desktop-scale models — rebuild instead
+    if (!(worldMax > 0.02 && worldMax < 0.35)) {
+      return placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
+    }
+    enforceHandheldSize(mesh, 0.12, { pinFront: true });
+    showBeacon(contentBoxFromMesh(mesh).getCenter(new THREE.Vector3()));
     return true;
   }
 
@@ -2134,15 +2192,18 @@ export function createViewportXR(opts) {
               // Fresh mesh: re-place in front, then show AI prompt on the right
               setTimeout(() => {
                 if (!presenting) return;
-                placeInFront({ spawnId: "eye", keepZoom: false });
+                placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
                 // Keep AI / menu windows where the user put them
                 openAiPromptPanel({ keepPose: true });
                 if (explorerPanel?.group) explorerPanel.group.visible = true;
                 try { onProjectOpened?.(line.id); } catch (_) {}
-              }, 500);
+              }, 600);
               setTimeout(() => {
                 if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
-              }, 1100);
+              }, 1400);
+              setTimeout(() => {
+                if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+              }, 2400);
             });
           } catch (err) {
             console.warn("[viewport-xr] open project", err);
@@ -2822,23 +2883,26 @@ export function createViewportXR(opts) {
       /* ignore */
     }
 
-    await waitForHead(60);
+    await waitForHead(90);
 
     // Always re-place in front after tracking settles (ignore saved room pose / zoom)
     userZoom = 1;
     saved = null;
-    placeInFront({ spawnId: "eye", keepZoom: false });
+    placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
     // Restore last AI panel pose if any; otherwise place once to the right
     openAiPromptPanel({ forcePlace: !loadAllPanelPoses().ai });
     setTimeout(() => {
       if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
-    }, 350);
+    }, 400);
+    setTimeout(() => {
+      if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+    }, 1000);
     setTimeout(() => {
       if (presenting) {
         placeInFront({ spawnId: "eye", keepZoom: false });
         if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
       }
-    }, 900);
+    }, 1800);
 
     activeTool = "grab";
     syncDock();

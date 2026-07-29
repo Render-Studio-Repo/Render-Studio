@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-ar-captures";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-measure-mm";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-place2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -92,7 +92,7 @@ import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-pack";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-one-plate";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -3086,6 +3086,15 @@ const viewportXR = createViewportXR({
     try {
       if (!id) return;
       await openProjectById?.(id);
+      if (viewportXR?.isPresenting?.()) {
+        // Mesh just finished loading — force handheld re-place in front of the headset
+        requestAnimationFrame(() => {
+          try { viewportXR.placeInFront?.({ spawnId: "eye", keepZoom: false, recaptureDesktop: true }); } catch (_) {}
+        });
+        setTimeout(() => {
+          try { viewportXR.placeInFront?.({ spawnId: "eye", keepZoom: false }); } catch (_) {}
+        }, 800);
+      }
     } catch (err) {
       console.warn("[xr] open project failed", err);
     }
@@ -16468,6 +16477,8 @@ function frameCameraToBox(box) {
 }
 
 function fitCamera() {
+  // Never run desktop framing while Quest AR is presenting — it fights XR placement
+  if (renderer?.xr?.isPresenting || viewportXR?.isPresenting?.()) return;
   const box = projectAssembly.boundingBox() || (currentMesh ? new THREE.Box3().setFromObject(currentMesh) : null);
   frameCameraToBox(box);
 }
