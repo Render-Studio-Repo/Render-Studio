@@ -3641,14 +3641,154 @@ def _export_generic_scene_3mf(
 
 
 def _assign_bambu_plate_indices(count: int, max_plates: int = THREEMF_BAMBU_MAX_PLATES) -> list[int]:
-    """Map each body index → plate index (0-based), never exceeding max_plates."""
+    """Fallback: one body per plate until max_plates, then round-robin."""
     n = max(int(count), 0)
     if n <= 0:
         return []
     if n <= max_plates:
         return list(range(n))
-    # Round-robin across plates so overflow parts stay on-bed (no off-plate nudge).
     return [i % max_plates for i in range(n)]
+
+
+def _assign_bambu_plates_packed(
+    meshes: list[trimesh.Trimesh],
+    *,
+    bed_w: float = THREEMF_BAMBU_BED_W,
+    bed_d: float = THREEMF_BAMBU_BED_D,
+    margin: float = 6.0,
+    gap: float = 4.0,
+    max_plates: int = THREEMF_BAMBU_MAX_PLATES,
+) -> list[int]:
+    """Bin-pack bodies onto plates by XY footprint (auto-arrange).
+
+    Large parts that nearly fill the bed get their own plate. Smaller parts share
+    a plate when they fit, so Bambu opens with printable layouts instead of one
+    giant assembled object (or 40 empty-ish plates).
+    """
+    n = len(meshes)
+    if n <= 0:
+        return []
+    if n == 1:
+        return [0]
+
+    usable_w = max(bed_w - 2 * margin, 1.0)
+    usable_d = max(bed_d - 2 * margin, 1.0)
+
+    def footprint(mesh: trimesh.Trimesh) -> tuple[float, float]:
+        extents = np.asarray(mesh.extents, dtype=float)
+        return float(max(extents[0], 1.0)), float(max(extents[1], 1.0))
+
+    # Place largest first so small parts fill gaps.
+    order = sorted(range(n), key=lambda i: -(footprint(meshes[i])[0] * footprint(meshes[i])[1]))
+    plate_of = [0] * n
+    # Per-plate shelf: (cursor_x, cursor_y, row_h)
+    shelves: list[list[float]] = []
+
+    def try_place(state: list[float], w: float, d: float) -> tuple[bool, list[float]]:
+        cx, cy, row_h = state
+        place_x, place_y = cx, cy
+        next_state = state
+        if cx > margin + 1e-6 and cx + w > bed_w - margin:
+            place_x = margin
+            place_y = cy + row_h + gap
+            if place_y + d > bed_d - margin + 1e-6:
+                return False, state
+            next_state = [place_x + w + gap, place_y, d]
+            return True, next_state
+        if cx + w <= bed_w - margin + 1e-6 and cy + d <= bed_d - margin + 1e-6:
+            next_state = [cx + w + gap, cy, max(row_h, d)]
+            return True, next_state
+        # New row on this plate
+        place_x = margin
+        place_y = cy + row_h + gap
+        if place_x + w <= bed_w - margin + 1e-6 and place_y + d <= bed_d - margin + 1e-6:
+            next_state = [place_x + w + gap, place_y, d]
+            return True, next_state
+        return False, state
+
+    for idx in order:
+        w0, d0 = footprint(meshes[idx])
+        # Parts that dominate the bed get a dedicated plate.
+        needs_own = w0 >= usable_w * 0.85 or d0 >= usable_d * 0.85
+        scale = min(1.0, usable_w / w0, usable_d / d0)
+        w, d = w0 * scale, d0 * scale
+        placed = False
+        if not needs_own:
+            for pi, state in enumerate(shelves):
+                ok, new_state = try_place(state, w, d)
+                if ok:
+                    shelves[pi] = new_state
+                    plate_of[idx] = pi
+                    placed = True
+                    break
+        if placed:
+            continue
+        if len(shelves) >= max_plates:
+            # Overflow onto the last plate; on-plate packer will still seat them.
+            plate_of[idx] = max(len(shelves) - 1, 0)
+            if shelves:
+                ok, new_state = try_place(shelves[-1], min(w, usable_w), min(d, usable_d))
+                if ok:
+                    shelves[-1] = new_state
+            continue
+        shelves.append([margin + w + gap, margin, d])
+        plate_of[idx] = len(shelves) - 1
+
+    return plate_of
+
+
+def _bambu_should_split_bodies(
+    project_path: Path,
+    src: Path,
+    body_names: list[str],
+) -> bool:
+    """True when bodies are real separate printables (not GLB tessellation crumbs)."""
+    if len(body_names) < 2:
+        return False
+    if _scene_names_are_single_logical_body(body_names):
+        return False
+    glb_path = src
+    if src.suffix.lower() not in {".glb", ".gltf"}:
+        try:
+            viewer = viewer_filename_for_model(src.name, project_path)
+            candidate = Path(project_path) / viewer
+            if candidate.is_file():
+                glb_path = candidate
+        except Exception:
+            pass
+    solid_count = _sibling_step_solid_count(project_path, glb_path, src.name)
+    if solid_count is not None:
+        return solid_count >= 2
+    keys = {key for name in body_names if (key := _logical_body_name_key(name))}
+    return len(keys) >= 2
+
+
+def _relabel_bodies_from_step(
+    project_path: Path,
+    src: Path,
+    items: list[tuple[str, trimesh.Trimesh]],
+) -> list[tuple[str, trimesh.Trimesh]]:
+    """Prefer STEP occurrence names (Bottom Plate, Arm…) for Bambu object labels."""
+    if len(items) < 2:
+        return items
+    try:
+        glb_path = src
+        if src.suffix.lower() not in {".glb", ".gltf"}:
+            viewer = viewer_filename_for_model(src.name, project_path)
+            candidate = Path(project_path) / viewer
+            if candidate.is_file():
+                glb_path = candidate
+        occ = _sibling_step_occurrence_names(project_path, glb_path, src.name)
+        raw = [name for name, _ in items]
+        labels = _display_names_for_scene_bodies(raw, occ)
+        out: list[tuple[str, trimesh.Trimesh]] = []
+        for idx, (_old, mesh) in enumerate(items):
+            label = _safe_object_name(labels[idx] if idx < len(labels) else _old, f"part_{idx + 1}")
+            out.append((label, mesh))
+        return out
+    except Exception as exc:
+        logger.debug("body relabel skipped: %s", exc)
+        return items
 
 
 def _pack_offsets_on_plate(
@@ -3717,29 +3857,32 @@ def _export_bambu_multiplate_3mf(
     *,
     assemble_centers: list[np.ndarray] | None = None,
 ) -> Path:
-    """Bambu Studio project 3MF: each body on its own plate (Maker World style).
+    """Bambu Studio project 3MF: separate objects, auto-arranged onto plates.
 
-    When body count exceeds Bambu's plate limit, pack multiple parts onto plates
-    instead of stacking them off the bed (which causes "over the boundary").
+    Bodies stay as distinct objects (Split / rearrange in Studio). Small parts
+    share a plate when their XY footprints fit; large parts get their own plate.
     """
     n = len(prepared)
-    if n > THREEMF_BAMBU_MAX_PLATES:
-        logger.warning(
-            "3MF has %s bodies; packing onto %s Bambu plates (multi-part plates)",
-            n,
-            THREEMF_BAMBU_MAX_PLATES,
-        )
+    meshes = [mesh for _, mesh in prepared]
 
     # Assembly centers for Assembly view (original relative layout)
     if assemble_centers is None or len(assemble_centers) != n:
         assemble_centers = []
-        for _, mesh in prepared:
+        for mesh in meshes:
             bounds = np.asarray(mesh.bounds, dtype=float)
             assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
     assemble_origin = np.mean(np.vstack(assemble_centers), axis=0) if assemble_centers else np.zeros(3)
 
-    plate_of = _assign_bambu_plate_indices(n)
+    plate_of = _assign_bambu_plates_packed(meshes)
+    if not plate_of:
+        plate_of = _assign_bambu_plate_indices(n)
     plate_count = (max(plate_of) + 1) if plate_of else 1
+    if plate_count > 1:
+        logger.info(
+            "3MF packed %s bodies onto %s Bambu plate(s)",
+            n,
+            plate_count,
+        )
     members_by_plate: dict[int, list[int]] = {}
     for idx, plate_idx in enumerate(plate_of):
         members_by_plate.setdefault(plate_idx, []).append(idx)
@@ -3863,20 +4006,18 @@ def export_scene_3mf(
     visible_body_indices: list[int] | None = None,
     source_path: Path | None = None,
     multiplate: bool = False,
+    project_path: Path | None = None,
 ) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
     Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + plates).
 
-    Default is **one assembled printable on one plate**. GLB tessellation often
-    produces dozens of mesh fragments for a single CAD solid — splitting those
-    onto plates left Bambu with empty/junk plates for “single object” models.
+    - Single CAD solid / tessellation fragments → one merged printable on one plate.
+    - Real multi-body assemblies → separate objects, auto-arranged onto plates
+      (small parts share a plate when they fit; large parts get their own).
 
-    Multi-plate (one body per plate) only when ``multiplate=True`` — used for
-    explicit ``__part_*.glb`` print kits (Maker World style).
-
-    ``visible_body_indices`` optionally keeps only those mesh indices (eye-visible
-    bodies). None means export every body in the scene.
+    ``multiplate=True`` forces the split path (``__part_`` kits or detected
+    multi-solid assemblies).
     """
     scene_items = _meshes_from_scene(scene, source_path=source_path)
     if visible_body_indices is not None:
@@ -3902,8 +4043,18 @@ def export_scene_3mf(
         raise ValueError("no exportable geometry for 3MF")
 
     use_multiplate = bool(multiplate) and len(prepared) >= 2
+    if not use_multiplate and project_path is not None and source_path is not None and len(prepared) >= 2:
+        use_multiplate = _bambu_should_split_bodies(
+            Path(project_path),
+            Path(source_path),
+            [name for name, _ in prepared],
+        )
+
+    if use_multiplate and project_path is not None and source_path is not None:
+        prepared = _relabel_bodies_from_step(Path(project_path), Path(source_path), prepared)
+
     if not use_multiplate and len(prepared) > 1:
-        # Collapse tessellation fragments / assembly into one seated printable.
+        # Collapse tessellation fragments of one solid into one seated printable.
         try:
             combined = trimesh.util.concatenate([m for _, m in prepared])
         except Exception:
@@ -3930,8 +4081,8 @@ def scene_for_3mf_export(
 ) -> tuple[trimesh.Scene, Path | None, bool]:
     """Load a scene for Bambu/3MF export.
 
-    Returns ``(scene, source_path, multiplate)`` where ``multiplate`` is True only
-    for intentional print kits built from ``__part_*.glb`` sidecars.
+    Returns ``(scene, source_path, multiplate)``. ``multiplate`` is True for
+    explicit ``__part_*.glb`` kits and for real multi-solid assemblies.
     """
     project_path = Path(project_path)
     src = Path(src)
@@ -3978,15 +4129,22 @@ def scene_for_3mf_export(
             logger.debug("viewer scene for 3MF failed (%s): %s", src.name, exc)
         return None
 
+    def _multiplate_for(scene: trimesh.Scene, scene_src: Path | None) -> bool:
+        bodies = _meshes_from_scene(scene, source_path=scene_src)
+        names = [name for name, _ in bodies]
+        return _bambu_should_split_bodies(project_path, scene_src or src, names)
+
     part_files = _part_sidecars_for(stem)
 
     # Eye-filtered export: indices come from the viewer GLB body tree.
     if match_viewer_body_indices:
         loaded = _load_viewer_scene()
         if loaded is not None:
-            return (*loaded, False)
+            scene, viewer_path = loaded
+            return scene, viewer_path, _multiplate_for(scene, viewer_path)
         if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
-            return load_scene(src), src, False
+            scene = load_scene(src)
+            return scene, src, _multiplate_for(scene, src)
 
     # Explicit __part_ sidecars → Maker World multi-plate kit.
     if len(part_files) >= 2:
@@ -3999,7 +4157,7 @@ def scene_for_3mf_export(
         scene, viewer_path = loaded
         bodies = _meshes_from_scene(scene, source_path=viewer_path)
         if len(bodies) >= 1:
-            return scene, viewer_path, False
+            return scene, viewer_path, _multiplate_for(scene, viewer_path)
 
     if part_files:
         built = _scene_from_parts(part_files)
@@ -4007,12 +4165,13 @@ def scene_for_3mf_export(
             return built, None, len(part_files) >= 2
 
     if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
-        return load_scene(src), src, False
+        scene = load_scene(src)
+        return scene, src, _multiplate_for(scene, src)
 
     try:
         scene = load_scene(src)
         if _meshes_from_scene(scene, source_path=src):
-            return scene, src, False
+            return scene, src, _multiplate_for(scene, src)
     except Exception:
         pass
 
@@ -5548,6 +5707,7 @@ def ensure_mesh_exports(
                     visible_body_indices=visible_body_indices,
                     source_path=scene_src,
                     multiplate=multiplate,
+                    project_path=project_path,
                 )
             else:
                 if mesh is None:

@@ -1,3 +1,13 @@
+## 2026-07-29 — Bambu: split bodies + auto-arrange on plates
+
+- Multi-body assemblies (e.g. drone 40 bodies) export as **separate objects**, not one giant mesh.
+- Small parts are **bin-packed** onto shared plates when they fit; large parts get their own plate.
+- Single-solid models (tessellation fragments) still merge to one plate.
+- Object labels prefer STEP names (Bottom Plate, Arm…).
+- Cache-bust `?v=20260729-bambu-pack`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — Bambu 3MF: one assembled plate (not fragment plates)
 
 - Root cause: viewer GLBs tessellate a single CAD solid into dozens of mesh nodes; each became its own Bambu plate (empty/junk for “single object”).

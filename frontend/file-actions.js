@@ -672,8 +672,8 @@ export async function openFileExportMenu({
   const mobile = isMobileClient();
   const bambuLabel = bambuTargetLabel();
   const defaultHint = mobile
-    ? `Download GLB, STL, STEP, or 3MF — send to ${bambuLabel} (assembled on one plate) — or copy a public preview link.`
-    : "Download GLB, STL, STEP, or 3MF — send to Bambu Studio (assembled on one plate) — or copy a public preview link.";
+    ? `Download GLB, STL, STEP, or 3MF — send to ${bambuLabel} (bodies auto-arranged on plates) — or copy a public preview link.`
+    : "Download GLB, STL, STEP, or 3MF — send to Bambu Studio (bodies auto-arranged on plates) — or copy a public preview link.";
 
   const menu = document.createElement("div");
   menu.className = `file-export-menu${mobile ? " file-export-menu--mobile" : ""}`;
@@ -703,8 +703,8 @@ export async function openFileExportMenu({
         <img src="/fusion-360-logo.png?v=20260629" width="14" height="14" alt="" />
         Fusion 360
       </button>` : ""}
-      <button type="button" class="btn file-export-bambu" title="${mobile ? `Prepare a plate-ready 3MF for ${bambuLabel}` : "Open in Bambu Studio: one assembled printable on a plate (part kits still get one plate per part)"}">
-        <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a Bambu 3MF with the model seated on a plate and opens it in local Bambu Studio." kind=feature href="/" -->
+      <button type="button" class="btn file-export-bambu" title="${mobile ? `Prepare a plate-ready 3MF for ${bambuLabel} — bodies split & auto-arranged` : "Open in Bambu Studio: each body is a separate object; small parts share plates when they fit"}">
+        <!-- @milestone id=send-to-bambu-studio title="Send to Bambu Studio" summary="Export prepares a Bambu 3MF with bodies as separate objects auto-arranged onto plates and opens it in local Bambu Studio." kind=feature href="/" -->
         <span class="file-export-bambu-mark" aria-hidden="true">B</span>
         Send to ${bambuLabel}
       </button>
@@ -1601,7 +1601,7 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName, mobile = false
       : (urls.macosPlain || urls.macos);
     const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
     panel.innerHTML = `
-      <p><strong>${escText(threeMfName)}</strong> was prepared for Bambu — seated on one print plate.</p>
+      <p><strong>${escText(threeMfName)}</strong> was prepared for Bambu — bodies split and auto-arranged on plates.</p>
       <p class="muted small">If Studio opened with an empty plate:</p>
       <ul class="muted small file-export-bambu-tips">
         <li>Click <strong>Yes</strong> on Bambu’s “not from a trusted site” prompt</li>

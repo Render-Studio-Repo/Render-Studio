@@ -16,10 +16,10 @@ const LS_POSE = "render3d:xr-room-pose";
 const LS_SPAWN = "render3d:xr-spawn-preset";
 
 const SPAWN_PRESETS = [
-  { id: "eye", label: "In front of you", distance: 0.55, sizeM: 0.12 },
-  { id: "near", label: "Near (arm)", distance: 0.4, sizeM: 0.09 },
-  { id: "far", label: "Farther", distance: 0.85, sizeM: 0.16 },
-  { id: "floor", label: "Lower / floor", distance: 0.65, sizeM: 0.12, yMode: "floor" },
+  { id: "eye", label: "In front of you", distance: 0.5, sizeM: 0.11 },
+  { id: "near", label: "Near (arm)", distance: 0.35, sizeM: 0.08 },
+  { id: "far", label: "Farther", distance: 0.8, sizeM: 0.14 },
+  { id: "floor", label: "Lower / floor", distance: 0.6, sizeM: 0.11, yMode: "floor" },
 ];
 
 const QUICK_DOCK = [
@@ -69,6 +69,19 @@ const MENU_CANVAS = {
   footerTop: 900,
 };
 const MENU_PLANE = { w: 0.72, h: 0.5 };
+
+const AI_CANVAS = { w: 1080, h: 1280 };
+const AI_PLANE = { w: 0.4, h: 0.475 };
+const AI_LAYOUT = {
+  headerEnd: 96,
+  mic: { cx: 540, cy: 270, r: 108 },
+  transcript: { x: 48, y: 410, w: 984, h: 260 },
+  modeY: 720,
+  speedY: 830,
+  targetY: 940,
+  run: { y: 1080, h: 100 },
+  hide: { y: 1200, h: 50 },
+};
 
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -324,6 +337,217 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
   return canvas;
 }
 
+
+function wrapTextLines(ctx, text, maxWidth, maxLines = 8) {
+  const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (!words.length) return ["Tap the mic and speak…"];
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(test).width > maxWidth && cur) {
+      lines.push(cur);
+      cur = w;
+      if (lines.length >= maxLines) break;
+    } else {
+      cur = test;
+    }
+  }
+  if (lines.length < maxLines && cur) lines.push(cur);
+  if (words.length && lines.length >= maxLines) {
+    const last = lines[maxLines - 1];
+    lines[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + "…";
+  }
+  return lines;
+}
+
+function drawAiPromptCanvas(state = {}) {
+  const width = AI_CANVAS.w;
+  const height = AI_CANVAS.h;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const body = ctx.createLinearGradient(0, 0, width, height);
+  body.addColorStop(0, "#0b1220");
+  body.addColorStop(0.45, "#111827");
+  body.addColorStop(1, "#020617");
+  ctx.fillStyle = body;
+  roundRect(ctx, 0, 0, width, height, 32);
+  ctx.fill();
+
+  const rim = ctx.createLinearGradient(0, 0, width, 0);
+  rim.addColorStop(0, "#64748b");
+  rim.addColorStop(0.5, "#38bdf8");
+  rim.addColorStop(1, "#94a3b8");
+  ctx.strokeStyle = rim;
+  ctx.lineWidth = 5;
+  roundRect(ctx, 3, 3, width - 6, height - 6, 30);
+  ctx.stroke();
+
+  // Header
+  const hg = ctx.createLinearGradient(0, 0, width, 0);
+  hg.addColorStop(0, "#1e293b");
+  hg.addColorStop(0.5, "#334155");
+  hg.addColorStop(1, "#0f172a");
+  ctx.fillStyle = hg;
+  roundRect(ctx, 0, 0, width, AI_LAYOUT.headerEnd, 32);
+  ctx.fill();
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, AI_LAYOUT.headerEnd - 22, width, 22);
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.font = "bold 44px Arial,sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("AI Prompt", 48, 44);
+  ctx.fillStyle = "#38bdf8";
+  ctx.font = "bold 22px Arial,sans-serif";
+  ctx.fillText("DIRECT MODEL · VOICE", 48, 78);
+
+  // Close / hide chip
+  ctx.fillStyle = "#334155";
+  roundRect(ctx, width - 140, 22, 100, 52, 16);
+  ctx.fill();
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 26px Arial,sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Hide", width - 90, 48);
+
+  // Mic button
+  const mic = AI_LAYOUT.mic;
+  const listening = !!state.listening;
+  const mg = ctx.createRadialGradient(mic.cx - 20, mic.cy - 20, 10, mic.cx, mic.cy, mic.r);
+  if (listening) {
+    mg.addColorStop(0, "#7dd3fc");
+    mg.addColorStop(0.55, "#0ea5e9");
+    mg.addColorStop(1, "#0369a1");
+  } else {
+    mg.addColorStop(0, "#475569");
+    mg.addColorStop(0.55, "#1e293b");
+    mg.addColorStop(1, "#020617");
+  }
+  ctx.beginPath();
+  ctx.arc(mic.cx, mic.cy, mic.r, 0, Math.PI * 2);
+  ctx.fillStyle = mg;
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = listening ? "#e0f2fe" : "#94a3b8";
+  ctx.stroke();
+  // mic glyph
+  ctx.fillStyle = listening ? "#0f172a" : "#f8fafc";
+  roundRect(ctx, mic.cx - 22, mic.cy - 48, 44, 70, 22);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(mic.cx - 36, mic.cy + 28);
+  ctx.quadraticCurveTo(mic.cx, mic.cy + 58, mic.cx + 36, mic.cy + 28);
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = listening ? "#0f172a" : "#f8fafc";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(mic.cx, mic.cy + 56);
+  ctx.lineTo(mic.cx, mic.cy + 78);
+  ctx.stroke();
+  ctx.fillStyle = listening ? "#7dd3fc" : "#94a3b8";
+  ctx.font = "bold 28px Arial,sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(listening ? "Listening… tap to stop" : "Tap mic to talk", mic.cx, mic.cy + mic.r + 42);
+
+  // Transcript card
+  const tr = AI_LAYOUT.transcript;
+  ctx.fillStyle = "#020617";
+  roundRect(ctx, tr.x, tr.y, tr.w, tr.h, 22);
+  ctx.fill();
+  ctx.strokeStyle = listening ? "#38bdf8" : "#334155";
+  ctx.lineWidth = 3;
+  roundRect(ctx, tr.x, tr.y, tr.w, tr.h, 22);
+  ctx.stroke();
+  ctx.fillStyle = "#64748b";
+  ctx.font = "bold 22px Arial,sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("WHAT YOU'RE SAYING", tr.x + 28, tr.y + 32);
+  ctx.fillStyle = "#f1f5f9";
+  ctx.font = "32px Arial,sans-serif";
+  const lines = wrapTextLines(ctx, state.draft || "", tr.w - 56, 6);
+  lines.forEach((line, i) => {
+    ctx.fillText(line, tr.x + 28, tr.y + 78 + i * 36);
+  });
+
+  function pillRow(y, label, options, activeId) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 22px Arial,sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(label, 48, y - 18);
+    const n = options.length;
+    const gap = 16;
+    const totalGap = gap * (n - 1);
+    const bw = (width - 96 - totalGap) / n;
+    options.forEach((opt, i) => {
+      const x = 48 + i * (bw + gap);
+      const on = opt.id === activeId;
+      const g = ctx.createLinearGradient(x, y, x, y + 64);
+      if (on) {
+        g.addColorStop(0, "#38bdf8");
+        g.addColorStop(1, "#0284c7");
+      } else {
+        g.addColorStop(0, "#334155");
+        g.addColorStop(1, "#1e293b");
+      }
+      ctx.fillStyle = g;
+      roundRect(ctx, x, y, bw, 64, 16);
+      ctx.fill();
+      ctx.fillStyle = on ? "#0f172a" : "#e2e8f0";
+      ctx.font = "bold 28px Arial,sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(opt.label, x + bw / 2, y + 32);
+    });
+  }
+
+  const mode = state.mode || "v2";
+  const speed = state.speed || "fast";
+  const target = state.targetMode || "new";
+  pillRow(AI_LAYOUT.modeY, "MODEL TYPE", [
+    { id: "render", label: "Render" },
+    { id: "v2", label: "2.0" },
+    { id: "mesh", label: "Mesh" },
+  ], mode);
+  pillRow(AI_LAYOUT.speedY, "GENERATION", [
+    { id: "fast", label: "Speed" },
+    { id: "quality", label: "Quality" },
+  ], speed);
+  pillRow(AI_LAYOUT.targetY, "TARGET", [
+    { id: "new", label: "New model" },
+    { id: "edit", label: "Edit selected" },
+  ], target);
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "24px Arial,sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`Selected: ${String(state.selectedLabel || "None").slice(0, 42)}`, 48, AI_LAYOUT.targetY + 100);
+
+  // Run
+  const ry = AI_LAYOUT.run.y;
+  const rg = ctx.createLinearGradient(48, ry, 48, ry + AI_LAYOUT.run.h);
+  rg.addColorStop(0, "#4ade80");
+  rg.addColorStop(1, "#16a34a");
+  ctx.fillStyle = rg;
+  roundRect(ctx, 48, ry, width - 96, AI_LAYOUT.run.h, 22);
+  ctx.fill();
+  ctx.fillStyle = "#052e16";
+  ctx.font = "bold 40px Arial,sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Run AI Prompt", width / 2, ry + AI_LAYOUT.run.h / 2);
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "22px Arial,sans-serif";
+  ctx.fillText("Grab header to move · Hide when done", width / 2, AI_LAYOUT.hide.y);
+
+  return canvas;
+}
+
 export function createViewportXR(opts) {
 
 
@@ -355,6 +579,9 @@ export function createViewportXR(opts) {
     onRedo = null,
     onTranscribeToggle = null,
     isTranscribing = null,
+    getAiPromptState = null,
+    setAiPromptSetting = null,
+    onProjectOpened = null,
   } = opts;
 
   let supported = false;
@@ -371,8 +598,10 @@ export function createViewportXR(opts) {
   let menuFooterHint = "";
   let lastSelectAt = 0;
   let scaleGrab = null;
-  let gripRotate = null; // single-grip yaw → rotate model in front of you
+  let gripGrab = null; // Gravity Sketch–style single-grip attach (move + rotate)
   let prevSqueeze = [false, false];
+  let aiPanel = null;
+  let aiPanelRefreshAt = 0;
 
   const xrHud = new THREE.Group();
   xrHud.name = "xrHud";
@@ -708,7 +937,8 @@ export function createViewportXR(opts) {
   }
 
   /**
-   * Always put the CAD assembly directly in front of the headset.
+   * Always put the CAD assembly directly in front of the headset at handheld size.
+   * Measures content at identity scale so desktop/XR transforms cannot balloon size.
    */
   function placeInFront(opts = {}) {
     const mesh = getLiveMesh();
@@ -716,7 +946,11 @@ export function createViewportXR(opts) {
       console.warn("[viewport-xr] No CAD model loaded — load a model before entering AR");
       return false;
     }
-    captureDesktop(mesh);
+    // Capture desktop pose once before we mutate for XR (needed for exit restore)
+    if (!saved || saved.mesh !== mesh) {
+      saved = null;
+      captureDesktop(mesh);
+    }
     prepareMeshesForXr(mesh);
 
     const spawnId = opts.spawnId || activeSpawnId || "eye";
@@ -724,35 +958,53 @@ export function createViewportXR(opts) {
     activeSpawnId = preset.id;
     if (!opts.keepZoom) userZoom = opts.userZoom || 1;
 
-    mesh.position.copy(saved.pos);
-    mesh.quaternion.copy(saved.quat);
-    mesh.scale.copy(saved.scale);
+    const marker = mesh.getObjectByName("xrModelMarker");
+    if (marker) marker.visible = false;
+
+    // Intrinsic content size (ignore current XR/desktop root scale)
+    const prevPos = mesh.position.clone();
+    const prevQuat = mesh.quaternion.clone();
+    const prevScale = mesh.scale.clone();
+    mesh.position.set(0, 0, 0);
+    mesh.quaternion.identity();
+    mesh.scale.set(1, 1, 1);
     mesh.updateMatrixWorld(true);
 
     let box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) {
-      box = new THREE.Box3(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
+      mesh.position.copy(prevPos);
+      mesh.quaternion.copy(prevQuat);
+      mesh.scale.copy(prevScale);
+      if (marker) marker.visible = true;
+      return false;
     }
     const size0 = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
-    const targetM = Math.min(preset.sizeM || 0.12, 0.14) * Math.max(Math.min(userZoom, 1.35), 0.45);
+    let maxDim = Math.max(size0.x, size0.y, size0.z, 1e-6);
+    // If content looks like raw mm (huge), normalize into meters for sizing
+    if (maxDim > 5) {
+      // keep measuring in current units — targetM still clamps world size
+    }
+    const targetM = Math.min(preset.sizeM || 0.11, 0.13) * Math.max(Math.min(userZoom, 1.25), 0.55);
 
     getHeadPose();
-    if (!Number.isFinite(_headPos.y) || _headPos.y < 0.2) _headPos.set(0, 1.55, 0);
+    if (!Number.isFinite(_headPos.y) || _headPos.y < 0.15) _headPos.set(0, 1.55, 0);
     const forward = headForwardFlat();
-    const dist = preset.distance || 0.55;
-    const target = _headPos.clone().addScaledVector(forward, dist);
-    // Keep at eye height so it sits directly in front (not at feet / ceiling)
-    if (preset.yMode === "floor") target.y = Math.max(0.12, targetM * 0.5);
-    else target.y = _headPos.y - 0.05;
+    // Guard: identity quat can leave forward as (0,0,-1) which is fine; if length bad, fix
+    if (forward.lengthSq() < 0.5) forward.set(0, 0, -1);
 
+    const dist = preset.distance || 0.5;
+    const target = _headPos.clone().addScaledVector(forward, dist);
+    if (preset.yMode === "floor") target.y = Math.max(0.1, targetM * 0.45);
+    else target.y = _headPos.y - 0.08;
+
+    // CAD Z-up → Y-up, face the user (model +Z toward headset)
     const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-    const flatBack = forward.clone();
-    flatBack.y = 0;
-    if (flatBack.lengthSq() < 1e-6) flatBack.set(0, 0, 1);
-    else flatBack.normalize();
-    const face = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatBack.clone().negate());
-    const worldQuat = face.multiply(zUpToYUp);
+    const toUser = forward.clone().multiplyScalar(-1);
+    toUser.y = 0;
+    if (toUser.lengthSq() < 1e-6) toUser.set(0, 0, 1);
+    else toUser.normalize();
+    const face = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), toUser);
+    const worldQuat = face.clone().multiply(zUpToYUp);
 
     const parent = mesh.parent;
     if (parent) {
@@ -763,12 +1015,18 @@ export function createViewportXR(opts) {
     }
 
     const factor = targetM / maxDim;
-    mesh.scale.copy(saved.scale).multiplyScalar(factor);
+    mesh.scale.setScalar(factor);
     mesh.updateMatrixWorld(true);
 
     box.setFromObject(mesh);
-    const c1 = box.getCenter(new THREE.Vector3());
-    const delta = target.clone().sub(c1);
+    let c1 = box.getCenter(new THREE.Vector3());
+    // If somehow centered behind the head, force to front
+    const toCenter = c1.clone().sub(_headPos);
+    if (toCenter.dot(forward) < 0.05) {
+      c1 = _headPos.clone().addScaledVector(forward, dist);
+      c1.y = target.y;
+    }
+    const delta = target.clone().sub(box.getCenter(new THREE.Vector3()));
     if (parent) {
       const wp = mesh.getWorldPosition(new THREE.Vector3()).add(delta);
       mesh.position.copy(parent.worldToLocal(wp));
@@ -777,31 +1035,47 @@ export function createViewportXR(opts) {
     }
     mesh.updateMatrixWorld(true);
 
+    // Re-center precisely on target after move
+    box.setFromObject(mesh);
+    const c2 = box.getCenter(new THREE.Vector3());
+    const d2 = target.clone().sub(c2);
+    if (parent) {
+      const wp = mesh.getWorldPosition(new THREE.Vector3()).add(d2);
+      mesh.position.copy(parent.worldToLocal(wp));
+    } else {
+      mesh.position.add(d2);
+    }
+    mesh.updateMatrixWorld(true);
+
     presentationScale = Math.abs(mesh.scale.x) || factor;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
-    enforceHandheldSize(mesh, Math.min(targetM, 0.14));
+    enforceHandheldSize(mesh, Math.min(targetM, 0.13), { pinFront: true, distance: dist, floor: preset.yMode === "floor" });
 
-    // Bright marker so a black PBR model still has a visible anchor
-    let marker = mesh.getObjectByName("xrModelMarker");
     if (!marker) {
-      marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 16, 12),
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.03, 16, 12),
         new THREE.MeshBasicMaterial({ color: 0xfff200, depthTest: false, depthWrite: false }),
       );
-      marker.name = "xrModelMarker";
-      marker.renderOrder = 4500;
-      marker.frustumCulled = false;
-      mesh.add(marker);
+      m.name = "xrModelMarker";
+      m.renderOrder = 4500;
+      m.frustumCulled = false;
+      mesh.add(m);
     }
-    marker.visible = true;
-    const ms = Math.max(Math.abs(mesh.scale.x), 1e-9);
-    marker.scale.setScalar(0.05 / ms); // ~5cm in world space
+    const mk = mesh.getObjectByName("xrModelMarker");
+    if (mk) {
+      mk.visible = true;
+      const ms = Math.max(Math.abs(mesh.scale.x), 1e-9);
+      mk.scale.setScalar(0.04 / ms);
+    }
 
+    const finalSize = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3());
     console.info("[viewport-xr] placed", {
       maxDimBefore: maxDim,
       targetM,
       scale: mesh.scale.x,
-      worldSize: new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()).toArray(),
+      worldSize: finalSize.toArray(),
+      head: _headPos.toArray(),
+      target: target.toArray(),
     });
 
     showBeacon(target);
@@ -809,16 +1083,19 @@ export function createViewportXR(opts) {
     return true;
   }
 
-  function enforceHandheldSize(mesh, targetMax = 0.14) {
+  function enforceHandheldSize(mesh, targetMax = 0.13, pin = {}) {
     mesh.updateMatrixWorld(true);
+    const marker = mesh.getObjectByName("xrModelMarker");
+    if (marker) marker.visible = false;
     let box = new THREE.Box3().setFromObject(mesh);
+    if (marker) marker.visible = true;
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3());
     const maxD = Math.max(size.x, size.y, size.z);
     if (!(maxD > 1e-8)) return;
     const factor = targetMax / maxD;
     const parent = mesh.parent;
-    if (Number.isFinite(factor) && factor > 0 && Math.abs(1 - factor) >= 0.01) {
+    if (Number.isFinite(factor) && factor > 0 && (factor < 0.98 || factor > 1.02)) {
       const center = box.getCenter(new THREE.Vector3());
       const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
       mesh.scale.multiplyScalar(factor);
@@ -828,11 +1105,13 @@ export function createViewportXR(opts) {
       mesh.updateMatrixWorld(true);
       box = new THREE.Box3().setFromObject(mesh);
     }
-    // Always pin to eye-level in front of the headset
+    if (pin.pinFront === false) return;
     getHeadPose();
     const f = headForwardFlat();
-    const want = _headPos.clone().addScaledVector(f, 0.55);
-    want.y = _headPos.y - 0.05;
+    const dist = pin.distance || 0.5;
+    const want = _headPos.clone().addScaledVector(f, dist);
+    if (pin.floor) want.y = Math.max(0.1, targetMax * 0.45);
+    else want.y = _headPos.y - 0.08;
     const c2 = box.getCenter(new THREE.Vector3());
     const dlt = want.sub(c2);
     if (parent) {
@@ -858,7 +1137,7 @@ export function createViewportXR(opts) {
     presentationScale = mesh.scale.x || 1;
     baseScale = presentationScale / Math.max(userZoom, 1e-6);
     mesh.updateMatrixWorld(true);
-    enforceHandheldSize(mesh, 0.14);
+    enforceHandheldSize(mesh, 0.13, { pinFront: true });
     showBeacon(mesh.getWorldPosition(new THREE.Vector3()));
     return true;
   }
@@ -1005,6 +1284,180 @@ export function createViewportXR(opts) {
     placePanel.group.quaternion.copy(_headQuat);
   }
 
+  function readAiState() {
+    let state = {
+      draft: "",
+      listening: false,
+      mode: "v2",
+      speed: "fast",
+      targetMode: "new",
+      selectedLabel: "None",
+    };
+    try {
+      const s = typeof getAiPromptState === "function" ? getAiPromptState() : null;
+      if (s && typeof s === "object") state = { ...state, ...s };
+    } catch (_) {}
+    try {
+      if (!state.draft && typeof getPromptDraft === "function") state.draft = String(getPromptDraft() || "");
+    } catch (_) {}
+    try {
+      if (typeof isTranscribing === "function") state.listening = !!isTranscribing();
+    } catch (_) {}
+    return state;
+  }
+
+  function ensureAiPanel() {
+    if (aiPanel) return aiPanel;
+    const canvas = drawAiPromptCanvas(readAiState());
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = true;
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(AI_PLANE.w, AI_PLANE.h),
+      new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthTest: false,
+      }),
+    );
+    plane.renderOrder = 2300;
+    plane.frustumCulled = false;
+    plane.userData.xrAiPanel = true;
+    const titleBar = new THREE.Mesh(
+      new THREE.PlaneGeometry(AI_PLANE.w, 0.055),
+      new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.001,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    titleBar.position.y = AI_PLANE.h / 2 - 0.028;
+    titleBar.position.z = 0.002;
+    titleBar.renderOrder = 2301;
+    titleBar.frustumCulled = false;
+    titleBar.userData.xrAiDrag = true;
+    aiPanel = { group: new THREE.Group(), plane, titleBar, tex };
+    aiPanel.group.add(plane);
+    aiPanel.group.add(titleBar);
+    aiPanel.group.visible = false;
+    xrHud.add(aiPanel.group);
+    return aiPanel;
+  }
+
+  function refreshAiPromptPanel() {
+    if (!aiPanel?.group.visible) return;
+    const canvas = drawAiPromptCanvas(readAiState());
+    aiPanel.tex.image = canvas;
+    aiPanel.tex.needsUpdate = true;
+  }
+
+  function openAiPromptPanel(opts = {}) {
+    const panel = ensureAiPanel();
+    refreshAiPromptPanel();
+    panel.group.visible = true;
+    if (!opts.keepPose) {
+      getHeadPose();
+      const f = headForwardFlat();
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat);
+      right.y = 0;
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      else right.normalize();
+      panel.group.position
+        .copy(_headPos)
+        .addScaledVector(f, 0.72)
+        .addScaledVector(right, 0.38);
+      panel.group.position.y = _headPos.y - 0.02;
+      // Face the user
+      const toHead = _headPos.clone().sub(panel.group.position).setY(0);
+      if (toHead.lengthSq() > 1e-6) {
+        panel.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), toHead.normalize());
+      } else {
+        panel.group.quaternion.copy(_headQuat);
+      }
+    }
+    aiPanelRefreshAt = performance.now();
+  }
+
+  function closeAiPromptPanel() {
+    if (aiPanel) aiPanel.group.visible = false;
+  }
+
+  function pickAiFromLocalPoint(local) {
+    const halfW = AI_PLANE.w / 2;
+    const halfH = AI_PLANE.h / 2;
+    const u = (local.x + halfW) / AI_PLANE.w;
+    const fromTop = (halfH - local.y) / AI_PLANE.h;
+    if (u < 0 || u > 1 || fromTop < 0 || fromTop > 1) return null;
+    const px = u * AI_CANVAS.w;
+    const py = fromTop * AI_CANVAS.h;
+    if (py < AI_LAYOUT.headerEnd) {
+      if (px > AI_CANVAS.w - 160) return { kind: "ai-action", id: "hide" };
+      return { kind: "ai-drag" };
+    }
+    const mic = AI_LAYOUT.mic;
+    const dx = px - mic.cx;
+    const dy = py - mic.cy;
+    if (dx * dx + dy * dy <= mic.r * mic.r * 1.15) return { kind: "ai-action", id: "mic" };
+
+    function pillHit(y, ids) {
+      const n = ids.length;
+      const gap = 16;
+      const totalGap = gap * (n - 1);
+      const bw = (AI_CANVAS.w - 96 - totalGap) / n;
+      if (py < y || py > y + 64) return null;
+      const i = Math.floor((px - 48) / (bw + gap));
+      if (i < 0 || i >= n) return null;
+      const x0 = 48 + i * (bw + gap);
+      if (px < x0 || px > x0 + bw) return null;
+      return ids[i];
+    }
+    let id = pillHit(AI_LAYOUT.modeY, ["mode:render", "mode:v2", "mode:mesh"]);
+    if (id) return { kind: "ai-action", id };
+    id = pillHit(AI_LAYOUT.speedY, ["speed:fast", "speed:quality"]);
+    if (id) return { kind: "ai-action", id };
+    id = pillHit(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
+    if (id) return { kind: "ai-action", id };
+    const ry = AI_LAYOUT.run.y;
+    if (py >= ry && py <= ry + AI_LAYOUT.run.h && px >= 48 && px <= AI_CANVAS.w - 48) {
+      return { kind: "ai-action", id: "run" };
+    }
+    return null;
+  }
+
+  function handleAiAction(id) {
+    if (id === "hide") {
+      closeAiPromptPanel();
+      return;
+    }
+    if (id === "mic") {
+      try { onTranscribeToggle?.(); } catch (err) { console.warn("[viewport-xr] mic", err); }
+      setTimeout(() => refreshAiPromptPanel(), 180);
+      return;
+    }
+    if (id === "run") {
+      try { onPromptSubmit?.(); } catch (err) { console.warn("[viewport-xr] run", err); }
+      return;
+    }
+    if (id.startsWith("mode:")) {
+      try { setAiPromptSetting?.("mode", id.slice(5)); } catch (_) {}
+      refreshAiPromptPanel();
+      return;
+    }
+    if (id.startsWith("speed:")) {
+      try { setAiPromptSetting?.("speed", id.slice(6)); } catch (_) {}
+      refreshAiPromptPanel();
+      return;
+    }
+    if (id.startsWith("target:")) {
+      try { setAiPromptSetting?.("targetMode", id.slice(7)); } catch (_) {}
+      refreshAiPromptPanel();
+      return;
+    }
+  }
+
   function ensureMenuConsole() {
     if (explorerPanel) return explorerPanel;
     const canvas = drawConsoleCanvas({
@@ -1119,13 +1572,10 @@ export function createViewportXR(opts) {
       }));
     }
     if (tab === "ai") {
-      let draft = "";
-      try { draft = String(getPromptDraft?.() || ""); } catch { draft = ""; }
       const listening = !!(typeof isTranscribing === "function" && isTranscribing());
-      const preview = draft.trim() ? draft.trim().slice(0, 42) : "(empty prompt)";
       return [
-        { id: "transcribe", label: listening ? "Stop transcribe" : "Transcribe (mic)", active: listening, kind: "action", icon: "mic" },
-        { id: "prompt_preview", label: preview, active: false, kind: "hint", icon: "ai" },
+        { id: "ai_panel", label: "Open AI prompt window", active: !!aiPanel?.group?.visible, kind: "action", icon: "ai" },
+        { id: "transcribe", label: listening ? "Stop mic" : "Mic on / off", active: listening, kind: "action", icon: "mic" },
         { id: "prompt", label: "Run AI prompt", active: false, kind: "action", icon: "ai" },
         { id: "prompt_clear", label: "Clear prompt", active: false, kind: "action", icon: "exit" },
         { id: "link_part", label: "Link selected model to prompt", active: false, kind: "action", icon: "move" },
@@ -1146,9 +1596,9 @@ export function createViewportXR(opts) {
     if (menuTab === "projects") return "Load any project · grab metal header to move panel";
     if (menuTab === "parts") return "Switch models in this project";
     if (menuTab === "files") return "Open / link project files";
-    if (menuTab === "ai") return "Transcribe with mic · run prompt · link models";
+    if (menuTab === "ai") return "Open AI window · mic · model type · speed/quality · edit";
     if (menuTab === "view") return "Capture & view tools · Share to X after capture";
-    return "Tools · grip rotates · both grips resize · undo/redo on left";
+    return "Tools · grip moves/rotates (GS) · both grips resize";
   }
 
   function openMenuConsole(opts = {}) {
@@ -1221,6 +1671,18 @@ export function createViewportXR(opts) {
     _mat.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
+
+    // Dedicated AI prompt panel (to the right)
+    if (aiPanel?.group.visible) {
+      const titleHits = raycaster.intersectObject(aiPanel.titleBar, false);
+      if (titleHits.length) return { kind: "ai-drag" };
+      const ph = raycaster.intersectObject(aiPanel.plane, false);
+      if (ph.length) {
+        const local = aiPanel.plane.worldToLocal(ph[0].point.clone());
+        const aiHit = pickAiFromLocalPoint(local);
+        if (aiHit) return aiHit;
+      }
+    }
 
     // XR console first when open — otherwise the left-hand Menu chip steals every select
     if (explorerPanel?.group.visible) {
@@ -1381,6 +1843,14 @@ export function createViewportXR(opts) {
       setTool(hit.tool);
       return;
     }
+    if (hit.kind === "ai-drag") {
+      beginPanelDrag(controller, aiPanel?.group);
+      return;
+    }
+    if (hit.kind === "ai-action") {
+      handleAiAction(hit.id);
+      return;
+    }
     if (hit.kind === "explorer-drag") {
       beginPanelDrag(controller, explorerPanel.group);
       return;
@@ -1396,13 +1866,24 @@ export function createViewportXR(opts) {
       if (line?.kind === "project" || menuTab === "projects") {
         if (line?.id) {
           try {
-            onOpenProject?.(line.id);
+            const maybe = onOpenProject?.(line.id);
+            Promise.resolve(maybe).finally(() => {
+              if (!presenting) return;
+              // Fresh mesh: re-place in front, then show AI prompt on the right
+              setTimeout(() => {
+                if (!presenting) return;
+                saved = null; // force remeasure new project content
+                placeInFront({ spawnId: "eye", keepZoom: false });
+                openAiPromptPanel();
+                try { onProjectOpened?.(line.id); } catch (_) {}
+              }, 500);
+              setTimeout(() => {
+                if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+              }, 1100);
+            });
           } catch (err) {
             console.warn("[viewport-xr] open project", err);
           }
-          setTimeout(() => {
-            if (presenting) openMenuConsole({ tab: "projects", keepPose: true });
-          }, 600);
         }
         return;
       }
@@ -1430,9 +1911,16 @@ export function createViewportXR(opts) {
         return;
       }
       if (menuTab === "ai") {
+        if (line?.id === "ai_panel") {
+          openAiPromptPanel();
+          return;
+        }
         if (line?.id === "transcribe") {
           try { onTranscribeToggle?.(); } catch (err) { console.warn("[viewport-xr] mic", err); }
-          setTimeout(() => openMenuConsole({ tab: "ai", keepPose: true }), 200);
+          setTimeout(() => {
+            openMenuConsole({ tab: "ai", keepPose: true });
+            refreshAiPromptPanel();
+          }, 200);
           return;
         }
         if (line?.id === "prompt_clear") {
@@ -1534,12 +2022,11 @@ export function createViewportXR(opts) {
     const os = new THREE.Vector3();
     local.decompose(op, oq, os);
     grabState = {
-      mode: activeTool === "rotate" ? "rotate" : "grab",
+      mode: "grab", // always attach — pull toward you + tumble with the controller
       controller,
       offsetPos: op,
       offsetQuat: oq,
-      startCtrlYaw: new THREE.Euler().setFromQuaternion(controller.getWorldQuaternion(new THREE.Quaternion()), "YXZ").y,
-      startMeshYaw: new THREE.Euler().setFromQuaternion(mesh.quaternion.clone(), "YXZ").y,
+      scale: presentationScale || Math.abs(mesh.scale.x) || 1,
     };
   }
 
@@ -1729,7 +2216,7 @@ export function createViewportXR(opts) {
     }
 
     // Stick zoom only (grip buttons own rotation)
-    if (!(squeezes[0] && squeezes[1]) && !gripRotate) {
+    if (!(squeezes[0] && squeezes[1]) && !gripGrab) {
       for (const source of sess.inputSources) {
         const gp = source.gamepad;
         if (!gp) continue;
@@ -1743,41 +2230,43 @@ export function createViewportXR(opts) {
     prevSqueeze[1] = squeezes[1];
   }
 
-  /** Hold either grip to yaw-rotate the model (both grips = resize). */
-  function updateGripRotate() {
+  /**
+   * Gravity Sketch–style grip: object sticks to the controller (move + free rotate
+   * around the hand), so you can pull it toward you and tumble it naturally.
+   * Both grips still reserved for two-hand scale.
+   */
+  function updateGripGrab() {
     if (scaleGrab) {
-      gripRotate = null;
+      gripGrab = null;
       return;
     }
     const sess = renderer.xr.getSession?.();
     const mesh = getLiveMesh();
     if (!sess || !mesh) {
-      gripRotate = null;
+      gripGrab = null;
       return;
     }
 
     const squeezes = [false, false];
-    const sourcesByHand = [null, null];
     let gi = 0;
     for (const source of sess.inputSources) {
       const gp = source.gamepad;
       if (!gp) continue;
       const handIndex = source.handedness === "left" ? 0 : source.handedness === "right" ? 1 : gi;
       squeezes[handIndex] = !!(gp.buttons?.[1]?.pressed || (gp.buttons?.[1]?.value || 0) > 0.7);
-      sourcesByHand[handIndex] = source;
       gi += 1;
     }
 
     if (squeezes[0] && squeezes[1]) {
-      gripRotate = null;
+      gripGrab = null;
       return;
     }
 
     const hand = squeezes[0] ? 0 : squeezes[1] ? 1 : -1;
     if (hand < 0) {
-      if (gripRotate) {
+      if (gripGrab) {
         saveRoomPose();
-        gripRotate = null;
+        gripGrab = null;
       }
       return;
     }
@@ -1785,48 +2274,60 @@ export function createViewportXR(opts) {
     const ctrl = controllers[hand];
     if (!ctrl) return;
     ctrl.updateMatrixWorld(true);
-    const yaw = new THREE.Euler().setFromQuaternion(
-      ctrl.getWorldQuaternion(new THREE.Quaternion()),
-      "YXZ",
-    ).y;
+    mesh.updateMatrixWorld(true);
 
-    if (!gripRotate || gripRotate.hand !== hand) {
-      gripRotate = {
+    if (!gripGrab || gripGrab.hand !== hand) {
+      // Cancel trigger-grab while grip-holding
+      grabState = null;
+      const inv = new THREE.Matrix4().copy(ctrl.matrixWorld).invert();
+      const local = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
+      const op = new THREE.Vector3();
+      const oq = new THREE.Quaternion();
+      const os = new THREE.Vector3();
+      local.decompose(op, oq, os);
+      gripGrab = {
         hand,
-        startCtrlYaw: yaw,
-        startMeshYaw: mesh.rotation.y,
+        offsetPos: op.clone(),
+        offsetQuat: oq.clone(),
+        scale: presentationScale || Math.abs(mesh.scale.x) || 1,
       };
       return;
     }
 
-    mesh.rotation.y = gripRotate.startMeshYaw + (yaw - gripRotate.startCtrlYaw);
+    const next = new THREE.Matrix4().compose(
+      gripGrab.offsetPos,
+      gripGrab.offsetQuat,
+      new THREE.Vector3(1, 1, 1),
+    );
+    const world = new THREE.Matrix4().multiplyMatrices(ctrl.matrixWorld, next);
+    if (mesh.parent) {
+      const inv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
+      new THREE.Matrix4().multiplyMatrices(inv, world).decompose(mesh.position, mesh.quaternion, _s);
+    } else {
+      world.decompose(mesh.position, mesh.quaternion, _s);
+    }
+    const sx = gripGrab.scale || presentationScale || mesh.scale.x;
+    mesh.scale.setScalar(sx);
+    presentationScale = sx;
   }
 
   function updateGrab() {
-    if (!grabState) return;
+    if (!grabState || gripGrab) return;
     const mesh = getLiveMesh();
     if (!mesh) return;
-    const { controller, mode, offsetPos, offsetQuat, startCtrlYaw, startMeshYaw } = grabState;
+    const { controller, offsetPos, offsetQuat, scale } = grabState;
     controller.updateMatrixWorld(true);
-    if (mode === "rotate") {
-      const yaw = new THREE.Euler().setFromQuaternion(
-        controller.getWorldQuaternion(new THREE.Quaternion()),
-        "YXZ",
-      ).y;
-      mesh.rotation.y = startMeshYaw + (yaw - startCtrlYaw);
+    const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, new THREE.Vector3(1, 1, 1));
+    const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
+    if (mesh.parent) {
+      const inv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
+      new THREE.Matrix4().multiplyMatrices(inv, world).decompose(mesh.position, mesh.quaternion, _s);
     } else {
-      const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, new THREE.Vector3(1, 1, 1));
-      const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
-      if (mesh.parent) {
-        const inv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
-        new THREE.Matrix4().multiplyMatrices(inv, world).decompose(mesh.position, mesh.quaternion, _s);
-      } else {
-        world.decompose(mesh.position, mesh.quaternion, _s);
-      }
-      // Preserve uniform presentation scale
-      const sx = presentationScale || mesh.scale.x;
-      mesh.scale.setScalar(sx);
+      world.decompose(mesh.position, mesh.quaternion, _s);
     }
+    const sx = scale || presentationScale || mesh.scale.x;
+    mesh.scale.setScalar(sx);
+    presentationScale = sx;
   }
 
   function controllerWorldPos(controller, out = new THREE.Vector3()) {
@@ -2015,12 +2516,17 @@ export function createViewportXR(opts) {
 
     // Always re-place in front after tracking settles (ignore saved room pose / zoom)
     userZoom = 1;
+    saved = null;
     placeInFront({ spawnId: "eye", keepZoom: false });
+    openAiPromptPanel();
     setTimeout(() => {
       if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
     }, 350);
     setTimeout(() => {
-      if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
+      if (presenting) {
+        placeInFront({ spawnId: "eye", keepZoom: false });
+        if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
+      }
     }, 900);
 
     activeTool = "grab";
@@ -2051,7 +2557,8 @@ export function createViewportXR(opts) {
     });
     grabState = null;
     scaleGrab = null;
-    gripRotate = null;
+    gripGrab = null;
+    closeAiPromptPanel();
     clearMeasure();
     restoreMeshMaterials();
     restoreDesktop();
@@ -2122,11 +2629,16 @@ export function createViewportXR(opts) {
       g.visible = true;
     });
     updateTwoHandScale();
-    updateGripRotate();
+    updateGripGrab();
     updateGrab();
     updatePanelDrag();
     updateDockFollow();
     pollGamepads();
+    // Live transcript while AI panel is open
+    if (aiPanel?.group.visible && performance.now() - aiPanelRefreshAt > 220) {
+      refreshAiPromptPanel();
+      aiPanelRefreshAt = performance.now();
+    }
     // Grid / floors must stay off for the entire AR session
     try {
       hideSceneChrome?.();
@@ -2189,6 +2701,7 @@ export function createViewportXR(opts) {
     };
     stash(dock);
     stash(explorerPanel?.group);
+    stash(aiPanel?.group);
     stash(placePanel?.group);
     stash(measureGroup);
     stash(faceProbe);
@@ -2224,6 +2737,9 @@ export function createViewportXR(opts) {
     saveRoomPose,
     capturePovDataUrl,
     openMenuConsole,
+    openAiPromptPanel,
+    closeAiPromptPanel,
+    refreshAiPromptPanel,
     setMenuFooterHint: (hint) => {
       menuFooterHint = String(hint || "");
       if (presenting && explorerPanel?.group.visible) {
