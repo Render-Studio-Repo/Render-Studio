@@ -21,16 +21,39 @@ const SPAWN_PRESETS = [
   { id: "floor", label: "Lower / floor", distance: 0.9, sizeM: 0.2, yMode: "floor" },
 ];
 
-const DOCK_TOOLS = [
+const QUICK_DOCK = [
+  { id: "menu", label: "Menu", color: 0x0ea5e9, glyph: "UI" },
   { id: "grab", label: "Move", color: 0x3b82f6, glyph: "Mv" },
   { id: "rotate", label: "Rotate", color: 0xf97316, glyph: "Ro" },
-  { id: "explorer", label: "Explorer", color: 0x64748b, glyph: "Ex" },
-  { id: "front", label: "Front", color: 0xa78bfa, glyph: "Fr" },
-  { id: "zoom_in", label: "Zoom+", color: 0x14b8a6, glyph: "+" },
-  { id: "zoom_out", label: "Zoom-", color: 0x0ea5e9, glyph: "-" },
-  { id: "place", label: "Place", color: 0xc084fc, glyph: "Pl" },
   { id: "measure", label: "Measure", color: 0xf59e0b, glyph: "Me" },
   { id: "exit", label: "Exit", color: 0xef4444, glyph: "X" },
+];
+
+// Back-compat alias used by older dock loops
+const DOCK_TOOLS = QUICK_DOCK;
+
+const MENU_TABS = [
+  { id: "projects", label: "Projects" },
+  { id: "parts", label: "Parts" },
+  { id: "tools", label: "Tools" },
+  { id: "view", label: "View" },
+];
+
+const TOOL_ACTIONS = [
+  { id: "front", label: "Place in front", section: "tools" },
+  { id: "place", label: "Placement presets", section: "tools" },
+  { id: "zoom_in", label: "Scale up", section: "tools" },
+  { id: "zoom_out", label: "Scale down", section: "tools" },
+  { id: "restore", label: "Restore saved pose", section: "tools" },
+  { id: "export", label: "Export model", section: "tools" },
+  { id: "bambu", label: "Send to Bambu", section: "tools" },
+  { id: "prompt", label: "Run AI prompt", section: "tools" },
+  { id: "fit", label: "Fit / recenter", section: "view" },
+  { id: "explode", label: "Toggle explode", section: "view" },
+  { id: "section", label: "Toggle section", section: "view" },
+  { id: "wireframe", label: "Toggle wireframe", section: "view" },
+  { id: "units", label: "Cycle units", section: "view" },
+  { id: "screenshot", label: "Screenshot", section: "view" },
 ];
 
 function makeIconTexture(glyph, bgHex, label) {
@@ -40,23 +63,24 @@ function makeIconTexture(glyph, bgHex, label) {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   const c = new THREE.Color(bgHex);
+  // Soft rounded square (modern chip)
+  const r = 48;
   ctx.fillStyle = `#${c.getHexString()}`;
-  ctx.beginPath();
-  ctx.arc(128, 128, 118, 0, Math.PI * 2);
+  roundRect(ctx, 28, 28, 200, 200, r);
   ctx.fill();
-  ctx.lineWidth = 10;
-  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  roundRect(ctx, 28, 28, 200, 200, r);
   ctx.stroke();
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  // ASCII only — emoji often blank on Quest WebGL canvases
   const ascii = String(glyph || "?").replace(/[^\x20-\x7E]/g, "").slice(0, 2) || "?";
-  ctx.font = "bold 110px Arial,sans-serif";
-  ctx.fillText(ascii, 128, label ? 108 : 128);
+  ctx.font = "bold 92px Arial,sans-serif";
+  ctx.fillText(ascii, 128, label ? 112 : 128);
   if (label) {
-    ctx.font = "bold 36px Arial,sans-serif";
-    ctx.fillText(String(label).slice(0, 8), 128, 188);
+    ctx.font = "bold 32px Arial,sans-serif";
+    ctx.fillText(String(label).slice(0, 9), 128, 178);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -64,38 +88,110 @@ function makeIconTexture(glyph, bgHex, label) {
   return tex;
 }
 
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
 function drawPanelCanvas(title, lines, footer = "") {
-  const width = 1024;
-  const height = 700;
+  return drawConsoleCanvas({
+    title,
+    tabs: [],
+    activeTab: "",
+    lines,
+    footer,
+  });
+}
+
+function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], footer = "" }) {
+  const width = 1280;
+  const height = 900;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "rgba(15,23,42,0.94)";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "rgba(30,41,59,1)";
-  ctx.fillRect(0, 0, width, 100);
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "bold 44px system-ui,sans-serif";
-  ctx.fillText(title, 36, 64);
-  ctx.font = "36px system-ui,sans-serif";
+
+  // Deep glass panel
+  ctx.fillStyle = "rgba(8,12,22,0.94)";
+  roundRect(ctx, 0, 0, width, height, 36);
+  ctx.fill();
+  // Accent border
+  ctx.strokeStyle = "rgba(56,189,248,0.45)";
+  ctx.lineWidth = 4;
+  roundRect(ctx, 2, 2, width - 4, height - 4, 34);
+  ctx.stroke();
+
+  // Header gradient bar
+  const g = ctx.createLinearGradient(0, 0, width, 0);
+  g.addColorStop(0, "#0ea5e9");
+  g.addColorStop(0.55, "#6366f1");
+  g.addColorStop(1, "#22d3ee");
+  ctx.fillStyle = g;
+  roundRect(ctx, 0, 0, width, 110, 36);
+  ctx.fill();
+  ctx.fillStyle = "#0ea5e9";
+  ctx.fillRect(0, 70, width, 40);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 52px Arial,sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(title || "Render Studio").slice(0, 28), 48, 55);
+
+  // Tabs
+  if (tabs.length) {
+    const tabW = Math.min(220, (width - 80) / tabs.length);
+    tabs.forEach((tab, i) => {
+      const x = 40 + i * (tabW + 12);
+      const on = tab.id === activeTab;
+      ctx.fillStyle = on ? "rgba(255,255,255,0.22)" : "rgba(15,23,42,0.55)";
+      roundRect(ctx, x, 128, tabW, 64, 18);
+      ctx.fill();
+      ctx.fillStyle = on ? "#e0f2fe" : "#94a3b8";
+      ctx.font = on ? "bold 34px Arial,sans-serif" : "32px Arial,sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(tab.label).slice(0, 12), x + tabW / 2, 160);
+    });
+  }
+
+  const listTop = tabs.length ? 220 : 150;
+  const rowH = 70;
   lines.forEach((line, i) => {
-    const y = 150 + i * 56;
-    ctx.fillStyle = i % 2 ? "rgba(51,65,85,0.4)" : "transparent";
-    ctx.fillRect(20, y - 34, width - 40, 50);
-    ctx.fillStyle = line.active ? "#7dd3fc" : "#f1f5f9";
-    ctx.fillText(String(line.label || "").slice(0, 40), 40, y);
+    const y = listTop + i * rowH;
+    if (y > height - 110) return;
+    ctx.fillStyle = line.active ? "rgba(14,165,233,0.22)" : (i % 2 ? "rgba(30,41,59,0.55)" : "rgba(15,23,42,0.25)");
+    roundRect(ctx, 36, y - 28, width - 72, 58, 14);
+    ctx.fill();
+    if (line.active) {
+      ctx.fillStyle = "#38bdf8";
+      roundRect(ctx, 36, y - 28, 10, 58, 6);
+      ctx.fill();
+    }
+    ctx.fillStyle = line.active ? "#f0f9ff" : "#e2e8f0";
+    ctx.font = line.active ? "bold 36px Arial,sans-serif" : "34px Arial,sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(String(line.label || "").slice(0, 48), 64, y + 4);
   });
+
   if (footer) {
-    ctx.fillStyle = "#38bdf8";
-    ctx.font = "bold 30px system-ui,sans-serif";
+    ctx.fillStyle = "rgba(15,23,42,0.9)";
+    ctx.fillRect(0, height - 84, width, 84);
+    ctx.fillStyle = "#7dd3fc";
+    ctx.font = "bold 30px Arial,sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(footer, width / 2, height - 36);
+    ctx.fillText(String(footer).slice(0, 70), width / 2, height - 42);
   }
   return canvas;
 }
 
 export function createViewportXR(opts) {
+
   const {
     renderer,
     scene,
@@ -114,6 +210,11 @@ export function createViewportXR(opts) {
     getPoseStorageKey = null,
     getExplorerItems = null,
     onExplorerSelect = null,
+    getProjects = null,
+    onOpenProject = null,
+    getPromptDraft = null,
+    onPromptSubmit = null,
+    onToolAction = null,
   } = opts;
 
   let supported = false;
@@ -125,6 +226,10 @@ export function createViewportXR(opts) {
   let baseScale = 1;
   let presentationScale = 1;
   let activeSpawnId = "eye";
+  let menuTab = "projects";
+  let menuScroll = 0;
+  let scaleGrab = null;
+  let prevSqueeze = [false, false];
 
   const xrHud = new THREE.Group();
   xrHud.name = "xrHud";
@@ -640,6 +745,14 @@ export function createViewportXR(opts) {
   }
 
   function setTool(id) {
+    if (id === "menu") {
+      openMenuConsole({ tab: menuTab || "projects" });
+      return;
+    }
+    if (id === "explorer") {
+      openMenuConsole({ tab: "projects" });
+      return;
+    }
     if (id === "front") {
       placeInFront({ spawnId: activeSpawnId || "eye", keepZoom: false });
       return;
@@ -660,10 +773,6 @@ export function createViewportXR(opts) {
       openPlacePanel();
       return;
     }
-    if (id === "explorer") {
-      openExplorerPanel();
-      return;
-    }
     if (id === "exit") {
       exit();
       return;
@@ -676,6 +785,24 @@ export function createViewportXR(opts) {
     if (id === "grab" || id === "rotate") {
       activeTool = id;
       syncDock();
+      return;
+    }
+    // Forward console tool rows through host callbacks
+    runHostTool(id);
+  }
+
+  function runHostTool(id) {
+    try {
+      if (id === "prompt") {
+        onPromptSubmit?.();
+        return;
+      }
+      if (typeof onToolAction === "function") {
+        onToolAction(id);
+        return;
+      }
+    } catch (err) {
+      console.warn("[viewport-xr] tool", id, err);
     }
   }
 
@@ -699,7 +826,7 @@ export function createViewportXR(opts) {
       label: `${p.id === activeSpawnId ? "● " : "○ "}${p.label}`,
       active: p.id === activeSpawnId,
     }));
-    lines.push({ id: "__saved__", label: "↺  Last saved spot", active: true });
+    lines.push({ id: "__saved__", label: "Last saved spot", active: false });
     placePanel.lines = lines;
     const canvas = drawPanelCanvas("Place model", lines, "Point + trigger");
     placePanel.tex.image = canvas;
@@ -711,65 +838,159 @@ export function createViewportXR(opts) {
     placePanel.group.quaternion.copy(_headQuat);
   }
 
-  function openExplorerPanel() {
-    const items = (() => {
-      try {
-        return (typeof getExplorerItems === "function" && getExplorerItems()) || [];
-      } catch {
-        return [];
-      }
-    })();
-    if (!explorerPanel) {
-      const canvas = drawPanelCanvas("Explorer", [], "Trigger a file · grab title to move");
-      const tex = new THREE.CanvasTexture(canvas);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.48, 0.42),
+  function ensureMenuConsole() {
+    if (explorerPanel) return explorerPanel;
+    const canvas = drawConsoleCanvas({
+      title: "Render Studio",
+      tabs: MENU_TABS,
+      activeTab: "projects",
+      lines: [],
+      footer: "Squeeze both grips to resize · grab title to move",
+    });
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.62, 0.44),
+      new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthTest: false,
+      }),
+    );
+    plane.renderOrder = 2200;
+    plane.frustumCulled = false;
+    plane.userData.xrExplorerPanel = true;
+    const titleBar = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.62, 0.07),
+      new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.001,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    titleBar.position.y = 0.185;
+    titleBar.position.z = 0.002;
+    titleBar.renderOrder = 2201;
+    titleBar.frustumCulled = false;
+    titleBar.userData.xrExplorerDrag = true;
+    // Tab hit strips
+    const tabHits = MENU_TABS.map((tab, i) => {
+      const hit = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.13, 0.04),
         new THREE.MeshBasicMaterial({
-          map: tex,
-          transparent: true,
-          side: THREE.DoubleSide,
-          depthTest: false,
-        }),
-      );
-      plane.renderOrder = 2200;
-      plane.frustumCulled = false;
-      plane.userData.xrExplorerPanel = true;
-      // Invisible title-bar hit target (top ~18%)
-      const titleBar = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.48, 0.08),
-        new THREE.MeshBasicMaterial({
-          color: 0x38bdf8,
           transparent: true,
           opacity: 0.001,
           depthTest: false,
           side: THREE.DoubleSide,
         }),
       );
-      titleBar.position.y = 0.17;
-      titleBar.position.z = 0.002;
-      titleBar.renderOrder = 2201;
-      titleBar.frustumCulled = false;
-      titleBar.userData.xrExplorerDrag = true;
-      explorerPanel = { group: new THREE.Group(), plane, titleBar, tex, lines: [] };
-      explorerPanel.group.add(plane);
-      explorerPanel.group.add(titleBar);
-      xrHud.add(explorerPanel.group);
+      hit.position.set(-0.22 + i * 0.145, 0.135, 0.003);
+      hit.renderOrder = 2202;
+      hit.frustumCulled = false;
+      hit.userData.xrMenuTab = tab.id;
+      return hit;
+    });
+    explorerPanel = {
+      group: new THREE.Group(),
+      plane,
+      titleBar,
+      tabHits,
+      tex,
+      lines: [],
+      kind: "menu",
+    };
+    explorerPanel.group.add(plane);
+    explorerPanel.group.add(titleBar);
+    tabHits.forEach((h) => explorerPanel.group.add(h));
+    xrHud.add(explorerPanel.group);
+    return explorerPanel;
+  }
+
+  function menuLinesForTab(tab) {
+    if (tab === "projects") {
+      let items = [];
+      try {
+        items = (typeof getProjects === "function" && getProjects()) || [];
+      } catch {
+        items = [];
+      }
+      if (!items.length) {
+        return [{ id: "", label: "No projects yet — create one on desktop", active: false, kind: "hint" }];
+      }
+      return items.slice(0, 10).map((it) => ({
+        id: it.id,
+        label: it.label || it.name || it.id,
+        active: !!it.active,
+        kind: "project",
+      }));
     }
-    const lines = (items.length ? items : [{ id: "", label: "(no parts loaded)", active: false }]).map((it) => ({
-      id: it.id || it.name || "",
-      label: `${it.active ? "● " : "○ "}${it.label || it.name || it.id || "part"}`,
-      active: !!it.active,
+    if (tab === "parts") {
+      let items = [];
+      try {
+        items = (typeof getExplorerItems === "function" && getExplorerItems()) || [];
+      } catch {
+        items = [];
+      }
+      if (!items.length) {
+        return [{ id: "", label: "No parts in this project", active: false, kind: "hint" }];
+      }
+      return items.slice(0, 10).map((it) => ({
+        id: it.id || it.name || "",
+        label: it.label || it.name || it.id,
+        active: !!it.active,
+        kind: "part",
+      }));
+    }
+    if (tab === "tools") {
+      return TOOL_ACTIONS.filter((a) => a.section === "tools").map((a) => ({
+        id: a.id,
+        label: a.label,
+        active: false,
+        kind: "action",
+      }));
+    }
+    // view
+    return TOOL_ACTIONS.filter((a) => a.section === "view").map((a) => ({
+      id: a.id,
+      label: a.label,
+      active: false,
+      kind: "action",
     }));
-    explorerPanel.lines = lines;
-    const canvas = drawPanelCanvas("Explorer", lines, "Trigger row · grab blue title to move");
-    explorerPanel.tex.image = canvas;
-    explorerPanel.tex.needsUpdate = true;
-    explorerPanel.group.visible = true;
-    getHeadPose();
-    const f = headForward();
-    explorerPanel.group.position.copy(_headPos).addScaledVector(f, 0.9).add(new THREE.Vector3(-0.15, 0.05, 0));
-    explorerPanel.group.quaternion.copy(_headQuat);
+  }
+
+  function openMenuConsole(opts = {}) {
+    if (opts.tab) menuTab = opts.tab;
+    const panel = ensureMenuConsole();
+    const lines = menuLinesForTab(menuTab);
+    panel.lines = lines;
+    const canvas = drawConsoleCanvas({
+      title: "Render Studio XR",
+      tabs: MENU_TABS,
+      activeTab: menuTab,
+      lines,
+      footer:
+        menuTab === "projects"
+          ? "Trigger a project to load · grab header to move"
+          : menuTab === "parts"
+            ? "Trigger a part to select · grab header to move"
+            : "Trigger a tool · squeeze both grips to resize model",
+    });
+    panel.tex.image = canvas;
+    panel.tex.needsUpdate = true;
+    panel.group.visible = true;
+    if (!opts.keepPose) {
+      getHeadPose();
+      const f = headForward();
+      panel.group.position.copy(_headPos).addScaledVector(f, 0.95).add(new THREE.Vector3(-0.12, 0.02, 0));
+      panel.group.quaternion.copy(_headQuat);
+    }
+  }
+
+  function openExplorerPanel() {
+    openMenuConsole({ tab: "projects" });
   }
 
   function clearMeasure() {
@@ -793,19 +1014,29 @@ export function createViewportXR(opts) {
     const dockHits = raycaster.intersectObjects(dockButtons, false);
     if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
 
-    // Explorer panel (title = drag, rows = select)
+    // XR console (title = drag, tabs, rows)
     if (explorerPanel?.group.visible) {
       const titleHits = raycaster.intersectObject(explorerPanel.titleBar, false);
       if (titleHits.length) return { kind: "explorer-drag" };
+      for (const tabHit of explorerPanel.tabHits || []) {
+        if (raycaster.intersectObject(tabHit, false).length) {
+          return { kind: "menu-tab", tab: tabHit.userData.xrMenuTab };
+        }
+      }
       const ph = raycaster.intersectObject(explorerPanel.plane, false);
       if (ph.length) {
         const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
-        // Plane is 0.42 tall, title ~top; rows below
-        const v = 1 - (local.y + 0.21) / 0.42;
-        if (v < 0.18) return { kind: "explorer-drag" };
-        const idx = Math.floor(((v - 0.18) / 0.72) * explorerPanel.lines.length);
+        // Plane 0.62 x 0.44; header+tabs occupy top ~32%
+        const v = 1 - (local.y + 0.22) / 0.44;
+        if (v < 0.16) return { kind: "explorer-drag" };
+        if (v < 0.28) {
+          const u = (local.x + 0.31) / 0.62;
+          const tabIdx = Math.max(0, Math.min(MENU_TABS.length - 1, Math.floor(u * MENU_TABS.length)));
+          return { kind: "menu-tab", tab: MENU_TABS[tabIdx].id };
+        }
+        const idx = Math.floor(((v - 0.3) / 0.58) * explorerPanel.lines.length);
         const line = explorerPanel.lines[Math.max(0, Math.min(explorerPanel.lines.length - 1, idx))];
-        return { kind: "explorer", line };
+        return { kind: "menu-row", line };
       }
     }
 
@@ -846,16 +1077,49 @@ export function createViewportXR(opts) {
       beginPanelDrag(controller, explorerPanel.group);
       return;
     }
-    if (hit.kind === "explorer") {
-      const id = hit.line?.id;
-      if (id) {
-        try {
-          onExplorerSelect?.(id);
-        } catch (err) {
-          console.warn("[viewport-xr] explorer select", err);
+    if (hit.kind === "menu-tab") {
+      openMenuConsole({ tab: hit.tab, keepPose: true });
+      return;
+    }
+    if (hit.kind === "menu-row") {
+      const line = hit.line;
+      if (!line?.id && line?.kind === "hint") return;
+      if (line?.kind === "project" || menuTab === "projects") {
+        if (line?.id) {
+          try {
+            onOpenProject?.(line.id);
+          } catch (err) {
+            console.warn("[viewport-xr] open project", err);
+          }
+          // Refresh list highlight after host switches
+          setTimeout(() => {
+            if (presenting) openMenuConsole({ tab: "projects", keepPose: true });
+          }, 600);
         }
-        openExplorerPanel();
+        return;
       }
+      if (line?.kind === "part" || menuTab === "parts") {
+        if (line?.id) {
+          try {
+            onExplorerSelect?.(line.id);
+          } catch (err) {
+            console.warn("[viewport-xr] part select", err);
+          }
+          openMenuConsole({ tab: "parts", keepPose: true });
+        }
+        return;
+      }
+      // tools / view actions
+      if (line?.id === "front" || line?.id === "place" || line?.id === "zoom_in" || line?.id === "zoom_out" || line?.id === "restore") {
+        setTool(line.id);
+        return;
+      }
+      runHostTool(line?.id);
+      return;
+    }
+    if (hit.kind === "explorer") {
+      // legacy
+      if (hit.line?.id) onExplorerSelect?.(hit.line.id);
       return;
     }
     if (hit.kind === "place") {
@@ -1092,28 +1356,47 @@ export function createViewportXR(opts) {
   function pollGamepads() {
     const sess = renderer.xr.getSession?.();
     if (!sess) return;
+
+    const squeezes = [false, false];
+    const triggers = [false, false];
+    const sourcesByHand = [null, null];
     let idx = 0;
     for (const source of sess.inputSources) {
       const gp = source.gamepad;
       if (!gp) continue;
       const handIndex = source.handedness === "left" ? 0 : source.handedness === "right" ? 1 : idx;
-      const controller = controllers[handIndex] || controllers[idx] || controllers[0];
-      // Trigger = button 0 on Quest
-      const trigger = !!(gp.buttons?.[0]?.pressed || (gp.buttons?.[0]?.value || 0) > 0.7);
-      if (trigger && !prevTrigger[handIndex] && controller) {
-        handleSelect(controller);
-      }
-      if (!trigger && prevTrigger[handIndex] && controller) {
-        endGrab(controller);
-      }
-      prevTrigger[handIndex] = trigger;
+      sourcesByHand[handIndex] = source;
+      triggers[handIndex] = !!(gp.buttons?.[0]?.pressed || (gp.buttons?.[0]?.value || 0) > 0.7);
+      squeezes[handIndex] = !!(gp.buttons?.[1]?.pressed || (gp.buttons?.[1]?.value || 0) > 0.7);
+      idx += 1;
+    }
 
-      // Squeeze (button 1) opens place menu on left
-      if (source.handedness === "left" && gp.buttons?.[1]?.pressed) {
-        openPlacePanel();
+    // Triggers → select / release (skip while two-hand scaling)
+    if (!(squeezes[0] && squeezes[1])) {
+      for (let handIndex = 0; handIndex < 2; handIndex += 1) {
+        const controller = controllers[handIndex] || controllers[0];
+        if (!controller) continue;
+        if (triggers[handIndex] && !prevTrigger[handIndex]) handleSelect(controller);
+        if (!triggers[handIndex] && prevTrigger[handIndex]) endGrab(controller);
+        prevTrigger[handIndex] = triggers[handIndex];
       }
+    } else {
+      prevTrigger[0] = triggers[0];
+      prevTrigger[1] = triggers[1];
+    }
 
-      // Stick zoom / rotate
+    // Left squeeze alone opens console; both squeezes reserved for resize
+    if (squeezes[0] && !squeezes[1] && !prevSqueeze[0]) {
+      openMenuConsole({ tab: menuTab || "projects" });
+    }
+    prevSqueeze[0] = squeezes[0];
+    prevSqueeze[1] = squeezes[1];
+
+    // Stick zoom / rotate (right hand preferred)
+    for (const source of sess.inputSources) {
+      const gp = source.gamepad;
+      if (!gp) continue;
+      if (squeezes[0] && squeezes[1]) break;
       const ax = gp.axes || [];
       const axisX = ax.length >= 4 ? ax[2] : ax[0];
       const axisY = ax.length >= 4 ? ax[3] : ax[1];
@@ -1122,7 +1405,6 @@ export function createViewportXR(opts) {
         getLiveMesh().rotation.y -= axisX * 0.045;
         saveRoomPose();
       }
-      idx += 1;
     }
   }
 
@@ -1151,6 +1433,96 @@ export function createViewportXR(opts) {
       const sx = presentationScale || mesh.scale.x;
       mesh.scale.setScalar(sx);
     }
+  }
+
+  function controllerWorldPos(controller, out = new THREE.Vector3()) {
+    controller.updateMatrixWorld(true);
+    return controller.getWorldPosition(out);
+  }
+
+  /** Meta-style two-hand resize: squeeze both grips and pull apart / pinch */
+  function updateTwoHandScale() {
+    const sess = renderer.xr.getSession?.();
+    if (!sess || controllers.length < 2) {
+      if (scaleGrab) {
+        scaleGrab = null;
+        saveRoomPose();
+      }
+      return;
+    }
+    const mesh = getLiveMesh();
+    if (!mesh) return;
+
+    const squeezes = [false, false];
+    let gi = 0;
+    for (const source of sess.inputSources) {
+      const gp = source.gamepad;
+      if (!gp) continue;
+      const handIndex = source.handedness === "left" ? 0 : source.handedness === "right" ? 1 : gi;
+      // Quest squeeze = button 1
+      const pressed = !!(gp.buttons?.[1]?.pressed || (gp.buttons?.[1]?.value || 0) > 0.7);
+      squeezes[handIndex] = pressed;
+      gi += 1;
+    }
+
+    const both = squeezes[0] && squeezes[1];
+    if (!both) {
+      if (scaleGrab) {
+        scaleGrab = null;
+        saveRoomPose();
+      }
+      prevSqueeze[0] = squeezes[0];
+      prevSqueeze[1] = squeezes[1];
+      return;
+    }
+
+    // Cancel one-hand grab while scaling
+    grabState = null;
+
+    const a = controllerWorldPos(controllers[0], new THREE.Vector3());
+    const b = controllerWorldPos(controllers[1], new THREE.Vector3());
+    const dist = Math.max(a.distanceTo(b), 1e-4);
+    const mid = a.clone().lerp(b, 0.5);
+
+    if (!scaleGrab) {
+      mesh.updateMatrixWorld(true);
+      const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+      scaleGrab = {
+        startDist: dist,
+        startScale: presentationScale || mesh.scale.x || 1,
+        startCenter: center.clone(),
+        startMid: mid.clone(),
+        startPos: mesh.position.clone(),
+      };
+      prevSqueeze[0] = true;
+      prevSqueeze[1] = true;
+      return;
+    }
+
+    const factor = THREE.MathUtils.clamp(dist / scaleGrab.startDist, 0.25, 4);
+    const nextScale = scaleGrab.startScale * factor;
+    const ratio = nextScale / Math.max(presentationScale, 1e-9);
+    presentationScale = nextScale;
+    baseScale = presentationScale / Math.max(userZoom, 1e-6);
+
+    mesh.updateMatrixWorld(true);
+    const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    const parent = mesh.parent;
+    const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
+    mesh.scale.multiplyScalar(ratio);
+    mesh.position.sub(localCenter).multiplyScalar(ratio).add(localCenter);
+
+    // Follow midpoint delta so the model stays between your hands
+    const midDelta = mid.clone().sub(scaleGrab.startMid);
+    if (parent) {
+      const wp = mesh.getWorldPosition(new THREE.Vector3()).add(midDelta);
+      mesh.position.copy(parent.worldToLocal(wp));
+      scaleGrab.startMid.copy(mid);
+    } else {
+      mesh.position.add(midDelta);
+      scaleGrab.startMid.copy(mid);
+    }
+    mesh.updateMatrixWorld(true);
   }
 
   async function enter() {
@@ -1280,6 +1652,7 @@ export function createViewportXR(opts) {
       h.visible = false;
     });
     grabState = null;
+    scaleGrab = null;
     clearMeasure();
     restoreMeshMaterials();
     restoreDesktop();
@@ -1349,6 +1722,7 @@ export function createViewportXR(opts) {
     grips.forEach((g) => {
       g.visible = true;
     });
+    updateTwoHandScale();
     updateGrab();
     updatePanelDrag();
     updateDockFollow();

@@ -1,3 +1,12 @@
+## 2026-07-29 — Mobile POV screenshot + record → Share to X
+
+- Mobile shows PC-style POV **Screenshot** + **Record** controls (was fully hidden).
+- Screenshot opens markup modal with **Share to X** (device share sheet on phones).
+- Tools FAB / View sheet also expose Screenshot → X and Record → X.
+- Cache-bust `?v=20260729-mobile-capture-x`.
+
+---
+
 ## 2026-07-29 — Export / Bambu 3MF: unhidden parts only + plate packing
 
 - Open-project **Export** uses eye-visible model (same as Export button), not a stale primary file.

@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260729-xr-fix2" />
+  <link rel="stylesheet" href="/styles.css?v=20260729-mobile-capture-x" />
   <link rel="stylesheet" href="/mobile-app-chrome.css?v=20260727-mobile-chrome" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/fusion-unlink-howto.css?v=20260725-break" />
@@ -1107,7 +1107,8 @@
           </svg>
         </button>
         <div id="mobile-tools-popup" class="mobile-tools-popup hidden" role="dialog" aria-label="Viewport tools">
-          <button type="button" data-mobile-tool="screenshot">Screenshot</button>
+          <button type="button" data-mobile-tool="screenshot">Screenshot → X</button>
+          <button type="button" data-mobile-tool="record">Record → X</button>
           <button type="button" data-mobile-tool="transparent">Transparent</button>
           <button type="button" data-mobile-tool="color">🎨 Color</button>
           <button type="button" data-mobile-tool="fit">Home</button>
@@ -2246,11 +2247,12 @@
       <section class="mobile-tool-section">
         <h3 class="mobile-tool-heading">View</h3>
         <div class="mobile-tool-row">
+          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-screenshot-viewport">Screenshot → X</button>
+          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-video-record">Record → X</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-fit">Fit view</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-gizmo">Gizmo</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-wireframe">Wireframe</button>
           <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-grid">Grid</button>
-          <button type="button" class="btn secondary mobile-tool-btn" data-trigger="btn-screenshot-viewport">Screenshot</button>
         </div>
       </section>
       <section class="mobile-tool-section">
@@ -3099,7 +3101,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260729-export-visible-3mf"></script>
+  <script type="module" src="/app.js?v=20260729-mobile-capture-x"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

@@ -74,7 +74,8 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-prep-popup";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-mobile-capture-x";
+import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
 import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-meta";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
@@ -26272,7 +26273,16 @@ document.addEventListener("click", async (e) => {
   if (mobileTool) {
     const tool = mobileTool.dataset.mobileTool;
     window.Render3DMobileChrome?.closeMobileToolsPopup?.();
-    if (tool === "screenshot") await downloadViewportScreenshot();
+    if (tool === "screenshot") {
+      await downloadViewportScreenshot({
+        forceMode: window.Render3DMobileChrome?.isMobileShell?.() ? "viewport" : null,
+        openShare: true,
+      });
+    }
+    if (tool === "record") {
+      closeMobilePanels();
+      document.getElementById("btn-video-record")?.click();
+    }
     if (tool === "transparent") document.getElementById("btn-transparent-viewport")?.click();
     if (tool === "color") showColorTool();
     if (tool === "fit") fitCamera();
@@ -26597,6 +26607,12 @@ function syncScreenshotPreferenceUi(pref = readScreenshotPreference()) {
   });
 }
 
+const screenshotMarkup = createScreenshotMarkup({
+  api,
+  getToken,
+  onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
+});
+
 const viewportVideoRecorder = createViewportVideoRecorder({
   getCanvas: () => renderer?.domElement || null,
   onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
@@ -26788,7 +26804,7 @@ function askScreenshotPreference() {
   });
 }
 
-async function downloadViewportScreenshot({ forceMode = null } = {}) {
+async function downloadViewportScreenshot({ forceMode = null, openShare = true } = {}) {
   try {
     if (!webglAvailable || !renderer?.domElement) {
       throw new Error("3D viewport is not available for screenshots.");
@@ -26817,6 +26833,13 @@ async function downloadViewportScreenshot({ forceMode = null } = {}) {
       throw new Error("Could not capture the viewport. Try again after the view finishes loading.");
     }
     const finalUrl = mode === "crop" && pref.crop ? await cropDataUrl(dataUrl, pref.crop) : dataUrl;
+    if (openShare && screenshotMarkup?.open) {
+      await screenshotMarkup.open(finalUrl, {
+        modeLabel: mode === "crop" ? "Cropped screenshot" : "Viewport screenshot",
+      });
+      setEditStatus("ok", "Screenshot ready — mark up or Share to X.");
+      return;
+    }
     downloadDataUrl(finalUrl, mode === "crop" ? "render3d-crop" : "render3d-screenshot");
     setEditStatus("ok", mode === "crop" ? "Cropped screenshot downloaded." : "Screenshot downloaded.");
   } catch (err) {
