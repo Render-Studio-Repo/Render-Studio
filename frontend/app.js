@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-ar-captures";
-import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-place2";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-xr-fix3";
+import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-fix3";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -92,7 +92,7 @@ import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-real-plates";
+import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260729-bambu-unique-mesh-ids";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -3272,19 +3272,19 @@ const viewportXR = createViewportXR({
   onToolAction: (id, payload) => {
     try {
       if (id === "screenshot") {
-        void captureXrScreenshotForShare();
+        void captureXrScreenshotForShare({ openDesktopNow: true });
         return;
       }
       if (id === "record") {
-        document.getElementById("btn-video-record")?.click();
-        window.setTimeout(() => {
-          const rec = !!viewportVideoRecorder?.isRecording?.();
-          viewportXR?.setMenuFooterHint?.(
-            rec
-              ? "Recording… trigger Record again in View to stop"
-              : "Clip ready — Share to X from the video studio",
-          );
-        }, 120);
+        void handleXrRecordAction("toggle");
+        return;
+      }
+      if (id === "record_pause") {
+        void handleXrRecordAction("pause");
+        return;
+      }
+      if (id === "record_stop") {
+        void handleXrRecordAction("stop");
         return;
       }
       if (id === "fit") {
@@ -3369,7 +3369,14 @@ const viewportXR = createViewportXR({
     if (hint && on) hint.classList.add("hidden");
     if (!on) {
       try { stopPromptDictation?.(); } catch (_) {}
+      try {
+        if (viewportVideoRecorder?.isRecording?.()) void viewportVideoRecorder.stopRecording?.();
+      } catch (_) {}
       void flushPendingXrScreenshotShare();
+      void flushPendingXrVideoShare?.();
+      hideXrCaptureReadyBanner?.();
+    } else {
+      syncXrCaptureDockFromRecorder?.();
     }
   },
 });
@@ -3377,6 +3384,107 @@ window.Render3DViewportXR = viewportXR;
 
 let pendingXrScreenshotUrl = null;
 let pendingXrCaptureMode = "AR";
+let pendingXrVideoOpen = false;
+
+function ensureXrCaptureReadyBanner() {
+  let el = document.getElementById("xr-capture-ready-banner");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "xr-capture-ready-banner";
+  el.className = "xr-capture-ready-banner hidden";
+  el.innerHTML = `
+    <div class="xr-capture-ready-card">
+      <strong data-xr-capture-title>Capture ready on this PC</strong>
+      <p data-xr-capture-body>Mark up and Share to X here — no refresh needed.</p>
+      <div class="xr-capture-ready-actions">
+        <button type="button" class="btn accent" data-xr-capture-open>Open editor</button>
+        <button type="button" class="btn secondary" data-xr-capture-dismiss>Dismiss</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  el.querySelector("[data-xr-capture-dismiss]")?.addEventListener("click", () => hideXrCaptureReadyBanner());
+  el.querySelector("[data-xr-capture-open]")?.addEventListener("click", () => {
+    hideXrCaptureReadyBanner();
+    void flushPendingXrScreenshotShare();
+    void flushPendingXrVideoShare();
+  });
+  return el;
+}
+
+function showXrCaptureReadyBanner({ kind = "screenshot", modeLabel = "AR" } = {}) {
+  const el = ensureXrCaptureReadyBanner();
+  const title = el.querySelector("[data-xr-capture-title]");
+  const body = el.querySelector("[data-xr-capture-body]");
+  if (kind === "video") {
+    if (title) title.textContent = `${modeLabel} video ready on this PC`;
+    if (body) body.textContent = "Video studio is open — trim, caption, and Share to X.";
+  } else {
+    if (title) title.textContent = `${modeLabel} screenshot ready on this PC`;
+    if (body) body.textContent = "Markup tools are open — annotate and Share to X.";
+  }
+  el.classList.remove("hidden");
+}
+
+function hideXrCaptureReadyBanner() {
+  document.getElementById("xr-capture-ready-banner")?.classList.add("hidden");
+}
+
+function syncXrCaptureDockFromRecorder() {
+  try {
+    viewportXR?.setCaptureState?.({
+      recording: !!viewportVideoRecorder?.isRecording?.(),
+      paused: !!viewportVideoRecorder?.isPaused?.(),
+      elapsedMs: Number(viewportVideoRecorder?.getElapsedMs?.() || 0),
+    });
+  } catch (_) {}
+}
+
+async function handleXrRecordAction(action = "toggle") {
+  const rec = viewportVideoRecorder;
+  if (!rec) {
+    setEditStatus("error", "Video recorder not ready.");
+    return;
+  }
+  try {
+    if (action === "pause") {
+      rec.togglePause?.();
+      const paused = !!rec.isPaused?.();
+      viewportXR?.setMenuFooterHint?.(
+        paused ? "Paused — Resume or Stop on left hand" : "Recording… Stop on left hand",
+      );
+      syncXrCaptureDockFromRecorder();
+      return;
+    }
+    if (action === "stop") {
+      if (rec.isRecording?.()) await rec.stopRecording?.();
+      viewportXR?.setMenuFooterHint?.("Clip ready on PC — mark up & Share to X");
+      syncXrCaptureDockFromRecorder();
+      return;
+    }
+    if (rec.isRecording?.()) {
+      await rec.stopRecording?.();
+      viewportXR?.setMenuFooterHint?.("Clip ready on PC — mark up & Share to X");
+    } else {
+      await rec.startRecording?.();
+      viewportXR?.setMenuFooterHint?.("Recording… Pause / Stop on left-hand dock");
+    }
+    syncXrCaptureDockFromRecorder();
+  } catch (err) {
+    console.warn("[xr] record action", action, err);
+    setEditStatus("error", err?.message || "Recording failed.");
+    syncXrCaptureDockFromRecorder();
+  }
+}
+
+async function flushPendingXrVideoShare() {
+  pendingXrVideoOpen = false;
+  try {
+    const opened = await viewportVideoRecorder?.reopenPendingClip?.();
+    if (opened) setEditStatus("ok", "Video studio ready — mark up or Share to X.");
+  } catch (err) {
+    console.warn("[xr] pending video share failed", err);
+  }
+}
 
 function currentXrCaptureModeLabel() {
   const mode = String(viewportXR?.getSessionMode?.() || "").toLowerCase();
@@ -3435,7 +3543,7 @@ async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel 
   }
 }
 
-async function captureXrScreenshotForShare() {
+async function captureXrScreenshotForShare({ openDesktopNow = true } = {}) {
   try {
     let dataUrl = null;
     if (viewportXR?.isPresenting?.()) {
@@ -3453,7 +3561,18 @@ async function captureXrScreenshotForShare() {
     } catch (err) {
       console.warn("[xr] immediate reference save failed", err);
     }
-    viewportXR?.setMenuFooterHint?.("POV saved to AR captures — exit to mark up & Share to X");
+    if (openDesktopNow && screenshotMarkup?.open) {
+      try {
+        await screenshotMarkup.open(dataUrl, { modeLabel: `${pendingXrCaptureMode} POV screenshot` });
+        showXrCaptureReadyBanner({ kind: "screenshot", modeLabel: pendingXrCaptureMode });
+        viewportXR?.setMenuFooterHint?.("Screenshot open on PC — mark up & Share to X");
+        setEditStatus("ok", `${pendingXrCaptureMode} screenshot open on PC — mark up or Share to X.`);
+        return;
+      } catch (err) {
+        console.warn("[xr] desktop screenshot open failed", err);
+      }
+    }
+    viewportXR?.setMenuFooterHint?.("POV saved — open on PC or exit XR to mark up & Share to X");
     setEditStatus("ok", `${pendingXrCaptureMode} screenshot saved to Reference Files → AR.`);
   } catch (err) {
     setEditStatus("error", err?.message || "Could not capture VR screenshot.");
@@ -20274,10 +20393,55 @@ const promptDictation = {
   liveText: "",
   lastError: "",
   mode: "", // "speech" | "recorder"
+  liveTimer: 0,
+  liveBusy: false,
 };
 
 function isPromptDictationActive() {
-  return !!(promptDictation.rec || (promptDictation.recorder && promptDictation.recorder.state === "recording"));
+  const recState = promptDictation.recorder?.state;
+  return !!(
+    promptDictation.rec
+    || (promptDictation.recorder && recState && recState !== "inactive")
+  );
+}
+
+function stopWhisperLiveLoop() {
+  if (promptDictation.liveTimer) {
+    clearInterval(promptDictation.liveTimer);
+    promptDictation.liveTimer = 0;
+  }
+  promptDictation.liveBusy = false;
+}
+
+function pushXrLiveTranscript() {
+  try { viewportXR?.refreshAiPromptPanel?.(); } catch (_) {}
+}
+
+async function tickWhisperLive(textarea) {
+  if (promptDictation.liveBusy) return;
+  if (promptDictation.mode !== "recorder" || !promptDictation.recorder) return;
+  if (promptDictation.recorder.state === "inactive") return;
+  promptDictation.liveBusy = true;
+  try {
+    try { promptDictation.recorder.requestData?.(); } catch (_) {}
+    await new Promise((r) => setTimeout(r, 50));
+    const chunks = promptDictation.chunks.slice();
+    if (!chunks.length) return;
+    const blob = new Blob(chunks, { type: promptDictation.recorder.mimeType || "audio/webm" });
+    if (blob.size < 1500) return;
+    const text = await transcribeAudioBlob(blob);
+    if (!text || promptDictation.mode !== "recorder") return;
+    const base = promptDictation.committed || "";
+    const live = base ? `${base.replace(/\s*$/, "")} ${text}` : text;
+    promptDictation.liveText = live;
+    pushXrLiveTranscript();
+    if (textarea) writePromptMicTranscript(textarea, live);
+    pushXrLiveTranscript();
+  } catch (err) {
+    // Partial WebM often fails mid-stream — keep polling
+  } finally {
+    promptDictation.liveBusy = false;
+  }
 }
 
 function preferMediaRecorderDictation() {
@@ -20314,6 +20478,7 @@ function stopPromptDictationStreamOnly() {
 }
 
 function stopPromptDictation() {
+  stopWhisperLiveLoop();
   const rec = promptDictation.rec;
   promptDictation.rec = null;
   if (rec) {
@@ -20356,7 +20521,11 @@ async function stopMediaRecorderDictation(textarea) {
     stopPromptDictation();
     return { ok: true, listening: false };
   }
-  promptDictation.liveText = "Transcribing…";
+  stopWhisperLiveLoop();
+  promptDictation.liveText = promptDictation.liveText && promptDictation.liveText !== "Listening…"
+    ? `${promptDictation.liveText}\n(Transcribing final…)`
+    : "Transcribing…";
+  pushXrLiveTranscript();
   if (textarea) {
     // Keep committed prompt visible while we upload; status is in liveText for XR panel
   }
@@ -20392,6 +20561,7 @@ async function stopMediaRecorderDictation(textarea) {
     promptDictation.committed = next;
     promptDictation.liveText = next;
     if (textarea) writePromptMicTranscript(textarea, next);
+    pushXrLiveTranscript();
     if (!text) {
       promptDictation.lastError = "No speech detected";
       return { ok: false, error: promptDictation.lastError, listening: false };
@@ -20439,7 +20609,7 @@ async function startMediaRecorderDictation(textarea, targetId, btn) {
   promptDictation.mode = "recorder";
   promptDictation.targetId = targetId;
   promptDictation.committed = textarea.value || "";
-  promptDictation.liveText = "Recording… tap mic again to stop";
+  promptDictation.liveText = "Listening… speak now";
   promptDictation.lastError = "";
   promptDictation.btn = btn;
   recorder.ondataavailable = (e) => {
@@ -20447,6 +20617,13 @@ async function startMediaRecorderDictation(textarea, targetId, btn) {
   };
   recorder.start(250);
   setPromptMicActiveUi(true, btn);
+  pushXrLiveTranscript();
+  stopWhisperLiveLoop();
+  // Rolling Whisper so Quest shows words while you speak (Web Speech is blocked there)
+  promptDictation.liveTimer = window.setInterval(() => {
+    void tickWhisperLive(textarea);
+  }, 1600);
+  window.setTimeout(() => { void tickWhisperLive(textarea); }, 700);
   return { ok: true, listening: true };
 }
 
@@ -27200,6 +27377,16 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   isFreeTrialCredits: () => isOnFreeTrialCredits(aiStatus),
   isXrPresenting: () => !!viewportXR?.isPresenting?.(),
   getXrModeLabel: () => currentXrCaptureModeLabel(),
+  onRecordingChange: (state) => {
+    try { viewportXR?.setCaptureState?.(state); } catch (_) {}
+  },
+  onClipReady: (blob, meta = {}) => {
+    pendingXrVideoOpen = true;
+    const mode = meta?.modeLabel || currentXrCaptureModeLabel();
+    showXrCaptureReadyBanner({ kind: "video", modeLabel: mode });
+    viewportXR?.setMenuFooterHint?.("Clip ready on PC — mark up & Share to X");
+    viewportXR?.setCaptureState?.({ recording: false, paused: false, elapsedMs: 0 });
+  },
   onSaveClip: async (blob, meta = {}) => {
     if (!blob) return null;
     if (meta?.xr || viewportXR?.isPresenting?.() || meta?.forceArFolder) {

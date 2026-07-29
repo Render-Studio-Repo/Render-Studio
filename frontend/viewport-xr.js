@@ -555,13 +555,18 @@ function drawAiPromptCanvas(state = {}, targetCanvas = null) {
   ], speed);
   pillRow(AI_LAYOUT.targetY, "TARGET", [
     { id: "new", label: "New model" },
-    { id: "edit", label: "Edit selected" },
+    { id: "edit", label: target === "edit" ? "Edit… pick" : "Edit model" },
   ], target);
 
-  ctx.fillStyle = "#64748b";
+  ctx.fillStyle = target === "edit" ? "#7dd3fc" : "#64748b";
   ctx.font = "24px Arial,sans-serif";
   ctx.textAlign = "left";
-  ctx.fillText(`Selected: ${String(state.selectedLabel || "None").slice(0, 42)}`, 48, AI_LAYOUT.targetY + 100);
+  const sel = String(state.selectedLabel || "None").slice(0, 42);
+  ctx.fillText(
+    target === "edit" ? `Editing: ${sel}` : `Selected: ${sel}`,
+    48,
+    AI_LAYOUT.targetY + 100,
+  );
 
   // Run
   const ry = AI_LAYOUT.run.y;
@@ -1928,6 +1933,8 @@ export function createViewportXR(opts) {
       if (mode === "edit") {
         openEditModelPicker();
       } else {
+        editModelPickActive = false;
+        if (aiPanel) aiPanel.status = "";
         refreshAiPromptPanel();
       }
       return;
@@ -2524,18 +2531,16 @@ export function createViewportXR(opts) {
           } catch (err) {
             console.warn("[viewport-xr] part select", err);
           }
-          if (editModelPickActive || (line?.kind === "part")) {
+          if (editModelPickActive) {
+            editModelPickActive = false;
             try { setAiPromptSetting?.("targetMode", "edit"); } catch (_) {}
-            if (editModelPickActive) {
-              editModelPickActive = false;
-              if (aiPanel) aiPanel.status = `Editing: ${String(line.label || line.id).slice(0, 40)}`;
-              menuFooterHint = `Edit target: ${String(line.label || line.id).slice(0, 36)}`;
-              refreshAiPromptPanel();
-              // Keep AI panel visible; close menu so user can prompt
-              if (explorerPanel) explorerPanel.group.visible = false;
-              if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
-              return;
-            }
+            if (aiPanel) aiPanel.status = `Editing: ${String(line.label || line.id).slice(0, 40)}`;
+            menuFooterHint = `Edit target: ${String(line.label || line.id).slice(0, 36)}`;
+            refreshAiPromptPanel();
+            if (explorerPanel) explorerPanel.group.visible = false;
+            if (aiPanel && !aiPanel.group.visible) openAiPromptPanel({ keepPose: true });
+            else refreshAiPromptPanel();
+            return;
           }
           openMenuConsole({ tab: "parts", keepPose: true });
         }
@@ -2888,6 +2893,14 @@ export function createViewportXR(opts) {
       const on = btn.userData.xrTool === activeTool;
       btn.scale.setScalar(hover ? 1.25 : on ? 1.12 : 1);
       if (btn.userData.ring) btn.userData.ring.material.opacity = hover || on ? 1 : 0;
+    });
+    captureDockButtons.forEach((btn) => {
+      const hover = hit?.kind === "tool" && hit.tool === btn.userData.xrTool;
+      const hot = captureRecState.recording && (btn.userData.xrTool === "record_stop" || btn.userData.xrTool === "record_pause");
+      btn.scale.setScalar(hover ? 1.28 : hot ? 1.1 : 1);
+      if (btn.userData.ring) {
+        btn.userData.ring.material.opacity = hover ? 1 : (hot ? 0.55 : 0);
+      }
     });
   }
 

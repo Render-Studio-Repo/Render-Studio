@@ -3589,11 +3589,12 @@ def _build_bambu_model_settings(
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<config>"]
     for body in bodies:
         oid = int(body["object_id"])
+        part_id = int(body.get("part_id") or 1)
         name = str(body["name"])
         lines.append(f'  <object id="{oid}">')
         lines.append(f'    <metadata key="name" value="{_xml_attr_escape(name)}"/>')
         lines.append('    <metadata key="extruder" value="1"/>')
-        lines.append('    <part id="1" subtype="normal_part">')
+        lines.append(f'    <part id="{part_id}" subtype="normal_part">')
         lines.append(f'      <metadata key="name" value="{_xml_attr_escape(name)}"/>')
         lines.append('      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>')
         lines.append('      <metadata key="source_file" value=""/>')
@@ -3968,9 +3969,11 @@ def _export_bambu_multiplate_3mf(
 
     for idx, (name, raw_mesh) in enumerate(prepared):
         plate_idx = plate_of[idx]
-        # Bambu pattern: mesh lives in Objects/object_K.model as id=1;
-        # root wrapper object id = 2*(K) with a component reference.
+        # Bambu pattern: mesh in Objects/object_K.model; wrapper id = 2*K.
+        # Mesh object ids MUST be unique across files — Studio conflates identical
+        # id="1" meshes (every plate showed the same Bottom Plate geometry).
         file_index = idx + 1
+        mesh_object_id = file_index * 2 - 1
         wrapper_id = file_index * 2
         mesh_path = f"/3D/Objects/object_{file_index}.model"
 
@@ -3982,7 +3985,11 @@ def _export_bambu_multiplate_3mf(
         object_files.append(
             (
                 f"3D/Objects/object_{file_index}.model",
-                _build_object_model_xml(seated, file_index=file_index),
+                _build_object_model_xml(
+                    seated,
+                    mesh_object_id=mesh_object_id,
+                    file_index=file_index,
+                ),
             )
         )
 
@@ -4003,7 +4010,7 @@ def _export_bambu_multiplate_3mf(
             f"{{{THREEMF_CORE_NS}}}component",
             {
                 f"{{{THREEMF_PRODUCTION_NS}}}path": mesh_path,
-                "objectid": "1",
+                "objectid": str(mesh_object_id),
                 f"{{{THREEMF_PRODUCTION_NS}}}UUID": _bambu_hex_uuid(
                     (file_index << 16) | 1, THREEMF_BAMBU_COMPONENT_UUID_SUFFIX
                 ),
@@ -4036,6 +4043,7 @@ def _export_bambu_multiplate_3mf(
         bodies_meta.append(
             {
                 "object_id": wrapper_id,
+                "part_id": mesh_object_id,
                 "name": name,
                 "plate_id": plate_idx + 1,
                 "plate_name": name if solo else f"Plate {plate_idx + 1}",

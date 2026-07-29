@@ -1601,8 +1601,8 @@ function showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName, mobile = false
       : (urls.macosPlain || urls.macos);
     const encodedPrimary = os === "macos" ? urls.macosEncoded : (urls[`${os}Encoded`] || urls.windowsEncoded);
     panel.innerHTML = `
-      <p><strong>${escText(threeMfName)}</strong> was prepared for Bambu — bodies packed across print plates.</p>
-      <p class="muted small">If Studio opened empty:</p>
+      <p><strong>${escText(threeMfName)}</strong> was prepared as a Bambu project — bodies packed onto plates 01, 02, …</p>
+      <p class="muted small">If you only see plate 01 with black rectangles off-bed, re-download (hard-refresh first). Use the plate tabs (01/02/…) at the bottom — not the world view.</p>
       <ul class="muted small file-export-bambu-tips">
         <li>Click <strong>Yes</strong> on Bambu’s “not from a trusted site” prompt</li>
         <li>In Bambu Preferences, enable <strong>Keep only one Bambu Studio instance</strong></li>
