@@ -1,3 +1,11 @@
+## 2026-07-28 — GPT-5.5 Pro defaults Mode to Speed
+
+- Selecting **GPT-5.5 Pro** auto-sets Mode to **Speed** so Quality ($30/$180) is not left on by accident.
+- Users can still switch to Quality manually after selecting Pro.
+- Cache-bust `?v=20260728-pro-default-speed`.
+
+---
+
 ## 2026-07-27 — Copy share link pinned to top of Export
 
 - Moved **Copy share link** above the download list (sticky) so it is not scrolled off on mobile.

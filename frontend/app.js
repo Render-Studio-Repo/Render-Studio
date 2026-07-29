@@ -5511,6 +5511,27 @@ function setPromptGenerationSpeed(value, { persist = true } = {}) {
   applyPromptModeUI(promptMode);
 }
 
+/** Track last prompt model so we only auto-force Speed when Pro is newly selected. */
+let lastPromptModelForSpeedGuard = "";
+
+function isGpt55ProModel(model) {
+  return String(model || "").trim().toLowerCase() === "gpt-5.5-pro";
+}
+
+/**
+ * GPT-5.5 Pro Quality is very expensive ($30/$180). Whenever Pro becomes the
+ * selected model, default Mode to Speed so users don't burn money by accident.
+ * They can still switch back to Quality manually after that.
+ */
+function syncSpeedModeForSelectedModel() {
+  const model = String(getSelectedPromptModelInfo()?.model || "").trim().toLowerCase();
+  if (!model) return;
+  const becamePro = isGpt55ProModel(model) && !isGpt55ProModel(lastPromptModelForSpeedGuard);
+  lastPromptModelForSpeedGuard = model;
+  if (!becamePro) return;
+  setPromptGenerationSpeed("fast", { persist: true });
+}
+
 function initPromptGenerationSpeed() {
   let saved = "fast";
   try { saved = localStorage.getItem(PROMPT_SPEED_KEY) || "fast"; } catch {}
@@ -5518,6 +5539,8 @@ function initPromptGenerationSpeed() {
   document.getElementById("prompt-speed")?.addEventListener("change", (e) => {
     setPromptGenerationSpeed(e.currentTarget.value);
   });
+  // If Pro is already selected on boot, still prefer Speed over a stale Quality save.
+  syncSpeedModeForSelectedModel();
 }
 
 const FUSION_TARGET_KEY = "render3d:fusion-target:v1";
@@ -16825,11 +16848,7 @@ function syncPromptKeyPill(status) {
     if (modelEl) modelEl.textContent = modelLabel;
   }
   syncCodexToggleVisibility();
-}
-
-// Keep old name as alias so renderAIStatus still works
-function syncPromptAiKeyDisplay() {
-  syncPromptKeyPill(aiStatus);
+  syncSpeedModeForSelectedModel();
 }
 
 // MODEL_OPTIONS is defined in ai-key-ui.js; mirror it here for the popup
