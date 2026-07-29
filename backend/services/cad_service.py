@@ -3862,17 +3862,21 @@ def export_scene_3mf(
     *,
     visible_body_indices: list[int] | None = None,
     source_path: Path | None = None,
+    multiplate: bool = False,
 ) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
     Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + plates).
-    Multi-body → one body per plate; single-body → one plate with that body.
-    Generic/compact 3MF opens as an empty plate in Bambu Studio, so we never
-    use that path for Send-to-Bambu / downloadable 3MF.
+
+    Default is **one assembled printable on one plate**. GLB tessellation often
+    produces dozens of mesh fragments for a single CAD solid — splitting those
+    onto plates left Bambu with empty/junk plates for “single object” models.
+
+    Multi-plate (one body per plate) only when ``multiplate=True`` — used for
+    explicit ``__part_*.glb`` print kits (Maker World style).
 
     ``visible_body_indices`` optionally keeps only those mesh indices (eye-visible
-    bodies). None means export every body in the scene. Indices must match the
-    viewer GLB body order used by the project browser.
+    bodies). None means export every body in the scene.
     """
     scene_items = _meshes_from_scene(scene, source_path=source_path)
     if visible_body_indices is not None:
@@ -3897,7 +3901,24 @@ def export_scene_3mf(
     if not prepared:
         raise ValueError("no exportable geometry for 3MF")
 
-    # Always Bambu plate format — including single-body — so Studio gets a seated part.
+    use_multiplate = bool(multiplate) and len(prepared) >= 2
+    if not use_multiplate and len(prepared) > 1:
+        # Collapse tessellation fragments / assembly into one seated printable.
+        try:
+            combined = trimesh.util.concatenate([m for _, m in prepared])
+        except Exception:
+            combined = prepared[0][1]
+        merged = _prepare_mesh_for_3mf(combined)
+        if merged is None:
+            raise ValueError("no exportable geometry for 3MF")
+        label = _safe_object_name(
+            Path(source_path).stem if source_path else prepared[0][0],
+            "model",
+        )
+        prepared = [(label, merged)]
+        bounds = np.asarray(merged.bounds, dtype=float)
+        assemble_centers = [0.5 * (bounds[0] + bounds[1])]
+
     return _export_bambu_multiplate_3mf(prepared, path, assemble_centers=assemble_centers)
 
 
@@ -3906,15 +3927,11 @@ def scene_for_3mf_export(
     src: Path,
     *,
     match_viewer_body_indices: bool = False,
-) -> tuple[trimesh.Scene, Path | None]:
-    """Load a scene that preserves separate bodies for multi-plate Bambu 3MF export.
+) -> tuple[trimesh.Scene, Path | None, bool]:
+    """Load a scene for Bambu/3MF export.
 
-    Returns ``(scene, source_path)`` where ``source_path`` is the mesh file whose
-    geometry order matches browser ``body_index`` values when available.
-
-    When ``match_viewer_body_indices`` is True (eye-filtered export), prefer the
-    viewer GLB so indices align with the project tree — not ``__part_`` sidecars,
-    which can differ in count/order and yield an empty 3MF.
+    Returns ``(scene, source_path, multiplate)`` where ``multiplate`` is True only
+    for intentional print kits built from ``__part_*.glb`` sidecars.
     """
     project_path = Path(project_path)
     src = Path(src)
@@ -3967,42 +3984,42 @@ def scene_for_3mf_export(
     if match_viewer_body_indices:
         loaded = _load_viewer_scene()
         if loaded is not None:
-            return loaded
+            return (*loaded, False)
         if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
-            return load_scene(src), src
+            return load_scene(src), src, False
 
-    # Prefer named __part_ sidecars (Maker World-style body labels on plates).
+    # Explicit __part_ sidecars → Maker World multi-plate kit.
     if len(part_files) >= 2:
         built = _scene_from_parts(part_files)
         if built is not None:
-            return built, None
+            return built, None, True
 
     loaded = _load_viewer_scene()
     if loaded is not None:
         scene, viewer_path = loaded
         bodies = _meshes_from_scene(scene, source_path=viewer_path)
-        if len(bodies) >= 2 or (len(bodies) == 1 and not part_files):
-            return scene, viewer_path
+        if len(bodies) >= 1:
+            return scene, viewer_path, False
 
     if part_files:
         built = _scene_from_parts(part_files)
         if built is not None:
-            return built, None
+            return built, None, len(part_files) >= 2
 
     if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
-        return load_scene(src), src
+        return load_scene(src), src, False
 
     try:
         scene = load_scene(src)
         if _meshes_from_scene(scene, source_path=src):
-            return scene, src
+            return scene, src, False
     except Exception:
         pass
 
     mesh = load_mesh(src)
     scene = trimesh.Scene()
     scene.add_geometry(mesh, geom_name=src.stem, node_name=src.stem)
-    return scene, src
+    return scene, src, False
 
 
 
@@ -5517,10 +5534,10 @@ def ensure_mesh_exports(
             continue
         try:
             if fmt == "3mf":
-                # Keep separate bodies so Bambu gets one plate per body.
+                # Default: one assembled plate. Multi-plate only for __part_ kits.
                 # When filtering by eye-visible indices, load the viewer GLB so
                 # indices match the project browser (not __part_ sidecars).
-                scene, scene_src = scene_for_3mf_export(
+                scene, scene_src, multiplate = scene_for_3mf_export(
                     project_path,
                     src,
                     match_viewer_body_indices=visible_body_indices is not None,
@@ -5530,6 +5547,7 @@ def ensure_mesh_exports(
                     dest,
                     visible_body_indices=visible_body_indices,
                     source_path=scene_src,
+                    multiplate=multiplate,
                 )
             else:
                 if mesh is None:

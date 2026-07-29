@@ -1,3 +1,13 @@
+## 2026-07-29 — Bambu 3MF: one assembled plate (not fragment plates)
+
+- Root cause: viewer GLBs tessellate a single CAD solid into dozens of mesh nodes; each became its own Bambu plate (empty/junk for “single object”).
+- Default 3MF now **merges** into one seated printable on one plate.
+- Multi-plate only for explicit `__part_*.glb` print kits.
+- Verified horn (48 fragments → 1 plate) and drone (40 → 1 plate); part-kit still 2 plates.
+- Cache-bust `?v=20260729-bambu-one-plate`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — VR/AR captures → Reference Files / AR
 
 - Screenshots and videos taken in WebXR save into `references/AR/` with names like `AR-screenshot-…png` / `VR-video-….webm`.
