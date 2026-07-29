@@ -1342,6 +1342,21 @@ async function cancelActiveGeneration(opts = {}) {
             ? `${fallback.replace(/\.$/, "")}. Used ${usageLabel} before stopping.`
             : fallback;
         }
+        // Mesh + 2.0: put the prompt back in the compose draft so Stop → edit → retry works.
+        if (nextGen.kind !== "wiring" && nextGen.kind !== "rigging") {
+          const draftPrompt = promptTextForStoppedGeneration(
+            nextGen,
+            latestPromptHistoryEntries.find(
+              (e) => e.status === "stopped" && (!traceId || e.trace_id === traceId),
+            )?.prompt,
+          );
+          restoreComposeDraftAfterStop({
+            prompt: draftPrompt,
+            promptMode: nextGen.mode || nextGen.prompt_mode || generationWatchOverlay?.promptMode,
+          });
+          // Costs can land a beat after cancel — refresh once more like 2.0.
+          schedulePromptHistoryFollowupRefresh(pid, 1800);
+        }
       }
     }
   } catch (err) {
@@ -2072,6 +2087,21 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
         if (pid === projectId) {
           viewerOverlay.clearError();
           wiringOverlay?.clearError();
+          if (gen.kind !== "wiring" && gen.kind !== "rigging") {
+            await refreshPromptHistory();
+            const stoppedEntry = latestPromptHistoryEntries.find(
+              (e) => e.status === "stopped" && (!gen.trace_id || e.trace_id === gen.trace_id),
+            );
+            const usageLabel = formatUsageStopLabel(stoppedEntry) || formatUsageStopLabel(gen);
+            if (statusEl && usageLabel && !isBenignGenerationInterrupt(rawCancel)) {
+              statusEl.textContent = `${String(msg).replace(/\.$/, "")}. Used ${usageLabel} before stopping.`;
+            }
+            restoreComposeDraftAfterStop({
+              prompt: promptTextForStoppedGeneration(gen, stoppedEntry?.prompt),
+              promptMode: gen.mode || gen.prompt_mode,
+            });
+            schedulePromptHistoryFollowupRefresh(pid, 1800);
+          }
         }
       }
       syncExplorerLoadingUI();
@@ -6668,6 +6698,46 @@ function formatUsageStopLabel(entry) {
   const tokenLabel = tokens > 0 ? compactTokenCount(tokens) : "";
   if (cost && tokenLabel) return `${cost} · ${tokenLabel}`;
   return cost || tokenLabel || "";
+}
+
+/** Put the stopped generation’s prompt back in the compose draft (Mesh + 2.0). */
+function restoreComposeDraftAfterStop({ prompt, promptMode = null } = {}) {
+  const text = String(prompt || "").trim();
+  if (!text || !composer) return false;
+  const current = String(composer.getPromptText?.() || "").trim();
+  // Don't clobber if the user already typed something new.
+  if (current && current !== text) return false;
+  restoringModelPromptState = true;
+  try {
+    composer.setPromptText?.(text);
+    if (promptMode) {
+      const mode = promptModeForRef(promptMode);
+      if (mode === "mesh" || mode === "fusion" || mode === "v2" || mode === "architect") {
+        try {
+          applyPromptModeUI(mode);
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+  } finally {
+    restoringModelPromptState = false;
+  }
+  try {
+    saveActiveModelPromptState();
+  } catch {
+    /* ignore */
+  }
+  sendCollabPresence?.();
+  return true;
+}
+
+function promptTextForStoppedGeneration(gen = {}, fallback = "") {
+  return (
+    String(gen?.prompt || "").trim()
+    || String(lastPromptCopyContext?.promptText || lastPromptCopyContext?.prompt || "").trim()
+    || String(fallback || "").trim()
+  );
 }
 
 function stoppedStatusMessage(entry, fallback = "Generation stopped.") {

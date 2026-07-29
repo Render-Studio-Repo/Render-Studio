@@ -5272,20 +5272,28 @@ def run_design(
             progress_callback({"stage": "analyze", "pct": 6, "label": "Mesh · starting img2threejs…"})
         from backend.services.mesh_service import run_mesh_img2threejs
 
-        return run_mesh_img2threejs(
-            prompt,
-            project_path,
-            context or {},
-            ai,
-            trace_id=trace_id,
-            images=images,
-            previous_source=previous_source,
-            previous_source_name=previous_source_name,
-            cancel_check=cancel_check,
-            progress_callback=progress_callback,
-            usage_callback=usage_callback,
-            max_repairs=max_repairs,
-        )
+        try:
+            return run_mesh_img2threejs(
+                prompt,
+                project_path,
+                context or {},
+                ai,
+                trace_id=trace_id,
+                images=images,
+                previous_source=previous_source,
+                previous_source_name=previous_source_name,
+                cancel_check=cancel_check,
+                progress_callback=progress_callback,
+                usage_callback=usage_callback,
+                max_repairs=max_repairs,
+            )
+        except RuntimeError as exc:
+            # Mesh raises plain RuntimeError("Generation canceled.") — promote to
+            # DesignCanceled so the API returns 499 and stopped history gets usage/cost
+            # the same way Mode 2.0 does.
+            if "canceled" in str(exc).lower() or "cancelled" in str(exc).lower():
+                raise DesignCanceled(str(exc) or "Generation canceled.") from exc
+            raise
 
     if is_v2:
         # Always include the CAD skill so inspect_step_facts runs and DFM is accurate.

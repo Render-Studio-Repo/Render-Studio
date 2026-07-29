@@ -18702,8 +18702,9 @@ def _background_prompt_kernel(
                 logger.debug("Sam first-model notify skipped (background)", exc_info=True)
     except HTTPException as exc:
         if generation_service.is_canceled(project_path, trace_id) or not project_path.is_dir():
-            if exc.status_code == 499:
-                _refresh_stopped_prompt_history_usage(project_path, trace_id, body_data, user)
+            # Always refresh stopped history with latest usage/cost (Mesh used to
+            # raise 422 on cancel and skip this — history showed $0 / no cost).
+            _refresh_stopped_prompt_history_usage(project_path, trace_id, body_data, user)
             return
         detail = exc.detail if isinstance(exc.detail, str) else json.dumps(exc.detail)
         fail_payload: dict[str, Any] = {"error": detail}
