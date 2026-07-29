@@ -1,3 +1,12 @@
+## 2026-07-29 — VR menu fix + POV Screenshot/Record → X
+
+- Fixed VR trigger always hitting Menu/first row: removed duplicate gamepad select (wrong controller index) + menu hit-test no longer clamps misses to row 0.
+- Screenshot / Record live under Menu → **View** (general console), with Share to X after exit.
+- Wired `onToolAction` / projects list for XR console tools.
+- Cache-bust `?v=20260729-xr-menu-fix`.
+
+---
+
 ## 2026-07-29 — Mobile POV screenshot + record → Share to X
 
 - Mobile shows PC-style POV **Screenshot** + **Record** controls (was fully hidden).

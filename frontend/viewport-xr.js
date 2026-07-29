@@ -53,9 +53,22 @@ const TOOL_ACTIONS = [
   { id: "section", label: "Toggle section", section: "view" },
   { id: "wireframe", label: "Toggle wireframe", section: "view" },
   { id: "units", label: "Cycle units", section: "view" },
-  { id: "screenshot", label: "Screenshot", section: "view" },
+  { id: "screenshot", label: "Screenshot → Share to X", section: "view" },
+  { id: "record", label: "Record video → Share to X", section: "view" },
 ];
 
+/** Canvas layout for the XR console — keep hit-testing in sync with drawConsoleCanvas. */
+const MENU_CANVAS = {
+  w: 1280,
+  h: 900,
+  headerEnd: 110,
+  tabStart: 128,
+  tabEnd: 192,
+  listTop: 220,
+  rowH: 70,
+  footerTop: 816,
+};
+const MENU_PLANE = { w: 0.62, h: 0.44 };
 function makeIconTexture(glyph, bgHex, label) {
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -110,8 +123,8 @@ function drawPanelCanvas(title, lines, footer = "") {
 }
 
 function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], footer = "" }) {
-  const width = 1280;
-  const height = 900;
+  const width = MENU_CANVAS.w;
+  const height = MENU_CANVAS.h;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -160,8 +173,8 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
     });
   }
 
-  const listTop = tabs.length ? 220 : 150;
-  const rowH = 70;
+  const listTop = tabs.length ? MENU_CANVAS.listTop : 150;
+  const rowH = MENU_CANVAS.rowH;
   lines.forEach((line, i) => {
     const y = listTop + i * rowH;
     if (y > height - 110) return;
@@ -170,7 +183,7 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
     ctx.fill();
     if (line.active) {
       ctx.fillStyle = "#38bdf8";
-      roundRect(ctx, 36, y - 28, 10, 58, 6);
+      roundRect(ctx, 36, y - 28, 10, 58, 14);
       ctx.fill();
     }
     ctx.fillStyle = line.active ? "#f0f9ff" : "#e2e8f0";
@@ -228,6 +241,8 @@ export function createViewportXR(opts) {
   let activeSpawnId = "eye";
   let menuTab = "projects";
   let menuScroll = 0;
+  let menuFooterHint = "";
+  let lastSelectAt = 0;
   let scaleGrab = null;
   let prevSqueeze = [false, false];
 
@@ -849,8 +864,9 @@ export function createViewportXR(opts) {
     });
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.flipY = true;
     const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62, 0.44),
+      new THREE.PlaneGeometry(MENU_PLANE.w, MENU_PLANE.h),
       new THREE.MeshBasicMaterial({
         map: tex,
         transparent: true,
@@ -862,7 +878,7 @@ export function createViewportXR(opts) {
     plane.frustumCulled = false;
     plane.userData.xrExplorerPanel = true;
     const titleBar = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62, 0.07),
+      new THREE.PlaneGeometry(MENU_PLANE.w, 0.07),
       new THREE.MeshBasicMaterial({
         color: 0x38bdf8,
         transparent: true,
@@ -871,15 +887,15 @@ export function createViewportXR(opts) {
         side: THREE.DoubleSide,
       }),
     );
-    titleBar.position.y = 0.185;
+    titleBar.position.y = MENU_PLANE.h / 2 - 0.035;
     titleBar.position.z = 0.002;
     titleBar.renderOrder = 2201;
     titleBar.frustumCulled = false;
     titleBar.userData.xrExplorerDrag = true;
-    // Tab hit strips
+    // Tab hit strips aligned to canvas tab row
     const tabHits = MENU_TABS.map((tab, i) => {
       const hit = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.13, 0.04),
+        new THREE.PlaneGeometry(0.13, 0.045),
         new THREE.MeshBasicMaterial({
           transparent: true,
           opacity: 0.001,
@@ -887,7 +903,8 @@ export function createViewportXR(opts) {
           side: THREE.DoubleSide,
         }),
       );
-      hit.position.set(-0.22 + i * 0.145, 0.135, 0.003);
+      const tabY = MENU_PLANE.h / 2 - ((MENU_CANVAS.tabStart + MENU_CANVAS.tabEnd) / 2 / MENU_CANVAS.h) * MENU_PLANE.h;
+      hit.position.set(-0.22 + i * 0.145, tabY, 0.003);
       hit.renderOrder = 2202;
       hit.frustumCulled = false;
       hit.userData.xrMenuTab = tab.id;
@@ -961,8 +978,17 @@ export function createViewportXR(opts) {
     }));
   }
 
+  function defaultMenuFooter() {
+    if (menuFooterHint) return menuFooterHint;
+    if (menuTab === "projects") return "Trigger a project to load · grab header to move";
+    if (menuTab === "parts") return "Trigger a part to select · grab header to move";
+    if (menuTab === "view") return "Screenshot / Record live here · Share to X after capture";
+    return "Trigger a tool · squeeze both grips to resize model";
+  }
+
   function openMenuConsole(opts = {}) {
     if (opts.tab) menuTab = opts.tab;
+    if (typeof opts.footerHint === "string") menuFooterHint = opts.footerHint;
     const panel = ensureMenuConsole();
     const lines = menuLinesForTab(menuTab);
     panel.lines = lines;
@@ -971,12 +997,7 @@ export function createViewportXR(opts) {
       tabs: MENU_TABS,
       activeTab: menuTab,
       lines,
-      footer:
-        menuTab === "projects"
-          ? "Trigger a project to load · grab header to move"
-          : menuTab === "parts"
-            ? "Trigger a part to select · grab header to move"
-            : "Trigger a tool · squeeze both grips to resize model",
+      footer: defaultMenuFooter(),
     });
     panel.tex.image = canvas;
     panel.tex.needsUpdate = true;
@@ -1005,16 +1026,36 @@ export function createViewportXR(opts) {
     measureLabel = null;
   }
 
+  function pickMenuFromLocalPoint(local) {
+    // Plane local: x in [-w/2, w/2], y in [-h/2, h/2]; top of panel = +y
+    const halfW = MENU_PLANE.w / 2;
+    const halfH = MENU_PLANE.h / 2;
+    const u = (local.x + halfW) / MENU_PLANE.w;
+    const fromTop = (halfH - local.y) / MENU_PLANE.h;
+    if (u < 0 || u > 1 || fromTop < 0 || fromTop > 1) return null;
+
+    const pxY = fromTop * MENU_CANVAS.h;
+    if (pxY < MENU_CANVAS.headerEnd) return { kind: "explorer-drag" };
+    if (pxY >= MENU_CANVAS.tabStart && pxY < MENU_CANVAS.tabEnd) {
+      const tabIdx = Math.max(0, Math.min(MENU_TABS.length - 1, Math.floor(u * MENU_TABS.length)));
+      return { kind: "menu-tab", tab: MENU_TABS[tabIdx].id };
+    }
+    if (pxY >= MENU_CANVAS.listTop && pxY < MENU_CANVAS.footerTop) {
+      const idx = Math.floor((pxY - MENU_CANVAS.listTop) / MENU_CANVAS.rowH);
+      if (idx < 0 || idx >= (explorerPanel?.lines?.length || 0)) return null;
+      return { kind: "menu-row", line: explorerPanel.lines[idx] };
+    }
+    return null;
+  }
+
   function pickWithController(controller) {
+    if (!controller) return null;
+    controller.updateMatrixWorld?.(true);
     _mat.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
 
-    // Dock
-    const dockHits = raycaster.intersectObjects(dockButtons, false);
-    if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
-
-    // XR console (title = drag, tabs, rows)
+    // XR console first when open — otherwise the left-hand Menu chip steals every select
     if (explorerPanel?.group.visible) {
       const titleHits = raycaster.intersectObject(explorerPanel.titleBar, false);
       if (titleHits.length) return { kind: "explorer-drag" };
@@ -1026,29 +1067,28 @@ export function createViewportXR(opts) {
       const ph = raycaster.intersectObject(explorerPanel.plane, false);
       if (ph.length) {
         const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
-        // Plane 0.62 x 0.44; header+tabs occupy top ~32%
-        const v = 1 - (local.y + 0.22) / 0.44;
-        if (v < 0.16) return { kind: "explorer-drag" };
-        if (v < 0.28) {
-          const u = (local.x + 0.31) / 0.62;
-          const tabIdx = Math.max(0, Math.min(MENU_TABS.length - 1, Math.floor(u * MENU_TABS.length)));
-          return { kind: "menu-tab", tab: MENU_TABS[tabIdx].id };
-        }
-        const idx = Math.floor(((v - 0.3) / 0.58) * explorerPanel.lines.length);
-        const line = explorerPanel.lines[Math.max(0, Math.min(explorerPanel.lines.length - 1, idx))];
-        return { kind: "menu-row", line };
+        const menuHit = pickMenuFromLocalPoint(local);
+        if (menuHit) return menuHit;
       }
     }
+
+    // Dock chips on the left grip (only when not hitting the open console)
+    const dockHits = raycaster.intersectObjects(dockButtons, false);
+    if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
 
     // Place panel
     if (placePanel?.group.visible) {
       const ph = raycaster.intersectObject(placePanel.plane, false);
       if (ph.length) {
         const local = placePanel.plane.worldToLocal(ph[0].point.clone());
-        const v = 1 - (local.y + 0.19) / 0.38;
-        const idx = Math.floor(((v - 0.16) / 0.75) * placePanel.lines.length);
-        const line = placePanel.lines[Math.max(0, Math.min(placePanel.lines.length - 1, idx))];
-        return { kind: "place", line };
+        const halfH = 0.19;
+        const fromTop = (halfH - local.y) / 0.38;
+        if (fromTop >= 0.16 && fromTop <= 0.9 && placePanel.lines?.length) {
+          const idx = Math.floor(((fromTop - 0.16) / 0.74) * placePanel.lines.length);
+          if (idx >= 0 && idx < placePanel.lines.length) {
+            return { kind: "place", line: placePanel.lines[idx] };
+          }
+        }
       }
     }
 
@@ -1061,9 +1101,13 @@ export function createViewportXR(opts) {
   }
 
   function handleSelect(controller) {
+    const now = performance.now();
+    // Debounce double-fire from selectstart + leftover gamepad edges
+    if (now - lastSelectAt < 160) return;
+    lastSelectAt = now;
+
     const hit = pickWithController(controller);
     if (!hit) {
-      // Trigger with no hit in grab mode: still allow grabbing whole model if ray is near
       if (activeTool === "grab" || activeTool === "rotate") {
         beginGrab(controller);
       }
@@ -1078,6 +1122,7 @@ export function createViewportXR(opts) {
       return;
     }
     if (hit.kind === "menu-tab") {
+      menuFooterHint = "";
       openMenuConsole({ tab: hit.tab, keepPose: true });
       return;
     }
@@ -1091,7 +1136,6 @@ export function createViewportXR(opts) {
           } catch (err) {
             console.warn("[viewport-xr] open project", err);
           }
-          // Refresh list highlight after host switches
           setTimeout(() => {
             if (presenting) openMenuConsole({ tab: "projects", keepPose: true });
           }, 600);
@@ -1109,16 +1153,23 @@ export function createViewportXR(opts) {
         }
         return;
       }
-      // tools / view actions
+      // tools / view actions stay inside the general Menu console
       if (line?.id === "front" || line?.id === "place" || line?.id === "zoom_in" || line?.id === "zoom_out" || line?.id === "restore") {
         setTool(line.id);
+        return;
+      }
+      if (line?.id === "screenshot" || line?.id === "record") {
+        menuFooterHint = line.id === "record"
+          ? "Recording… trigger Record again in View to stop"
+          : "Capturing POV… Share to X opens when you exit VR";
+        openMenuConsole({ tab: "view", keepPose: true });
+        runHostTool(line.id);
         return;
       }
       runHostTool(line?.id);
       return;
     }
     if (hit.kind === "explorer") {
-      // legacy
       if (hit.line?.id) onExplorerSelect?.(hit.line.id);
       return;
     }
@@ -1147,7 +1198,6 @@ export function createViewportXR(opts) {
         const dist = a.distanceTo(b) / Math.max(presentationScale, 1e-9);
         const mm = dist * (Number(getMmPerUnit?.()) || 1);
         const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(1)} mm`;
-        // simple sprite
         const c = document.createElement("canvas");
         c.width = 512;
         c.height = 128;
@@ -1371,18 +1421,11 @@ export function createViewportXR(opts) {
       idx += 1;
     }
 
-    // Triggers → select / release (skip while two-hand scaling)
-    if (!(squeezes[0] && squeezes[1])) {
-      for (let handIndex = 0; handIndex < 2; handIndex += 1) {
-        const controller = controllers[handIndex] || controllers[0];
-        if (!controller) continue;
-        if (triggers[handIndex] && !prevTrigger[handIndex]) handleSelect(controller);
-        if (!triggers[handIndex] && prevTrigger[handIndex]) endGrab(controller);
-        prevTrigger[handIndex] = triggers[handIndex];
-      }
-    } else {
-      prevTrigger[0] = triggers[0];
-      prevTrigger[1] = triggers[1];
+    // Triggers are handled by WebXR selectstart/selectend on the correct controller.
+    // Do NOT re-fire from gamepad polling — handedness/index mismatch was always
+    // activating the left dock Menu / first console row ("start position").
+    for (let handIndex = 0; handIndex < 2; handIndex += 1) {
+      prevTrigger[handIndex] = triggers[handIndex];
     }
 
     // Left squeeze alone opens console; both squeezes reserved for resize
@@ -1774,6 +1817,33 @@ export function createViewportXR(opts) {
     return supported;
   }
 
+  function capturePovDataUrl() {
+    const hidePairs = [];
+    const stash = (obj) => {
+      if (!obj) return;
+      hidePairs.push([obj, obj.visible]);
+      obj.visible = false;
+    };
+    stash(dock);
+    stash(explorerPanel?.group);
+    stash(placePanel?.group);
+    stash(measureGroup);
+    stash(faceProbe);
+    stash(beacon);
+    try {
+      // Prefer the live XR camera when presenting
+      const xrCam = renderer.xr?.isPresenting ? renderer.xr.getCamera?.(camera) : null;
+      renderer.render(scene, xrCam || camera);
+      const url = renderer.domElement?.toDataURL?.("image/png");
+      if (url && url.startsWith("data:image/") && url.length > 2000) return url;
+    } catch (err) {
+      console.warn("[viewport-xr] capture failed", err);
+    } finally {
+      for (const [obj, vis] of hidePairs) obj.visible = vis;
+    }
+    return null;
+  }
+
   setupControllers();
   void probeSupport();
 
@@ -1789,5 +1859,13 @@ export function createViewportXR(opts) {
     getSessionMode: () => sessionMode,
     placeInFront,
     saveRoomPose,
+    capturePovDataUrl,
+    openMenuConsole,
+    setMenuFooterHint: (hint) => {
+      menuFooterHint = String(hint || "");
+      if (presenting && explorerPanel?.group.visible) {
+        openMenuConsole({ tab: menuTab, keepPose: true });
+      }
+    },
   };
 }

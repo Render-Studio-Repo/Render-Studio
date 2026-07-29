@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-mobile-capture-x";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-meta";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-menu-fix";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3070,6 +3070,25 @@ const viewportXR = createViewportXR({
   buttonEl: document.getElementById("btn-xr-vr"),
   spawnModalEl: document.getElementById("xr-spawn-modal"),
   getPoseStorageKey: () => `render3d:xr-room-pose:${projectId || "none"}`,
+  getProjects: () => {
+    try {
+      return (allProjects || []).slice(0, 12).map((p) => ({
+        id: p.id,
+        label: p.name || p.id,
+        name: p.name || p.id,
+        active: p.id === projectId,
+      }));
+    } catch {
+      return [];
+    }
+  },
+  onOpenProject: (id) => {
+    try {
+      if (id) void openProjectById?.(id);
+    } catch (err) {
+      console.warn("[xr] open project failed", err);
+    }
+  },
   hideSceneChrome: () => {
     try {
       if (gridHelper) gridHelper.visible = false;
@@ -3133,15 +3152,109 @@ const viewportXR = createViewportXR({
       console.warn("[xr] prompt submit failed", err);
     }
   },
+  onToolAction: (id) => {
+    try {
+      if (id === "screenshot") {
+        void captureXrScreenshotForShare();
+        return;
+      }
+      if (id === "record") {
+        document.getElementById("btn-video-record")?.click();
+        window.setTimeout(() => {
+          const rec = !!viewportVideoRecorder?.isRecording?.();
+          viewportXR?.setMenuFooterHint?.(
+            rec
+              ? "Recording… trigger Record again in View to stop"
+              : "Clip ready — Share to X from the video studio",
+          );
+        }, 120);
+        return;
+      }
+      if (id === "fit") {
+        fitCamera();
+        return;
+      }
+      if (id === "explode") {
+        document.getElementById("btn-exploded-viewport")?.click();
+        return;
+      }
+      if (id === "section") {
+        document.getElementById("btn-section")?.click();
+        return;
+      }
+      if (id === "wireframe") {
+        document.getElementById("btn-wireframe")?.click();
+        return;
+      }
+      if (id === "units") {
+        document.getElementById("unit-select")?.focus?.();
+        const sel = document.getElementById("unit-select");
+        if (sel && sel.options?.length) {
+          sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        return;
+      }
+      if (id === "export") {
+        document.getElementById("btn-export-model")?.click();
+        return;
+      }
+      if (id === "bambu") {
+        document.getElementById("btn-export-model")?.click();
+        return;
+      }
+    } catch (err) {
+      console.warn("[xr] tool action failed", id, err);
+    }
+  },
   onPresentingChange: (on) => {
     document.body.classList.toggle("xr-presenting", !!on);
     document.getElementById("btn-xr-vr-ribbon")?.classList.toggle("active", !!on);
     document.getElementById("btn-xr-vr-ribbon")?.setAttribute("aria-pressed", on ? "true" : "false");
     const hint = document.getElementById("xr-hud-hint");
     if (hint && on) hint.classList.add("hidden");
+    if (!on) {
+      void flushPendingXrScreenshotShare();
+    }
   },
 });
 window.Render3DViewportXR = viewportXR;
+
+let pendingXrScreenshotUrl = null;
+
+async function captureXrScreenshotForShare() {
+  try {
+    let dataUrl = null;
+    if (viewportXR?.isPresenting?.()) {
+      dataUrl = viewportXR.capturePovDataUrl?.() || null;
+    }
+    if (!dataUrl) {
+      await downloadViewportScreenshot({ forceMode: "viewport", openShare: true });
+      return;
+    }
+    pendingXrScreenshotUrl = dataUrl;
+    viewportXR?.setMenuFooterHint?.("POV saved — exit VR to mark up & Share to X");
+    setEditStatus("ok", "VR screenshot saved — exit VR to Share to X.");
+  } catch (err) {
+    setEditStatus("error", err?.message || "Could not capture VR screenshot.");
+  }
+}
+
+async function flushPendingXrScreenshotShare() {
+  const url = pendingXrScreenshotUrl;
+  pendingXrScreenshotUrl = null;
+  if (!url) return;
+  try {
+    if (screenshotMarkup?.open) {
+      await screenshotMarkup.open(url, { modeLabel: "VR POV screenshot" });
+      setEditStatus("ok", "VR screenshot ready — mark up or Share to X.");
+    } else {
+      downloadDataUrl(url, "render3d-vr-screenshot");
+    }
+  } catch (err) {
+    console.warn("[xr] pending screenshot share failed", err);
+  }
+}
 // Mirror ribbon VR button → same toggle
 document.getElementById("btn-xr-vr-ribbon")?.addEventListener("click", (e) => {
   e.preventDefault();
