@@ -3770,16 +3770,20 @@ def export_scene_3mf(
     path: Path,
     *,
     visible_body_indices: list[int] | None = None,
+    source_path: Path | None = None,
 ) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
-    Multi-body scenes become a Bambu project with **one body per plate** (like
-    Maker World gripper kits). Single-body scenes stay a compact generic 3MF.
+    Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + plates).
+    Multi-body → one body per plate; single-body → one plate with that body.
+    Generic/compact 3MF opens as an empty plate in Bambu Studio, so we never
+    use that path for Send-to-Bambu / downloadable 3MF.
 
     ``visible_body_indices`` optionally keeps only those mesh indices (eye-visible
-    bodies). None means export every body in the scene.
+    bodies). None means export every body in the scene. Indices must match the
+    viewer GLB body order used by the project browser.
     """
-    scene_items = _meshes_from_scene(scene)
+    scene_items = _meshes_from_scene(scene, source_path=source_path)
     if visible_body_indices is not None:
         allowed = {int(i) for i in visible_body_indices if int(i) >= 0}
         scene_items = [
@@ -3802,15 +3806,25 @@ def export_scene_3mf(
     if not prepared:
         raise ValueError("no exportable geometry for 3MF")
 
-    if len(prepared) == 1:
-        seated = _seat_meshes_on_build_plate(prepared)
-        return _export_generic_scene_3mf(seated, path)
-
+    # Always Bambu plate format — including single-body — so Studio gets a seated part.
     return _export_bambu_multiplate_3mf(prepared, path, assemble_centers=assemble_centers)
 
 
-def scene_for_3mf_export(project_path: Path, src: Path) -> trimesh.Scene:
-    """Load a scene that preserves separate bodies for multi-plate Bambu 3MF export."""
+def scene_for_3mf_export(
+    project_path: Path,
+    src: Path,
+    *,
+    match_viewer_body_indices: bool = False,
+) -> tuple[trimesh.Scene, Path | None]:
+    """Load a scene that preserves separate bodies for multi-plate Bambu 3MF export.
+
+    Returns ``(scene, source_path)`` where ``source_path`` is the mesh file whose
+    geometry order matches browser ``body_index`` values when available.
+
+    When ``match_viewer_body_indices`` is True (eye-filtered export), prefer the
+    viewer GLB so indices align with the project tree — not ``__part_`` sidecars,
+    which can differ in count/order and yield an empty 3MF.
+    """
     project_path = Path(project_path)
     src = Path(src)
     stem = src.stem
@@ -3840,47 +3854,64 @@ def scene_for_3mf_export(project_path: Path, src: Path) -> trimesh.Scene:
                 logger.debug("skip part %s: %s", part.name, exc)
         return scene if len(scene.geometry) > 0 else None
 
-    # Prefer named __part_ sidecars (Maker World-style body labels on plates).
+    def _load_viewer_scene() -> tuple[trimesh.Scene, Path] | None:
+        try:
+            viewer_name = viewer_filename_for_model(src.name, project_path)
+            viewer_path = project_path / viewer_name
+            if not viewer_path.is_file():
+                return None
+            if viewer_path.suffix.lower() not in {".glb", ".gltf", ".obj", ".stl", ".ply", ".off", ".3mf"}:
+                return None
+            scene = load_scene(viewer_path)
+            bodies = _meshes_from_scene(scene, source_path=viewer_path)
+            if bodies:
+                return scene, viewer_path
+        except Exception as exc:
+            logger.debug("viewer scene for 3MF failed (%s): %s", src.name, exc)
+        return None
+
     part_files = _part_sidecars_for(stem)
+
+    # Eye-filtered export: indices come from the viewer GLB body tree.
+    if match_viewer_body_indices:
+        loaded = _load_viewer_scene()
+        if loaded is not None:
+            return loaded
+        if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
+            return load_scene(src), src
+
+    # Prefer named __part_ sidecars (Maker World-style body labels on plates).
     if len(part_files) >= 2:
         built = _scene_from_parts(part_files)
         if built is not None:
-            return built
+            return built, None
 
-    # Prefer the viewer GLB — keeps separate meshes that STEP dumps often flatten.
-    try:
-        viewer_name = viewer_filename_for_model(src.name, project_path)
-        viewer_path = project_path / viewer_name
-        if viewer_path.is_file():
-            if viewer_path.suffix.lower() in {".glb", ".gltf", ".obj", ".stl", ".ply", ".off", ".3mf"}:
-                scene = load_scene(viewer_path)
-                bodies = _meshes_from_scene(scene, source_path=viewer_path)
-                if len(bodies) >= 2:
-                    return scene
-                if len(bodies) == 1 and not part_files:
-                    return scene
-    except Exception as exc:
-        logger.debug("viewer scene for 3MF failed (%s): %s", src.name, exc)
+    loaded = _load_viewer_scene()
+    if loaded is not None:
+        scene, viewer_path = loaded
+        bodies = _meshes_from_scene(scene, source_path=viewer_path)
+        if len(bodies) >= 2 or (len(bodies) == 1 and not part_files):
+            return scene, viewer_path
 
     if part_files:
         built = _scene_from_parts(part_files)
         if built is not None:
-            return built
+            return built, None
 
     if src.suffix.lower() in MESH_VIEW_SUFFIXES | {".glb", ".gltf"}:
-        return load_scene(src)
+        return load_scene(src), src
 
     try:
         scene = load_scene(src)
         if _meshes_from_scene(scene, source_path=src):
-            return scene
+            return scene, src
     except Exception:
         pass
 
     mesh = load_mesh(src)
     scene = trimesh.Scene()
     scene.add_geometry(mesh, geom_name=src.stem, node_name=src.stem)
-    return scene
+    return scene, src
 
 
 
@@ -5396,8 +5427,19 @@ def ensure_mesh_exports(
         try:
             if fmt == "3mf":
                 # Keep separate bodies so Bambu gets one plate per body.
-                scene = scene_for_3mf_export(project_path, src)
-                export_scene_3mf(scene, dest, visible_body_indices=visible_body_indices)
+                # When filtering by eye-visible indices, load the viewer GLB so
+                # indices match the project browser (not __part_ sidecars).
+                scene, scene_src = scene_for_3mf_export(
+                    project_path,
+                    src,
+                    match_viewer_body_indices=visible_body_indices is not None,
+                )
+                export_scene_3mf(
+                    scene,
+                    dest,
+                    visible_body_indices=visible_body_indices,
+                    source_path=scene_src,
+                )
             else:
                 if mesh is None:
                     mesh = load_mesh(src)

@@ -1429,23 +1429,24 @@ async function ensureThreeMfExport({
 
   // Always regenerate when sending to Bambu so the 3MF is plate-seated (Z=0) and fresh.
   // Pass eye-visible body indices so hidden parts are not plated.
-  try {
-    const regenBody = visibleBodyIndices != null
-      ? { visible_body_indices: visibleBodyIndices }
-      : {};
-    await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,
-      {
-        method: "POST",
-        headers: {
-          ...authHeaders(),
-          ...(visibleBodyIndices != null ? { "Content-Type": "application/json" } : {}),
-        },
-        body: visibleBodyIndices != null ? JSON.stringify(regenBody) : undefined,
+  const regenBody = visibleBodyIndices != null
+    ? { visible_body_indices: visibleBodyIndices }
+    : {};
+  const regenRes = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports/regenerate`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(),
+        ...(visibleBodyIndices != null ? { "Content-Type": "application/json" } : {}),
       },
-    );
-  } catch {
-    /* non-fatal — re-list below */
+      body: visibleBodyIndices != null ? JSON.stringify(regenBody) : undefined,
+    },
+  );
+  if (!regenRes.ok) {
+    const data = await regenRes.json().catch(() => ({}));
+    const detail = data.detail || `Could not prepare 3MF export (${regenRes.status})`;
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   const res = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(filename)}/exports`,

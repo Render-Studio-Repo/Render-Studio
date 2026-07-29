@@ -1,3 +1,13 @@
+## 2026-07-29 — Bambu Studio: single-body 3MF was empty
+
+- Root cause: single-body export used a generic 3MF (no `Metadata/model_settings.config`), so Bambu opened an empty plate; multi-body used the plate project format.
+- All 3MF exports now use the Bambu multiplate writer (1 body → 1 plate).
+- Eye-filtered exports load the viewer GLB so `visible_body_indices` match the browser (not mismatched `__part_` sidecars).
+- `ensureThreeMfExport` now surfaces regenerate errors instead of silently reusing a stale file.
+- Cache-bust `?v=20260729-bambu-single-plate`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — VR menu fix + POV Screenshot/Record → X
 
 - Fixed VR trigger always hitting Menu/first row: removed duplicate gamepad select (wrong controller index) + menu hit-test no longer clamps misses to row 0.
