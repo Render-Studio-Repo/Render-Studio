@@ -20345,15 +20345,19 @@ async function stopMediaRecorderDictation(textarea) {
     stopPromptDictation();
     return { ok: true, listening: false };
   }
-  promptDictation.liveText = (textarea?.value || promptDictation.committed || "") + (textarea?.value ? "" : "") ;
-  promptDictation.liveText = (textarea?.value || "") || "Transcribing…";
-  if (textarea && !textarea.value) writePromptMicTranscript(textarea, "Transcribing…");
+  promptDictation.liveText = "Transcribing…";
+  if (textarea) {
+    // Keep committed prompt visible while we upload; status is in liveText for XR panel
+  }
 
   const blob = await new Promise((resolve) => {
-    const chunks = promptDictation.chunks.slice();
-    recorder.onstop = () => {
-      resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size) promptDictation.chunks.push(e.data);
     };
+    recorder.onstop = () => {
+      resolve(new Blob(promptDictation.chunks.slice(), { type: recorder.mimeType || "audio/webm" }));
+    };
+    try { recorder.requestData?.(); } catch (_) {}
     try { recorder.stop(); } catch (_) { resolve(null); }
   });
   promptDictation.recorder = null;
@@ -20456,15 +20460,13 @@ async function togglePromptDictation(targetId = "prompt-input", btn = null) {
     return { ok: true, listening: false };
   }
 
-  // Quest / XR / no Web Speech → MediaRecorder + server Whisper
-  if (preferMediaRecorderDictation() || !window.MediaRecorder === false) {
-    if (preferMediaRecorderDictation() || !(window.SpeechRecognition || window.webkitSpeechRecognition)) {
-      if (!window.MediaRecorder) {
-        promptDictation.lastError = "Recording not supported in this browser";
-        return { ok: false, error: promptDictation.lastError };
-      }
-      return startMediaRecorderDictation(textarea, targetId, btn);
+  // Quest / XR / no Web Speech → MediaRecorder + Whisper (click record / click stop)
+  if (preferMediaRecorderDictation() || !(window.SpeechRecognition || window.webkitSpeechRecognition)) {
+    if (!window.MediaRecorder) {
+      promptDictation.lastError = "Recording not supported in this browser";
+      return { ok: false, error: promptDictation.lastError };
     }
+    return startMediaRecorderDictation(textarea, targetId, btn);
   }
 
   // Desktop Web Speech path

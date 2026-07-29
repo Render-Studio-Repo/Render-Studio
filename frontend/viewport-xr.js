@@ -420,44 +420,44 @@ function drawAiPromptCanvas(state = {}, targetCanvas = null) {
   ctx.textAlign = "center";
   ctx.fillText("Hide", width - 90, 48);
 
-  // Mic button
+  // Mic button — white idle, red while recording (click once to start, again to stop)
   const mic = AI_LAYOUT.mic;
   const listening = !!state.listening;
-  const mg = ctx.createRadialGradient(mic.cx - 20, mic.cy - 20, 10, mic.cx, mic.cy, mic.r);
+  const mg = ctx.createRadialGradient(mic.cx - 24, mic.cy - 28, 8, mic.cx, mic.cy, mic.r);
   if (listening) {
-    mg.addColorStop(0, "#7dd3fc");
-    mg.addColorStop(0.55, "#0ea5e9");
-    mg.addColorStop(1, "#0369a1");
+    mg.addColorStop(0, "#fca5a5");
+    mg.addColorStop(0.45, "#ef4444");
+    mg.addColorStop(1, "#991b1b");
   } else {
-    mg.addColorStop(0, "#475569");
-    mg.addColorStop(0.55, "#1e293b");
-    mg.addColorStop(1, "#020617");
+    mg.addColorStop(0, "#ffffff");
+    mg.addColorStop(0.55, "#e2e8f0");
+    mg.addColorStop(1, "#94a3b8");
   }
   ctx.beginPath();
   ctx.arc(mic.cx, mic.cy, mic.r, 0, Math.PI * 2);
   ctx.fillStyle = mg;
   ctx.fill();
   ctx.lineWidth = 8;
-  ctx.strokeStyle = listening ? "#e0f2fe" : "#94a3b8";
+  ctx.strokeStyle = listening ? "#fecaca" : "#ffffff";
   ctx.stroke();
   // mic glyph
-  ctx.fillStyle = listening ? "#0f172a" : "#f8fafc";
+  ctx.fillStyle = listening ? "#ffffff" : "#0f172a";
   roundRect(ctx, mic.cx - 22, mic.cy - 48, 44, 70, 22);
   ctx.fill();
   ctx.beginPath();
   ctx.moveTo(mic.cx - 36, mic.cy + 28);
   ctx.quadraticCurveTo(mic.cx, mic.cy + 58, mic.cx + 36, mic.cy + 28);
   ctx.lineWidth = 8;
-  ctx.strokeStyle = listening ? "#0f172a" : "#f8fafc";
+  ctx.strokeStyle = listening ? "#ffffff" : "#0f172a";
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(mic.cx, mic.cy + 56);
   ctx.lineTo(mic.cx, mic.cy + 78);
   ctx.stroke();
-  ctx.fillStyle = listening ? "#7dd3fc" : "#94a3b8";
+  ctx.fillStyle = listening ? "#fecaca" : "#64748b";
   ctx.font = "bold 28px Arial,sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(listening ? "Listening… tap to stop" : "Tap mic to talk", mic.cx, mic.cy + mic.r + 42);
+  ctx.fillText(listening ? "Recording… tap to stop" : "Tap once to record", mic.cx, mic.cy + mic.r + 42);
 
   // Transcript card
   const tr = AI_LAYOUT.transcript;
@@ -607,6 +607,40 @@ export function createViewportXR(opts) {
   let prevSqueeze = [false, false];
   let aiPanel = null;
   let aiPanelRefreshAt = 0;
+  const LS_PANEL_POSES = "render3d:xr-panel-poses:v1";
+
+  function loadAllPanelPoses() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_PANEL_POSES) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function savePanelPose(kind, group) {
+    if (!group) return;
+    try {
+      const all = loadAllPanelPoses();
+      all[kind] = {
+        position: group.position.toArray(),
+        quaternion: group.quaternion.toArray(),
+      };
+      localStorage.setItem(LS_PANEL_POSES, JSON.stringify(all));
+    } catch (_) {}
+  }
+
+  function applySavedPanelPose(kind, group) {
+    if (!group) return false;
+    try {
+      const data = loadAllPanelPoses()[kind];
+      if (!data?.position || !data?.quaternion) return false;
+      group.position.fromArray(data.position);
+      group.quaternion.fromArray(data.quaternion);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   const xrHud = new THREE.Group();
   xrHud.name = "xrHud";
@@ -1440,26 +1474,32 @@ export function createViewportXR(opts) {
     const panel = ensureAiPanel();
     refreshAiPromptPanel();
     panel.group.visible = true;
-    if (!opts.keepPose) {
-      getHeadPose();
-      const f = headForwardFlat();
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat);
-      right.y = 0;
-      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
-      else right.normalize();
-      panel.group.position
-        .copy(_headPos)
-        .addScaledVector(f, 0.72)
-        .addScaledVector(right, 0.38);
-      panel.group.position.y = _headPos.y - 0.02;
-      // Face the user
-      const toHead = _headPos.clone().sub(panel.group.position).setY(0);
-      if (toHead.lengthSq() > 1e-6) {
-        panel.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), toHead.normalize());
-      } else {
-        panel.group.quaternion.copy(_headQuat);
+    const forcePlace = opts.forcePlace === true;
+    if (!forcePlace) {
+      if (applySavedPanelPose("ai", panel.group) || opts.keepPose) {
+        aiPanelRefreshAt = performance.now();
+        return;
       }
     }
+    // Default placement (first open / explicit reset only)
+    getHeadPose();
+    const f = headForwardFlat();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat);
+    right.y = 0;
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+    else right.normalize();
+    panel.group.position
+      .copy(_headPos)
+      .addScaledVector(f, 0.72)
+      .addScaledVector(right, 0.38);
+    panel.group.position.y = _headPos.y - 0.02;
+    const toHead = _headPos.clone().sub(panel.group.position).setY(0);
+    if (toHead.lengthSq() > 1e-6) {
+      panel.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), toHead.normalize());
+    } else {
+      panel.group.quaternion.copy(_headQuat);
+    }
+    savePanelPose("ai", panel.group);
     aiPanelRefreshAt = performance.now();
   }
 
@@ -1607,7 +1647,7 @@ export function createViewportXR(opts) {
       }),
     );
     titleBar.position.y = MENU_PLANE.h / 2 - 0.035;
-    titleBar.position.z = 0.002;
+    titleBar.position.z = 0.007;
     titleBar.renderOrder = 2201;
     titleBar.frustumCulled = false;
     titleBar.userData.xrExplorerDrag = true;
@@ -1626,7 +1666,7 @@ export function createViewportXR(opts) {
       const span = MENU_PLANE.w - 0.06;
       const tabW = span / Math.max(MENU_TABS.length, 1);
       hit.scale.set(tabW / 0.13, 1, 1);
-      hit.position.set(-MENU_PLANE.w / 2 + 0.03 + tabW * (i + 0.5), tabY, 0.003);
+      hit.position.set(-MENU_PLANE.w / 2 + 0.03 + tabW * (i + 0.5), tabY, 0.008);
       hit.renderOrder = 2202;
       hit.frustumCulled = false;
       hit.userData.xrMenuTab = tab.id;
@@ -1715,6 +1755,39 @@ export function createViewportXR(opts) {
     return "Tools · grip moves/rotates (GS) · both grips resize";
   }
 
+  function syncMenuRowHits(panel, lines) {
+    if (!panel) return;
+    if (!panel.rowHits) panel.rowHits = [];
+    // Remove old row hits
+    for (const h of panel.rowHits) {
+      panel.group.remove(h);
+      h.geometry?.dispose?.();
+      h.material?.dispose?.();
+    }
+    panel.rowHits = [];
+    const maxRows = Math.min(9, lines?.length || 0);
+    for (let i = 0; i < maxRows; i += 1) {
+      const yCanvas = MENU_CANVAS.listTop + i * MENU_CANVAS.rowH + MENU_CANVAS.rowH * 0.5;
+      const y = MENU_PLANE.h / 2 - (yCanvas / MENU_CANVAS.h) * MENU_PLANE.h;
+      const h = new THREE.Mesh(
+        new THREE.PlaneGeometry(MENU_PLANE.w - 0.06, (MENU_CANVAS.rowH / MENU_CANVAS.h) * MENU_PLANE.h * 0.92),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.001,
+          depthTest: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      h.position.set(0, y, 0.006);
+      h.renderOrder = 2205;
+      h.frustumCulled = false;
+      h.userData.xrMenuRow = i;
+      panel.group.add(h);
+      panel.rowHits.push(h);
+    }
+  }
+
   function openMenuConsole(opts = {}) {
     if (opts.tab) menuTab = opts.tab;
     if (typeof opts.footerHint === "string") menuFooterHint = opts.footerHint;
@@ -1731,12 +1804,26 @@ export function createViewportXR(opts) {
     panel.tex.image = canvas;
     panel.tex.needsUpdate = true;
     panel.group.visible = true;
-    if (!opts.keepPose) {
-      getHeadPose();
-      const f = headForward();
-      panel.group.position.copy(_headPos).addScaledVector(f, 0.95).add(new THREE.Vector3(-0.12, 0.02, 0));
+    syncMenuRowHits(panel, lines);
+    const forcePlace = opts.forcePlace === true;
+    if (!forcePlace) {
+      if (opts.keepPose) {
+        applySavedPanelPose("menu", panel.group);
+        return;
+      }
+      if (applySavedPanelPose("menu", panel.group)) return;
+    }
+    getHeadPose();
+    const f = headForwardFlat();
+    panel.group.position.copy(_headPos).addScaledVector(f, 0.9).add(new THREE.Vector3(-0.28, 0.02, 0));
+    panel.group.position.y = _headPos.y - 0.02;
+    const toHead = _headPos.clone().sub(panel.group.position).setY(0);
+    if (toHead.lengthSq() > 1e-6) {
+      panel.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), toHead.normalize());
+    } else {
       panel.group.quaternion.copy(_headQuat);
     }
+    savePanelPose("menu", panel.group);
   }
 
   function openExplorerPanel() {
@@ -1815,8 +1902,9 @@ export function createViewportXR(opts) {
       }
     }
 
-    // XR console first when open — otherwise the left-hand Menu chip steals every select
+    // XR console — physical tab/row hit meshes + plane consume
     if (explorerPanel?.group.visible) {
+      explorerPanel.group.updateMatrixWorld(true);
       const titleHits = raycaster.intersectObject(explorerPanel.titleBar, false);
       if (titleHits.length) return { kind: "explorer-drag", distance: titleHits[0].distance };
       for (const tabHit of explorerPanel.tabHits || []) {
@@ -1825,11 +1913,34 @@ export function createViewportXR(opts) {
           return { kind: "menu-tab", tab: tabHit.userData.xrMenuTab, distance: th[0].distance };
         }
       }
+      for (const rowHit of explorerPanel.rowHits || []) {
+        const rh = raycaster.intersectObject(rowHit, false);
+        if (rh.length) {
+          const idx = rowHit.userData.xrMenuRow;
+          const line = explorerPanel.lines?.[idx];
+          if (line) return { kind: "menu-row", line, distance: rh[0].distance };
+        }
+      }
       const ph = raycaster.intersectObject(explorerPanel.plane, false);
       if (ph.length) {
-        const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
-        const mapped = pickMenuFromLocalPoint(local) || { kind: "menu-row", line: { kind: "hint" } };
-        return { ...mapped, distance: ph[0].distance };
+        const uv = ph[0].uv;
+        let mapped = null;
+        if (uv) {
+          const fromTop = (1 - uv.y) * MENU_CANVAS.h;
+          const u = uv.x;
+          // reuse local picker via synthetic local
+          const local = new THREE.Vector3(
+            (u - 0.5) * MENU_PLANE.w,
+            (0.5 - (1 - uv.y)) * MENU_PLANE.h,
+            0,
+          );
+          mapped = pickMenuFromLocalPoint(local);
+        }
+        if (!mapped) {
+          const local = explorerPanel.plane.worldToLocal(ph[0].point.clone());
+          mapped = pickMenuFromLocalPoint(local);
+        }
+        return { ...(mapped || { kind: "menu-row", line: { kind: "hint" } }), distance: ph[0].distance };
       }
     }
 
@@ -2003,7 +2114,9 @@ export function createViewportXR(opts) {
               setTimeout(() => {
                 if (!presenting) return;
                 placeInFront({ spawnId: "eye", keepZoom: false });
-                openAiPromptPanel();
+                // Keep AI / menu windows where the user put them
+                openAiPromptPanel({ keepPose: true });
+                if (explorerPanel?.group) explorerPanel.group.visible = true;
                 try { onProjectOpened?.(line.id); } catch (_) {}
               }, 500);
               setTimeout(() => {
@@ -2168,6 +2281,8 @@ export function createViewportXR(opts) {
       saveRoomPose();
     }
     if (panelDrag?.controller === controller) {
+      if (panelDrag.group === aiPanel?.group) savePanelPose("ai", panelDrag.group);
+      if (panelDrag.group === explorerPanel?.group) savePanelPose("menu", panelDrag.group);
       panelDrag = null;
     }
   }
@@ -2325,12 +2440,22 @@ export function createViewportXR(opts) {
         ]);
       }
       if (tip) tip.position.z = -dist;
-      // Highlight AI hit targets under the laser
+      // Highlight AI / menu hit targets under the laser
       if (aiPanel?.hits) {
         for (const h of aiPanel.hits) {
           const on = !!(hit?.kind === "ai-action" && hit.id && h.userData.xrAiHit === hit.id);
+          h.material.opacity = on ? 0.28 : 0.001;
+        }
+      }
+      if (explorerPanel?.group?.visible) {
+        for (const h of explorerPanel.tabHits || []) {
+          const on = hit?.kind === "menu-tab" && hit.tab === h.userData.xrMenuTab;
+          h.material.opacity = on ? 0.28 : 0.001;
+          h.material.color?.setHex?.(0x38bdf8);
+        }
+        for (const h of explorerPanel.rowHits || []) {
+          const on = hit?.kind === "menu-row" && explorerPanel.lines?.[h.userData.xrMenuRow] === hit.line;
           h.material.opacity = on ? 0.22 : 0.001;
-          h.material.color.setHex(on ? 0x38bdf8 : 0x38bdf8);
         }
       }
     }
@@ -2683,7 +2808,8 @@ export function createViewportXR(opts) {
     userZoom = 1;
     saved = null;
     placeInFront({ spawnId: "eye", keepZoom: false });
-    openAiPromptPanel();
+    // Restore last AI panel pose if any; otherwise place once to the right
+    openAiPromptPanel({ forcePlace: !loadAllPanelPoses().ai });
     setTimeout(() => {
       if (presenting) placeInFront({ spawnId: "eye", keepZoom: false });
     }, 350);
