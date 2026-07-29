@@ -1,12 +1,13 @@
-## 2026-07-29 — Bambu: bodies on ONE plate (not empty virtual plates)
+## 2026-07-29 — Bambu: pack whole kit across print plates
 
-- User saw ~10 empty Bambu plate outlines: we were inventing multiple virtual plates (Studio’s “Add plate”), not the 3D body parts.
-- Multi-body 3MF now keeps **separate body objects** packed onto **one** plate; overflow stays visible so users can Add Plate / Arrange in Studio.
-- Single-solid models still merge to one object / one plate.
-- Verified drone → 1 plate / 40 objects with meshes; horn → 1 plate / 1 object.
-- Cache-bust `?v=20260729-bambu-one-plate-bodies`; restarted `render3d.service`.
+- Single-plate export only showed ~6 on-bed parts; 34 others were packed off the bed.
+- Multi-body 3MF again bin-packs bodies onto as many Bambu plates as needed; every mesh is seated on-bed for its plate.
+- Plate assignment and XY seating share one packer so parts don’t overlap / fall off.
+- Verified drone → 10 plates / 40 objects / 0 off-bed.
+- Cache-bust `?v=20260729-bambu-multiplate`; restarted `render3d.service`.
 
 ---
+
 
 
 ## 2026-07-29 — Bambu 3MF: one assembled plate (not fragment plates)

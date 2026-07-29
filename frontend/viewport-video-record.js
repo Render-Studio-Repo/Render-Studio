@@ -68,6 +68,8 @@ export function createViewportVideoRecorder({
   isXrPresenting = null,
   getXrModeLabel = null,
   onSaveClip = null,
+  onRecordingChange = null,
+  onClipReady = null,
 } = {}) {
   let prefs = readPrefs();
   let recorder = null;
@@ -77,11 +79,15 @@ export function createViewportVideoRecorder({
   let startedAt = 0;
   let tickTimer = 0;
   let recording = false;
+  let paused = false;
+  let pauseStartedAt = 0;
+  let pausedAccumMs = 0;
   let lastBlob = null;
   let sourceBlob = null;
   let shareModalEl = null;
   let videoEditor = null;
   let appendNextViewportTake = false;
+  let pendingDesktopClip = null;
 
   function els() {
     return {
@@ -94,6 +100,24 @@ export function createViewportVideoRecorder({
 
   function setStatus(ok, msg) {
     onStatus?.(ok, msg);
+  }
+
+  function recordingElapsedMs() {
+    if (!recording) return 0;
+    const end = paused ? pauseStartedAt : Date.now();
+    return Math.max(0, end - startedAt - pausedAccumMs);
+  }
+
+  function emitRecordingChange() {
+    try {
+      onRecordingChange?.({
+        recording,
+        paused,
+        elapsedMs: recordingElapsedMs(),
+      });
+    } catch (err) {
+      console.warn("[viewport-video] onRecordingChange", err);
+    }
   }
 
   async function saveClipToProject(blob, meta = {}) {
@@ -146,18 +170,24 @@ export function createViewportVideoRecorder({
     if (!main) return;
     main.classList.toggle("is-recording", recording);
     main.setAttribute("aria-pressed", recording ? "true" : "false");
+    main.classList.toggle("is-paused", !!(recording && paused));
     main.title = recording
-      ? "Stop recording"
+      ? (paused ? "Resume recording" : "Stop recording")
       : `Record viewport video (${qualityLabel(prefs.quality)}, ${prefs.fps} fps). Use ▾ for settings.`;
     const icon = main.querySelector("[data-video-icon]");
     if (icon) {
       icon.innerHTML = recording
-        ? `<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor"/></svg>`
+        ? (paused
+          ? `<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M7 5l9 5-9 5V5z" fill="currentColor"/></svg>`
+          : `<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5" fill="currentColor"/></svg>`)
         : `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="5" width="11" height="10" rx="2"/><path d="M13.5 8.2L17.5 6v8L13.5 11.8V8.2z" fill="currentColor" stroke="none"/></svg>`;
     }
     if (timer) {
       timer.classList.toggle("hidden", !recording);
-      if (recording) timer.textContent = formatElapsed(Date.now() - startedAt);
+      if (recording) {
+        const label = formatElapsed(recordingElapsedMs());
+        timer.textContent = paused ? `❚❚ ${label}` : label;
+      }
     }
   }
 
@@ -1003,6 +1033,7 @@ export function createViewportVideoRecorder({
       if (blob.size > 0) {
         lastBlob = blob;
         sourceBlob = blob;
+        pendingDesktopClip = blob;
         const xr = !!isXrPresenting?.();
         if (xr) {
           void saveClipToProject(blob, {
@@ -1012,20 +1043,25 @@ export function createViewportVideoRecorder({
           });
         }
         void openShareModal(blob);
+        try { onClipReady?.(blob, { xr, kind: "video" }); } catch (_) {}
         setStatus(
           true,
           xr
-            ? `${qualityLabel(prefs.quality)} clip saved to AR captures — download or share to X.`
+            ? `${qualityLabel(prefs.quality)} clip ready on PC — mark up & Share to X (also in AR captures).`
             : `${qualityLabel(prefs.quality)} clip ready — download or share to X.`,
         );
       } else {
         setStatus(false, "Recording was empty — nothing saved.");
       }
       recording = false;
+      paused = false;
+      pauseStartedAt = 0;
+      pausedAccumMs = 0;
       clearInterval(tickTimer);
       tickTimer = 0;
       syncMainUi();
       syncMenuUi();
+      emitRecordingChange();
     };
 
     try {
@@ -1038,12 +1074,61 @@ export function createViewportVideoRecorder({
     }
 
     recording = true;
+    paused = false;
+    pauseStartedAt = 0;
+    pausedAccumMs = 0;
     startedAt = Date.now();
     clearInterval(tickTimer);
-    tickTimer = window.setInterval(() => syncMainUi(), 250);
+    tickTimer = window.setInterval(() => {
+      syncMainUi();
+      emitRecordingChange();
+    }, 250);
     closeMenu();
     syncMainUi();
+    emitRecordingChange();
     setStatus(true, `Recording… ${qualityLabel(prefs.quality)} @ ${fps} fps`);
+  }
+
+  function pauseRecording() {
+    if (!recording || paused) return false;
+    try {
+      if (recorder && recorder.state === "recording" && typeof recorder.pause === "function") {
+        recorder.pause();
+      }
+    } catch (err) {
+      console.warn("[viewport-video] pause", err);
+      return false;
+    }
+    paused = true;
+    pauseStartedAt = Date.now();
+    syncMainUi();
+    emitRecordingChange();
+    setStatus(true, "Recording paused — resume from the left-hand dock or video button.");
+    return true;
+  }
+
+  function resumeRecording() {
+    if (!recording || !paused) return false;
+    try {
+      if (recorder && recorder.state === "paused" && typeof recorder.resume === "function") {
+        recorder.resume();
+      }
+    } catch (err) {
+      console.warn("[viewport-video] resume", err);
+      return false;
+    }
+    pausedAccumMs += Math.max(0, Date.now() - pauseStartedAt);
+    paused = false;
+    pauseStartedAt = 0;
+    syncMainUi();
+    emitRecordingChange();
+    setStatus(true, "Recording resumed.");
+    return true;
+  }
+
+  function togglePause() {
+    if (!recording) return false;
+    return paused ? resumeRecording() : pauseRecording();
   }
 
   async function stopRecording({ silent = false } = {}) {
@@ -1051,16 +1136,25 @@ export function createViewportVideoRecorder({
     clearInterval(tickTimer);
     tickTimer = 0;
     try {
+      // Resume first so MediaRecorder can finalize cleanly on some browsers
+      if (paused && recorder?.state === "paused") {
+        try { recorder.resume(); } catch (_) {}
+        paused = false;
+      }
       if (recorder && recorder.state !== "inactive") recorder.stop();
       else {
         recording = false;
+        paused = false;
         cleanupStreams();
         syncMainUi();
+        emitRecordingChange();
       }
     } catch (err) {
       recording = false;
+      paused = false;
       cleanupStreams();
       syncMainUi();
+      emitRecordingChange();
       if (!silent) setStatus(false, err.message || "Could not stop recording.");
     }
   }
@@ -1068,6 +1162,17 @@ export function createViewportVideoRecorder({
   async function toggleRecording() {
     if (recording) await stopRecording();
     else await startRecording();
+  }
+
+  async function reopenPendingClip() {
+    const blob = pendingDesktopClip || lastBlob;
+    if (!blob) return false;
+    await openShareModal(blob);
+    return true;
+  }
+
+  function clearPendingClip() {
+    pendingDesktopClip = null;
   }
 
   function bind() {
@@ -1137,7 +1242,14 @@ export function createViewportVideoRecorder({
     startRecording,
     stopRecording,
     toggleRecording,
+    pauseRecording,
+    resumeRecording,
+    togglePause,
+    reopenPendingClip,
+    clearPendingClip,
     isRecording: () => recording,
+    isPaused: () => paused,
+    getElapsedMs: () => recordingElapsedMs(),
     closeMenu,
     openShareModal,
   };

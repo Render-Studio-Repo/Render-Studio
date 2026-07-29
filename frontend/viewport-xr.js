@@ -54,8 +54,8 @@ const TOOL_ACTIONS = [
   { id: "section", label: "Toggle section", section: "view", icon: "section" },
   { id: "wireframe", label: "Toggle wireframe", section: "view", icon: "wire" },
   { id: "units", label: "Cycle units", section: "view", icon: "units" },
-  { id: "screenshot", label: "Screenshot → Share", section: "view", icon: "cam" },
-  { id: "record", label: "Record video", section: "view", icon: "rec" },
+  { id: "screenshot", label: "Screenshot → PC / Share", section: "view", icon: "cam" },
+  { id: "record", label: "Record (left-hand Pause/Stop)", section: "view", icon: "rec" },
 ];
 
 const MENU_CANVAS = {
@@ -69,6 +69,37 @@ const MENU_CANVAS = {
   footerTop: 900,
 };
 const MENU_PLANE = { w: 0.72, h: 0.5 };
+
+/** Canvas tab rectangles — must match drawConsoleCanvas exactly. */
+function menuTabLayout() {
+  const width = MENU_CANVAS.w;
+  const n = Math.max(MENU_TABS.length, 1);
+  const tabW = Math.min(200, (width - 72) / n - 10);
+  return MENU_TABS.map((tab, i) => ({
+    id: tab.id,
+    x: 36 + i * (tabW + 10),
+    w: tabW,
+    y: MENU_CANVAS.tabStart,
+    h: MENU_CANVAS.tabEnd - MENU_CANVAS.tabStart,
+  }));
+}
+
+/** Canvas px → panel local (top of texture = +y). */
+function menuCanvasToLocal(px, py, z = 0.006) {
+  return new THREE.Vector3(
+    (px / MENU_CANVAS.w - 0.5) * MENU_PLANE.w,
+    (0.5 - py / MENU_CANVAS.h) * MENU_PLANE.h,
+    z,
+  );
+}
+
+function menuCanvasSizeToLocal(pw, ph) {
+  return {
+    w: (pw / MENU_CANVAS.w) * MENU_PLANE.w,
+    h: (ph / MENU_CANVAS.h) * MENU_PLANE.h,
+  };
+}
+
 
 const AI_CANVAS = { w: 1080, h: 1280 };
 const AI_PLANE = { w: 0.4, h: 0.475 };
@@ -778,6 +809,207 @@ export function createViewportXR(opts) {
   // Stay unparented until a left grip connects
   xrHud.add(dock);
 
+  // Left-hand capture strip (screenshot / record / pause / stop)
+  const captureDock = new THREE.Group();
+  captureDock.name = "xrCaptureDock";
+  captureDock.visible = false;
+  captureDock.frustumCulled = false;
+  captureDock.renderOrder = 10000;
+  const captureDockButtons = [];
+  let captureRecState = { recording: false, paused: false, elapsedMs: 0 };
+  let captureTimerMesh = null;
+  let captureTimerTex = null;
+  xrHud.add(captureDock);
+
+  function captureToolDefs() {
+    if (captureRecState.recording) {
+      return [
+        {
+          id: "record_pause",
+          label: captureRecState.paused ? "Resume" : "Pause",
+          color: 0xfbbf24,
+          glyph: captureRecState.paused ? "▶" : "❚❚",
+          icon: "pause",
+        },
+        { id: "record_stop", label: "Stop", color: 0xef4444, glyph: "■", icon: "stop" },
+        { id: "screenshot", label: "Shot", color: 0x38bdf8, glyph: "▣", icon: "cam" },
+      ];
+    }
+    return [
+      { id: "screenshot", label: "Shot", color: 0x38bdf8, glyph: "▣", icon: "cam" },
+      { id: "record", label: "Rec", color: 0xef4444, glyph: "●", icon: "rec" },
+    ];
+  }
+
+  function clearCaptureDockButtons() {
+    for (const btn of captureDockButtons.splice(0)) {
+      const label = btn.userData.labelMesh;
+      const ring = btn.userData.ring;
+      captureDock.remove(btn);
+      if (label) captureDock.remove(label);
+      if (ring) captureDock.remove(ring);
+      btn.geometry?.dispose?.();
+      btn.material?.dispose?.();
+      label?.geometry?.dispose?.();
+      label?.material?.map?.dispose?.();
+      label?.material?.dispose?.();
+      ring?.geometry?.dispose?.();
+      ring?.material?.dispose?.();
+    }
+  }
+
+  function rebuildCaptureDock() {
+    clearCaptureDockButtons();
+    const tools = captureToolDefs();
+    tools.forEach((tool, i) => {
+      const btn = new THREE.Mesh(
+        new THREE.CircleGeometry(BTN_R, 32),
+        new THREE.MeshBasicMaterial({
+          color: tool.color,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      btn.position.set(0, ((tools.length - 1) / 2 - i) * BTN_GAP, 0);
+      btn.userData.xrTool = tool.id;
+      btn.renderOrder = 10060;
+      btn.frustumCulled = false;
+      captureDock.add(btn);
+      captureDockButtons.push(btn);
+      const label = new THREE.Mesh(
+        new THREE.CircleGeometry(BTN_R * 0.9, 32),
+        new THREE.MeshBasicMaterial({
+          map: makeIconTexture(tool.glyph, tool.color, tool.label, tool.icon),
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      label.position.copy(btn.position);
+      label.position.z = 0.0015;
+      label.renderOrder = 10062;
+      label.frustumCulled = false;
+      label.raycast = () => {};
+      captureDock.add(label);
+      btn.userData.labelMesh = label;
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(BTN_R + 0.0015, BTN_R + 0.004, 32),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: captureRecState.recording && tool.id === "record_stop" ? 0.55 : 0,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        }),
+      );
+      ring.position.copy(btn.position);
+      ring.position.z = 0.002;
+      ring.renderOrder = 10063;
+      ring.frustumCulled = false;
+      captureDock.add(ring);
+      btn.userData.ring = ring;
+    });
+    // Plate behind capture chips
+    let plateMesh = captureDock.getObjectByName("xrCapturePlate");
+    if (plateMesh) {
+      captureDock.remove(plateMesh);
+      plateMesh.geometry?.dispose?.();
+      plateMesh.material?.dispose?.();
+    }
+    plateMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.07, tools.length * BTN_GAP + 0.03),
+      new THREE.MeshBasicMaterial({
+        color: captureRecState.recording ? 0x450a0a : 0x0f172a,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    plateMesh.name = "xrCapturePlate";
+    plateMesh.position.z = -0.006;
+    plateMesh.renderOrder = 10040;
+    plateMesh.frustumCulled = false;
+    plateMesh.raycast = () => {};
+    captureDock.add(plateMesh);
+    syncCaptureTimer();
+  }
+
+  function syncCaptureTimer() {
+    if (!captureRecState.recording) {
+      if (captureTimerMesh) captureTimerMesh.visible = false;
+      return;
+    }
+    const ms = captureRecState.elapsedMs || 0;
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const text = `${captureRecState.paused ? "❚❚ " : "● "}${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(127,29,29,0.92)";
+    ctx.fillRect(0, 0, 256, 64);
+    ctx.fillStyle = "#fecaca";
+    ctx.font = "bold 36px Arial,sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 128, 34);
+    if (!captureTimerTex) {
+      captureTimerTex = new THREE.CanvasTexture(c);
+      captureTimerTex.colorSpace = THREE.SRGBColorSpace;
+    } else {
+      captureTimerTex.image = c;
+      captureTimerTex.needsUpdate = true;
+    }
+    if (!captureTimerMesh) {
+      captureTimerMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.09, 0.022),
+        new THREE.MeshBasicMaterial({
+          map: captureTimerTex,
+          transparent: true,
+          depthTest: false,
+          side: THREE.DoubleSide,
+        }),
+      );
+      captureTimerMesh.position.set(0, 0.085, 0.004);
+      captureTimerMesh.renderOrder = 10070;
+      captureTimerMesh.frustumCulled = false;
+      captureTimerMesh.raycast = () => {};
+      captureDock.add(captureTimerMesh);
+    } else {
+      captureTimerMesh.material.map = captureTimerTex;
+      captureTimerMesh.material.needsUpdate = true;
+    }
+    captureTimerMesh.visible = true;
+  }
+
+  function setCaptureState(state = {}) {
+    const next = {
+      recording: !!state.recording,
+      paused: !!state.paused,
+      elapsedMs: Number(state.elapsedMs) || 0,
+    };
+    const modeChanged =
+      next.recording !== captureRecState.recording
+      || next.paused !== captureRecState.paused;
+    captureRecState = next;
+    if (modeChanged || !captureDockButtons.length) rebuildCaptureDock();
+    else syncCaptureTimer();
+    // Pulse stop ring while recording
+    for (const btn of captureDockButtons) {
+      if (btn.userData.xrTool === "record_stop" && btn.userData.ring) {
+        btn.userData.ring.material.opacity = next.recording ? 0.65 : 0;
+      }
+      if (btn.userData.xrTool === "record_pause" && btn.userData.ring) {
+        btn.userData.ring.material.opacity = next.paused ? 0.5 : 0.15;
+      }
+    }
+  }
+
+  rebuildCaptureDock();
+
   let explorerPanel = null;
   let sessionIsPassthrough = false;
 
@@ -944,6 +1176,14 @@ export function createViewportXR(opts) {
       frustumBackup.push([o, o.frustumCulled]);
       o.frustumCulled = false;
       o.visible = true;
+      // Draw with normal depth so models can sit in front of XR windows
+      o.renderOrder = 0;
+      const mats0 = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats0) {
+        if (!m) continue;
+        m.depthTest = true;
+        m.depthWrite = true;
+      }
       // Lift very dark PBR so CAD isn't invisible in AR
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
@@ -1328,6 +1568,10 @@ export function createViewportXR(opts) {
       exit();
       return;
     }
+    if (id === "screenshot" || id === "record" || id === "record_pause" || id === "record_stop") {
+      runHostTool(id);
+      return;
+    }
     if (id === "measure") {
       activeTool = "measure";
       syncDock();
@@ -1365,9 +1609,15 @@ export function createViewportXR(opts) {
       tex.colorSpace = THREE.SRGBColorSpace;
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(0.5, 0.38),
-        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false }),
+        new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthTest: true,
+          depthWrite: true,
+        }),
       );
-      plane.renderOrder = 2100;
+      plane.renderOrder = 45;
       plane.userData.xrPlacePanel = true;
       placePanel = { group: new THREE.Group(), plane, tex, lines: [] };
       placePanel.group.add(plane);
@@ -1443,12 +1693,13 @@ export function createViewportXR(opts) {
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.001,
-        depthTest: false,
+        depthTest: true,
+        depthWrite: false,
         side: THREE.DoubleSide,
       }),
     );
     mesh.position.copy(aiCanvasToLocal(px + pw / 2, py + ph / 2));
-    mesh.renderOrder = 2310;
+    mesh.renderOrder = 52;
     mesh.frustumCulled = false;
     mesh.userData.xrAiHit = id;
     return mesh;
@@ -1466,10 +1717,12 @@ export function createViewportXR(opts) {
         map: tex,
         transparent: true,
         side: THREE.DoubleSide,
-        depthTest: false,
+        depthTest: true,
+        depthWrite: true,
       }),
     );
-    plane.renderOrder = 2300;
+    // Keep below controllers/lasers, but depth-test against the CAD model
+    plane.renderOrder = 50;
     plane.frustumCulled = false;
     plane.userData.xrAiPanel = true;
 
@@ -1504,13 +1757,14 @@ export function createViewportXR(opts) {
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.001,
-        depthTest: false,
+        depthTest: true,
+        depthWrite: false,
         side: THREE.DoubleSide,
       }),
     );
     titleBar.position.y = AI_PLANE.h / 2 - 0.028;
     titleBar.position.z = 0.007;
-    titleBar.renderOrder = 2301;
+    titleBar.renderOrder = 51;
     titleBar.frustumCulled = false;
     titleBar.userData.xrAiDrag = true;
     titleBar.userData.xrAiHit = "drag";
@@ -1692,44 +1946,44 @@ export function createViewportXR(opts) {
         map: tex,
         transparent: true,
         side: THREE.DoubleSide,
-        depthTest: false,
+        depthTest: true,
+        depthWrite: true,
       }),
     );
-    plane.renderOrder = 2200;
+    plane.renderOrder = 40;
     plane.frustumCulled = false;
     plane.userData.xrExplorerPanel = true;
+    const titleSize = menuCanvasSizeToLocal(MENU_CANVAS.w, MENU_CANVAS.headerEnd);
     const titleBar = new THREE.Mesh(
-      new THREE.PlaneGeometry(MENU_PLANE.w, 0.07),
+      new THREE.PlaneGeometry(titleSize.w, titleSize.h),
       new THREE.MeshBasicMaterial({
         color: 0x38bdf8,
         transparent: true,
         opacity: 0.001,
-        depthTest: false,
+        depthTest: true,
+        depthWrite: false,
         side: THREE.DoubleSide,
       }),
     );
-    titleBar.position.y = MENU_PLANE.h / 2 - 0.035;
-    titleBar.position.z = 0.007;
-    titleBar.renderOrder = 2201;
+    titleBar.position.copy(menuCanvasToLocal(MENU_CANVAS.w / 2, MENU_CANVAS.headerEnd / 2, 0.007));
+    titleBar.renderOrder = 41;
     titleBar.frustumCulled = false;
     titleBar.userData.xrExplorerDrag = true;
     // Tab hit strips aligned to canvas tab row
-    const tabHits = MENU_TABS.map((tab, i) => {
+    const tabHits = menuTabLayout().map((tab) => {
+      const size = menuCanvasSizeToLocal(tab.w, tab.h);
       const hit = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.13, 0.045),
+        new THREE.PlaneGeometry(Math.max(size.w, 0.02), Math.max(size.h, 0.02)),
         new THREE.MeshBasicMaterial({
           transparent: true,
           opacity: 0.001,
-          depthTest: false,
+          depthTest: true,
+          depthWrite: false,
           side: THREE.DoubleSide,
         }),
       );
-      const tabY = MENU_PLANE.h / 2 - ((MENU_CANVAS.tabStart + MENU_CANVAS.tabEnd) / 2 / MENU_CANVAS.h) * MENU_PLANE.h;
-      const span = MENU_PLANE.w - 0.06;
-      const tabW = span / Math.max(MENU_TABS.length, 1);
-      hit.scale.set(tabW / 0.13, 1, 1);
-      hit.position.set(-MENU_PLANE.w / 2 + 0.03 + tabW * (i + 0.5), tabY, 0.008);
-      hit.renderOrder = 2202;
+      hit.position.copy(menuCanvasToLocal(tab.x + tab.w / 2, tab.y + tab.h / 2, 0.008));
+      hit.renderOrder = 42;
       hit.frustumCulled = false;
       hit.userData.xrMenuTab = tab.id;
       return hit;
@@ -1813,7 +2067,7 @@ export function createViewportXR(opts) {
     if (menuTab === "parts") return "Switch models in this project";
     if (menuTab === "files") return "Open / link project files";
     if (menuTab === "ai") return "Open AI window · mic · model type · speed/quality · edit";
-    if (menuTab === "view") return "Capture & view tools · Share to X after capture";
+    if (menuTab === "view") return "Shot/Rec on left hand · Pause/Stop while recording · Opens on PC";
     return "Tools · grip moves/rotates (GS) · both grips resize";
   }
 
@@ -1828,21 +2082,25 @@ export function createViewportXR(opts) {
     }
     panel.rowHits = [];
     const maxRows = Math.min(9, lines?.length || 0);
+    // Drawn rows are centered at listTop + i*rowH (see drawConsoleCanvas)
+    const rowBoxH = 64; // matches roundRect height in drawConsoleCanvas
+    const rowBoxW = MENU_CANVAS.w - 72;
     for (let i = 0; i < maxRows; i += 1) {
-      const yCanvas = MENU_CANVAS.listTop + i * MENU_CANVAS.rowH + MENU_CANVAS.rowH * 0.5;
-      const y = MENU_PLANE.h / 2 - (yCanvas / MENU_CANVAS.h) * MENU_PLANE.h;
+      const yCanvas = MENU_CANVAS.listTop + i * MENU_CANVAS.rowH;
+      const size = menuCanvasSizeToLocal(rowBoxW, rowBoxH);
       const h = new THREE.Mesh(
-        new THREE.PlaneGeometry(MENU_PLANE.w - 0.06, (MENU_CANVAS.rowH / MENU_CANVAS.h) * MENU_PLANE.h * 0.92),
+        new THREE.PlaneGeometry(Math.max(size.w, 0.04), Math.max(size.h, 0.02)),
         new THREE.MeshBasicMaterial({
           color: 0x38bdf8,
           transparent: true,
           opacity: 0.001,
-          depthTest: false,
+          depthTest: true,
+          depthWrite: false,
           side: THREE.DoubleSide,
         }),
       );
-      h.position.set(0, y, 0.006);
-      h.renderOrder = 2205;
+      h.position.copy(menuCanvasToLocal(MENU_CANVAS.w / 2, yCanvas, 0.006));
+      h.renderOrder = 43;
       h.frustumCulled = false;
       h.userData.xrMenuRow = i;
       panel.group.add(h);
@@ -1920,15 +2178,23 @@ export function createViewportXR(opts) {
     const fromTop = (halfH - local.y) / MENU_PLANE.h;
     if (u < 0 || u > 1 || fromTop < 0 || fromTop > 1) return null;
 
+    const pxX = u * MENU_CANVAS.w;
     const pxY = fromTop * MENU_CANVAS.h;
     if (pxY < MENU_CANVAS.headerEnd) return { kind: "explorer-drag" };
     if (pxY >= MENU_CANVAS.tabStart && pxY < MENU_CANVAS.tabEnd) {
-      const tabIdx = Math.max(0, Math.min(MENU_TABS.length - 1, Math.floor(u * MENU_TABS.length)));
-      return { kind: "menu-tab", tab: MENU_TABS[tabIdx].id };
+      for (const tab of menuTabLayout()) {
+        if (pxX >= tab.x && pxX <= tab.x + tab.w) {
+          return { kind: "menu-tab", tab: tab.id };
+        }
+      }
+      return null;
     }
-    if (pxY >= MENU_CANVAS.listTop && pxY < MENU_CANVAS.footerTop) {
-      const idx = Math.floor((pxY - MENU_CANVAS.listTop) / MENU_CANVAS.rowH);
+    // Rows are drawn centered on listTop + i*rowH (64px tall buttons)
+    if (pxY >= MENU_CANVAS.listTop - 32 && pxY < MENU_CANVAS.footerTop) {
+      const idx = Math.round((pxY - MENU_CANVAS.listTop) / MENU_CANVAS.rowH);
       if (idx < 0 || idx >= (explorerPanel?.lines?.length || 0)) return null;
+      const center = MENU_CANVAS.listTop + idx * MENU_CANVAS.rowH;
+      if (Math.abs(pxY - center) > 36) return null;
       return { kind: "menu-row", line: explorerPanel.lines[idx] };
     }
     return null;
@@ -2007,7 +2273,7 @@ export function createViewportXR(opts) {
     }
 
     // Dock chips on the left grip (only when not hitting the open console)
-    const dockHits = raycaster.intersectObjects(dockButtons, false);
+    const dockHits = raycaster.intersectObjects([...dockButtons, ...captureDockButtons], false);
     if (dockHits.length) {
       return { kind: "tool", tool: dockHits[0].object.userData.xrTool, distance: dockHits[0].distance };
     }
@@ -2482,11 +2748,20 @@ export function createViewportXR(opts) {
       if (dock.parent) dock.parent.remove(dock);
       left.add(dock);
     }
+    if (captureDock.parent !== left) {
+      if (captureDock.parent) captureDock.parent.remove(captureDock);
+      left.add(captureDock);
+    }
     // Meta-style: palette floats just above the left controller, facing inward/up
-    dock.position.set(0.0, 0.055, 0.02);
+    dock.position.set(-0.028, 0.055, 0.02);
     dock.rotation.set(-0.95, 0.0, 0.0);
     dock.scale.setScalar(1);
     dock.visible = true;
+    // Capture strip sits beside the tool dock on the left hand
+    captureDock.position.set(0.042, 0.055, 0.02);
+    captureDock.rotation.set(-0.95, 0.0, 0.0);
+    captureDock.scale.setScalar(1);
+    captureDock.visible = true;
     return true;
   }
 
@@ -2501,7 +2776,12 @@ export function createViewportXR(opts) {
       dock.parent.remove(dock);
       xrHud.add(dock);
     }
+    if (captureDock.parent && captureDock.parent !== xrHud) {
+      captureDock.parent.remove(captureDock);
+      xrHud.add(captureDock);
+    }
     dock.visible = false;
+    captureDock.visible = false;
     faceProbe.visible = false;
   }
 
@@ -2875,6 +3155,8 @@ export function createViewportXR(opts) {
       h.visible = true;
     });
     dock.visible = true;
+    captureDock.visible = true;
+    rebuildCaptureDock();
     if (controls) controls.enabled = false;
     if (transformControls) transformControls.enabled = false;
     try {
@@ -2917,6 +3199,8 @@ export function createViewportXR(opts) {
     session = null;
     xrHud.visible = false;
     dock.visible = false;
+    captureDock.visible = false;
+    setCaptureState({ recording: false, paused: false, elapsedMs: 0 });
     if (placePanel) placePanel.group.visible = false;
     if (explorerPanel) explorerPanel.group.visible = false;
     panelDrag = null;
@@ -3079,6 +3363,7 @@ export function createViewportXR(opts) {
       obj.visible = false;
     };
     stash(dock);
+    stash(captureDock);
     stash(explorerPanel?.group);
     stash(aiPanel?.group);
     stash(placePanel?.group);
@@ -3115,6 +3400,7 @@ export function createViewportXR(opts) {
     placeInFront,
     saveRoomPose,
     capturePovDataUrl,
+    setCaptureState,
     openMenuConsole,
     openAiPromptPanel,
     closeAiPromptPanel,

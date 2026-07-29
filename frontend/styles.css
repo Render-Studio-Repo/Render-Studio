@@ -41908,3 +41908,46 @@ body.xr-presenting .mobile-showcase-bar {
   border-radius: 8px;
   background: #0b1220;
 }
+
+
+/* XR capture ready — desktop popup while headset session is active */
+.xr-capture-ready-banner {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 20050;
+  max-width: min(360px, calc(100vw - 24px));
+  pointer-events: auto;
+}
+.xr-capture-ready-banner.hidden { display: none !important; }
+.xr-capture-ready-card {
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.98), rgba(8, 15, 28, 0.98));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  padding: 14px 16px;
+  color: #e2e8f0;
+}
+.xr-capture-ready-card strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #f8fafc;
+  margin-bottom: 4px;
+}
+.xr-capture-ready-card p {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+.xr-capture-ready-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+body.xr-presenting .screenshot-markup-modal,
+body.xr-presenting .viewport-video-share-modal,
+body.xr-presenting .xr-capture-ready-banner {
+  z-index: 21000 !important;
+}

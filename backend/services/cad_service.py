@@ -3561,7 +3561,8 @@ def _build_bambu_model_settings(
     plates: dict[int, list[dict[str, Any]]] = {}
     for body in bodies:
         plates.setdefault(int(body["plate_id"]), []).append(body)
-    for plate_id, members in plates.items():
+    for plate_id in sorted(plates):
+        members = plates[plate_id]
         if len(members) == 1:
             plate_name = _xml_attr_escape(str(members[0].get("plate_name") or members[0]["name"]))
         else:
@@ -3658,18 +3659,17 @@ def _assign_bambu_plates_packed(
     margin: float = 6.0,
     gap: float = 4.0,
     max_plates: int = THREEMF_BAMBU_MAX_PLATES,
-) -> list[int]:
-    """Bin-pack bodies onto plates by XY footprint (auto-arrange).
+) -> tuple[list[int], list[tuple[float, float]]]:
+    """Bin-pack bodies onto plates; return (plate_index per body, plate-local XY centers).
 
     Large parts that nearly fill the bed get their own plate. Smaller parts share
-    a plate when they fit, so Bambu opens with printable layouts instead of one
-    giant assembled object (or 40 empty-ish plates).
+    a plate when they fit so every part is on-bed and the whole kit is printable.
     """
     n = len(meshes)
     if n <= 0:
-        return []
+        return [], []
     if n == 1:
-        return [0]
+        return [0], [(0.5 * bed_w, 0.5 * bed_d)]
 
     usable_w = max(bed_w - 2 * margin, 1.0)
     usable_d = max(bed_d - 2 * margin, 1.0)
@@ -3681,60 +3681,59 @@ def _assign_bambu_plates_packed(
     # Place largest first so small parts fill gaps.
     order = sorted(range(n), key=lambda i: -(footprint(meshes[i])[0] * footprint(meshes[i])[1]))
     plate_of = [0] * n
-    # Per-plate shelf: (cursor_x, cursor_y, row_h)
+    seat_xy: list[tuple[float, float]] = [(0.5 * bed_w, 0.5 * bed_d)] * n
+    # Per-plate shelf: [cursor_x, cursor_y, row_h]
     shelves: list[list[float]] = []
 
-    def try_place(state: list[float], w: float, d: float) -> tuple[bool, list[float]]:
+    def try_place(state: list[float], w: float, d: float) -> tuple[bool, list[float], float, float]:
         cx, cy, row_h = state
-        place_x, place_y = cx, cy
-        next_state = state
         if cx > margin + 1e-6 and cx + w > bed_w - margin:
             place_x = margin
             place_y = cy + row_h + gap
             if place_y + d > bed_d - margin + 1e-6:
-                return False, state
+                return False, state, 0.0, 0.0
             next_state = [place_x + w + gap, place_y, d]
-            return True, next_state
+            return True, next_state, place_x + 0.5 * w, place_y + 0.5 * d
         if cx + w <= bed_w - margin + 1e-6 and cy + d <= bed_d - margin + 1e-6:
             next_state = [cx + w + gap, cy, max(row_h, d)]
-            return True, next_state
-        # New row on this plate
+            return True, next_state, cx + 0.5 * w, cy + 0.5 * d
         place_x = margin
         place_y = cy + row_h + gap
         if place_x + w <= bed_w - margin + 1e-6 and place_y + d <= bed_d - margin + 1e-6:
             next_state = [place_x + w + gap, place_y, d]
-            return True, next_state
-        return False, state
+            return True, next_state, place_x + 0.5 * w, place_y + 0.5 * d
+        return False, state, 0.0, 0.0
 
     for idx in order:
         w0, d0 = footprint(meshes[idx])
-        # Parts that dominate the bed get a dedicated plate.
         needs_own = w0 >= usable_w * 0.85 or d0 >= usable_d * 0.85
         scale = min(1.0, usable_w / w0, usable_d / d0)
         w, d = w0 * scale, d0 * scale
         placed = False
         if not needs_own:
             for pi, state in enumerate(shelves):
-                ok, new_state = try_place(state, w, d)
+                ok, new_state, sx, sy = try_place(state, w, d)
                 if ok:
                     shelves[pi] = new_state
                     plate_of[idx] = pi
+                    seat_xy[idx] = (sx, sy)
                     placed = True
                     break
         if placed:
             continue
         if len(shelves) >= max_plates:
-            # Overflow onto the last plate; on-plate packer will still seat them.
-            plate_of[idx] = max(len(shelves) - 1, 0)
-            if shelves:
-                ok, new_state = try_place(shelves[-1], min(w, usable_w), min(d, usable_d))
-                if ok:
-                    shelves[-1] = new_state
+            # Last-resort: own-ish seat centered on the last plate.
+            pi = max(len(shelves) - 1, 0)
+            plate_of[idx] = pi
+            seat_xy[idx] = (0.5 * bed_w, 0.5 * bed_d)
             continue
-        shelves.append([margin + w + gap, margin, d])
+        # New plate — part goes at top-left shelf start.
+        place_x, place_y = margin, margin
+        shelves.append([place_x + w + gap, place_y, d])
         plate_of[idx] = len(shelves) - 1
+        seat_xy[idx] = (place_x + 0.5 * w, place_y + 0.5 * d)
 
-    return plate_of
+    return plate_of, seat_xy
 
 
 def _bambu_should_split_bodies(
@@ -3864,11 +3863,11 @@ def _export_bambu_multiplate_3mf(
     *,
     assemble_centers: list[np.ndarray] | None = None,
 ) -> Path:
-    """Bambu Studio project 3MF: separate body objects on ONE virtual plate.
+    """Bambu Studio project 3MF: separate objects packed onto multiple plates.
 
-    Bambu's “Add plate” creates empty virtual beds — we must not invent those.
-    Each CAD body is a distinct printable object, shelf-packed on plate 1.
-    Overflow past the bed stays visible so the user can Add Plate / Arrange in Studio.
+    Each CAD body is its own printable. Small parts share a plate when they fit;
+    large parts get their own. Every mesh is seated on-bed for its plate so the
+    whole kit can be sliced/printed (plates 01, 02, … in Studio).
     """
     n = len(prepared)
     meshes = [mesh for _, mesh in prepared]
@@ -3881,10 +3880,17 @@ def _export_bambu_multiplate_3mf(
             assemble_centers.append(0.5 * (bounds[0] + bounds[1]))
     assemble_origin = np.mean(np.vstack(assemble_centers), axis=0) if assemble_centers else np.zeros(3)
 
-    # Always one virtual plate — pack bodies in XY (may overflow the bed).
-    seat_centers = _pack_offsets_on_plate(meshes, allow_overflow=True)
+    plate_of, seat_centers = _assign_bambu_plates_packed(meshes)
+    if not plate_of:
+        plate_of = _assign_bambu_plate_indices(n)
+        seat_centers = _pack_offsets_on_plate(meshes, allow_overflow=False)
+    plate_count = (max(plate_of) + 1) if plate_of else 1
     if n >= 2:
-        logger.info("3MF packed %s bodies onto 1 Bambu plate (separate objects)", n)
+        logger.info("3MF packed %s bodies onto %s Bambu plate(s)", n, plate_count)
+
+    members_by_plate: dict[int, list[int]] = {}
+    for idx, plate_idx in enumerate(plate_of):
+        members_by_plate.setdefault(plate_idx, []).append(idx)
 
     bodies_meta: list[dict[str, Any]] = []
     object_files: list[tuple[str, bytes]] = []
@@ -3912,6 +3918,7 @@ def _export_bambu_multiplate_3mf(
     ]
 
     for idx, (name, raw_mesh) in enumerate(prepared):
+        plate_idx = plate_of[idx]
         # Bambu pattern: mesh lives in Objects/object_K.model as id=1;
         # root wrapper object id = 2*(K) with a component reference.
         file_index = idx + 1
@@ -3946,14 +3953,14 @@ def _export_bambu_multiplate_3mf(
             },
         )
 
-        # All objects on plate 1 → identity build transform (XY baked into mesh).
+        ox, oy = _bambu_plate_origin(plate_idx, plate_count)
         ET.SubElement(
             build,
             f"{{{THREEMF_CORE_NS}}}item",
             {
                 "objectid": str(wrapper_id),
                 f"{{{THREEMF_PRODUCTION_NS}}}UUID": str(uuid.uuid4()),
-                "transform": THREEMF_IDENTITY_TRANSFORM,
+                "transform": _translation_transform(ox, oy, 0.0),
                 "printable": "1",
             },
         )
@@ -3965,12 +3972,13 @@ def _export_bambu_multiplate_3mf(
         center = np.asarray(assemble_centers[idx], dtype=float)
         assemble_tf = np.eye(4)
         assemble_tf[0:3, 3] = center - assemble_origin
+        solo = len(members_by_plate.get(plate_idx, [])) == 1
         bodies_meta.append(
             {
                 "object_id": wrapper_id,
                 "name": name,
-                "plate_id": 1,
-                "plate_name": name if n == 1 else "Plate 1",
+                "plate_id": plate_idx + 1,
+                "plate_name": name if solo else f"Plate {plate_idx + 1}",
                 "identify_id": wrapper_id,
                 "assemble_transform": _transform_12_from_matrix(assemble_tf),
             }
@@ -4003,11 +4011,11 @@ def export_scene_3mf(
 ) -> Path:
     """Write a mesh 3MF (mm units) compatible with Bambu Studio and other slicers.
 
-    Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + one plate).
+    Always writes a Bambu project 3MF (``Metadata/model_settings.config`` + plates).
 
     - Single CAD solid / tessellation fragments → one merged printable on one plate.
-    - Real multi-body assemblies → separate objects packed onto **one** virtual plate
-      (Studio's Add Plate is for splitting further — we do not invent empty plates).
+    - Real multi-body assemblies → separate objects packed onto as many plates as
+      needed so every part sits on-bed and the whole kit can be sliced/printed.
 
     ``multiplate=True`` forces the split path (``__part_`` kits or detected
     multi-solid assemblies).
