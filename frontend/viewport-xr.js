@@ -129,6 +129,7 @@ export function createViewportXR(opts) {
   const xrHud = new THREE.Group();
   xrHud.name = "xrHud";
   xrHud.visible = false;
+  xrHud.frustumCulled = false;
   scene.add(xrHud);
 
   // Dedicated lights so CAD PBR materials aren't black in AR
@@ -141,7 +142,7 @@ export function createViewportXR(opts) {
 
   // Always-on probe so we can tell if XR is drawing anything at all
   const faceProbe = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    new THREE.BoxGeometry(0.16, 0.16, 0.16),
     new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false }),
   );
   faceProbe.name = "xrFaceProbe";
@@ -186,6 +187,7 @@ export function createViewportXR(opts) {
   const dock = new THREE.Group();
   dock.name = "xrToolDock";
   dock.visible = false;
+  dock.frustumCulled = false;
   dock.renderOrder = 10000;
   const dockButtons = [];
   const BTN_R = 0.065;
@@ -897,12 +899,12 @@ export function createViewportXR(opts) {
     // Large strip on the LEFT of your view, ~0.55m ahead
     dock.position
       .copy(_headPos)
-      .addScaledVector(f, 0.55)
-      .addScaledVector(right, -0.28)
+      .addScaledVector(f, 0.42)
+      .addScaledVector(right, -0.22)
       .addScaledVector(up, 0.02);
     dock.quaternion.copy(_headQuat);
     dock.visible = true;
-    dock.scale.setScalar(1);
+    dock.scale.setScalar(1.35);
 
     // Cyan cube ahead-right — if missing, XR is not drawing meshes
     faceProbe.position
@@ -911,7 +913,7 @@ export function createViewportXR(opts) {
       .addScaledVector(right, 0.18)
       .addScaledVector(up, -0.12);
     faceProbe.quaternion.copy(_headQuat);
-    faceProbe.scale.setScalar(0.35);
+    faceProbe.scale.setScalar(0.5);
     faceProbe.visible = true;
 
     const pointer = controllers[1] || controllers[0];
