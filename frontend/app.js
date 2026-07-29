@@ -75,7 +75,7 @@ import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-pr
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260727-x-prep-popup";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-hands";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-fit";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -2217,14 +2217,20 @@ try {
       return false;
     }
   })();
+  // Quest WebXR breaks with logarithmic depth (passthrough only, no meshes).
+  const xrCapable = typeof navigator !== "undefined" && !!navigator.xr;
   renderer = new THREE.WebGLRenderer({
     antialias: !mobileGl,
+    // Required for Quest AR passthrough — XR layer inherits this alpha flag.
+    alpha: true,
     powerPreference: mobileGl ? "default" : "high-performance",
     preserveDrawingBuffer: true,
-    // Logarithmic depth is costly / flaky on some mobile GPUs.
-    logarithmicDepthBuffer: !mobileGl,
+    // Never combine logarithmic depth with WebXR on Quest.
+    logarithmicDepthBuffer: !mobileGl && !xrCapable,
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobileGl ? 2 : 2.5));
+  // Desktop still looks opaque because scene.background is set; AR clears it.
+  renderer.setClearColor(0x000000, 0);
   setupRenderer(renderer);
 } catch (err) {
   webglAvailable = false;
@@ -3045,18 +3051,23 @@ const viewportXR = createViewportXR({
   camera,
   controls,
   transformControls,
-  getMeshRoot: () => currentMesh || projectAssembly?.getRoot?.() || null,
+  getMeshRoot: () => projectAssembly?.getRoot?.() || currentMesh || null,
   getMmPerUnit: () => currentMmPerModelUnit(),
   formatLength,
   fitCamera: () => {
     try { fitCamera(); } catch (_) { /* defined later; safe at runtime */ }
   },
   buttonEl: document.getElementById("btn-xr-vr"),
+  spawnModalEl: document.getElementById("xr-spawn-modal"),
+  getPoseStorageKey: () => `render3d:xr-room-pose:${projectId || "none"}`,
   hideSceneChrome: () => {
     try {
       if (gridHelper) gridHelper.visible = false;
       if (gridAxesGroup) gridAxesGroup.visible = false;
       if (gridDotsGroup) gridDotsGroup.visible = false;
+      scene.traverse((o) => {
+        if (o?.userData?.isFloor || o?.userData?.isShadowFloor) o.visible = false;
+      });
     } catch (_) {}
   },
   restoreSceneChrome: () => {
@@ -3064,6 +3075,9 @@ const viewportXR = createViewportXR({
       if (gridHelper) gridHelper.visible = !!gridVisible;
       if (gridAxesGroup) gridAxesGroup.visible = !!gridVisible;
       if (gridDotsGroup) gridDotsGroup.visible = !!gridVisible;
+      scene.traverse((o) => {
+        if (o?.userData?.isFloor || o?.userData?.isShadowFloor) o.visible = true;
+      });
     } catch (_) {}
   },
   getExplorerItems: () => {
@@ -13563,7 +13577,7 @@ let promptTargetSelectedBody = null;
 const promptTargetBodyCache = new Map();
 
 function animate() {
-  const xrOn = Boolean(viewportXR?.isPresenting?.());
+  const xrOn = Boolean(renderer?.xr?.isPresenting || viewportXR?.isPresenting?.());
   if (!xrOn) {
     controls.update();
   } else {
@@ -13603,7 +13617,8 @@ function animate() {
     updateCameraClipPlanes();
   }
 
-  const renderCam = sketchEditor.getRenderCamera?.() || camera;
+  // WebXR requires the default app camera — a sketch/ortho camera draws nothing in headset.
+  const renderCam = xrOn ? camera : (sketchEditor.getRenderCamera?.() || camera);
   renderer.render(scene, renderCam);
   if (!xrOn) {
     viewCube.update();

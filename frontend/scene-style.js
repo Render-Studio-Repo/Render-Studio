@@ -762,6 +762,7 @@ export function ensureShadowFloor(scene) {
   shadowFloor = new THREE.Mesh(geo, mat);
   shadowFloor.receiveShadow = true;
   shadowFloor.userData.isFloor = true;
+  shadowFloor.userData.isShadowFloor = true;
   scene.add(shadowFloor);
   return shadowFloor;
 }

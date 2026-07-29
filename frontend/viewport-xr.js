@@ -1,27 +1,38 @@
 /**
- * Viewport WebXR / AR for Meta Quest 3
+ * Quest AR/VR — reliable CAD viewing
  *
- * - Prefers immersive-ar (passthrough in your room); falls back to immersive-vr
- * - Places the model in front of your head (not a fixed world direction)
- * - Thumbstick / Zoom tools to scale like other Quest apps
- * - Left-hand tool dock: point with the other controller + trigger to click
- * - Movable spatial panels (AI Prompt, Explorer) you can grab and arrange in space
+ * - Transparent passthrough (alpha canvas)
+ * - Always place model in front of your headset (full gaze direction)
+ * - Do NOT reparent the assembly (avoids disappearing CAD)
+ * - Left-controller tool dock follows the grip every frame
+ * - Gamepad trigger polling (Quest buttons) + select events
+ * - Saves last room pose; restores when you re-enter AR
  */
 
 import * as THREE from "three";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
 
+const LS_POSE = "render3d:xr-room-pose";
+const LS_SPAWN = "render3d:xr-spawn-preset";
+
+const SPAWN_PRESETS = [
+  { id: "eye", label: "In front of you", distance: 0.7, sizeM: 0.2 },
+  { id: "near", label: "Near (arm)", distance: 0.45, sizeM: 0.14 },
+  { id: "far", label: "Farther", distance: 1.2, sizeM: 0.25 },
+  { id: "floor", label: "Lower / floor", distance: 0.9, sizeM: 0.2, yMode: "floor" },
+];
+
 const DOCK_TOOLS = [
-  { id: "grab", label: "Move", color: 0x3b82f6, glyph: "✋" },
-  { id: "measure", label: "Measure", color: 0xf59e0b, glyph: "📏" },
-  { id: "zoom_in", label: "Zoom+", color: 0x22c55e, glyph: "+" },
-  { id: "zoom_out", label: "Zoom−", color: 0x14b8a6, glyph: "−" },
-  { id: "recenter", label: "Front", color: 0xa78bfa, glyph: "⌂" },
-  { id: "panel_prompt", label: "AI", color: 0xec4899, glyph: "✦" },
-  { id: "panel_explorer", label: "Files", color: 0x38bdf8, glyph: "☰" },
-  { id: "clear", label: "Clear", color: 0x94a3b8, glyph: "⌫" },
-  { id: "exit", label: "Exit", color: 0xef4444, glyph: "✕" },
+  { id: "grab", label: "Move", color: 0x3b82f6, glyph: "Mv" },
+  { id: "rotate", label: "Rotate", color: 0xf97316, glyph: "Ro" },
+  { id: "front", label: "Front", color: 0xa78bfa, glyph: "Fr" },
+  { id: "restore", label: "Saved", color: 0x22c55e, glyph: "Sv" },
+  { id: "zoom_in", label: "Zoom+", color: 0x14b8a6, glyph: "+" },
+  { id: "zoom_out", label: "Zoom-", color: 0x0ea5e9, glyph: "-" },
+  { id: "place", label: "Place", color: 0xc084fc, glyph: "Pl" },
+  { id: "measure", label: "Measure", color: 0xf59e0b, glyph: "Me" },
+  { id: "exit", label: "Exit", color: 0xef4444, glyph: "X" },
 ];
 
 function makeIconTexture(glyph, bgHex, label) {
@@ -30,34 +41,24 @@ function makeIconTexture(glyph, bgHex, label) {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
-  const r = size * 0.44;
-  const cx = size / 2;
-  const cy = size / 2;
-  ctx.clearRect(0, 0, size, size);
   const c = new THREE.Color(bgHex);
-  const light = c.clone().multiplyScalar(1.35);
-  light.r = Math.min(1, light.r);
-  light.g = Math.min(1, light.g);
-  light.b = Math.min(1, light.b);
-  const grad = ctx.createRadialGradient(cx, cy - 24, 8, cx, cy, r);
-  grad.addColorStop(0, `#${light.getHexString()}`);
-  grad.addColorStop(1, `#${c.getHexString()}`);
+  ctx.fillStyle = `#${c.getHexString()}`;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
+  ctx.arc(128, 128, 118, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = "#ffffff";
   ctx.stroke();
-  ctx.font = "bold 92px system-ui,Segoe UI,sans-serif";
+  ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff";
-  ctx.fillText(glyph, cx, cy - (label ? 10 : 0));
+  // ASCII only — emoji often blank on Quest WebGL canvases
+  const ascii = String(glyph || "?").replace(/[^\x20-\x7E]/g, "").slice(0, 2) || "?";
+  ctx.font = "bold 110px Arial,sans-serif";
+  ctx.fillText(ascii, 128, label ? 108 : 128);
   if (label) {
-    ctx.font = "bold 34px system-ui,Segoe UI,sans-serif";
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.fillText(label, cx, cy + 72);
+    ctx.font = "bold 36px Arial,sans-serif";
+    ctx.fillText(String(label).slice(0, 8), 128, 188);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -65,103 +66,37 @@ function makeIconTexture(glyph, bgHex, label) {
   return tex;
 }
 
-function makeLabelSprite(text, { scale = 0.12 } = {}) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 768;
-  canvas.height = 192;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = "bold 72px system-ui,Segoe UI,sans-serif";
-  const padX = 36;
-  const tw = Math.min(ctx.measureText(text).width + padX * 2, canvas.width - 8);
-  const th = 120;
-  const x = (canvas.width - tw) / 2;
-  const y = (canvas.height - th) / 2;
-  ctx.fillStyle = "rgba(12, 18, 32, 0.88)";
-  roundRect(ctx, x, y, tw, th, 48);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(96, 165, 250, 0.7)";
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.fillStyle = "#f8fafc";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 4);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({
-    map: tex,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(scale * 2.4, scale * 0.6, 1);
-  sprite.renderOrder = 999;
-  return sprite;
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
-function drawPanelCanvas(title, lines, { width = 1024, height = 768, footer = "" } = {}) {
+function drawPanelCanvas(title, lines, footer = "") {
+  const width = 1024;
+  const height = 700;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
-  roundRect(ctx, 0, 0, width, height, 36);
-  ctx.fill();
-  // Title bar (grab zone visual)
-  ctx.fillStyle = "rgba(30, 41, 59, 0.98)";
-  roundRect(ctx, 0, 0, width, 96, 36);
-  ctx.fill();
-  ctx.fillStyle = "rgba(30, 41, 59, 0.98)";
-  ctx.fillRect(0, 48, width, 48);
+  ctx.fillStyle = "rgba(15,23,42,0.94)";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(30,41,59,1)";
+  ctx.fillRect(0, 0, width, 100);
   ctx.fillStyle = "#e2e8f0";
-  ctx.font = "bold 44px system-ui,Segoe UI,sans-serif";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(title, 36, 48);
-  ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
-  ctx.font = "28px system-ui,Segoe UI,sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillText("⠿ drag title", width - 36, 48);
-
-  ctx.textAlign = "left";
-  ctx.font = "36px system-ui,Segoe UI,sans-serif";
-  let y = 140;
-  const maxLines = Math.floor((height - 180) / 52);
-  const shown = lines.slice(0, maxLines);
-  shown.forEach((line, i) => {
-    const rowY = y + i * 52;
-    if (i % 2 === 0) {
-      ctx.fillStyle = "rgba(51, 65, 85, 0.35)";
-      ctx.fillRect(20, rowY - 28, width - 40, 48);
-    }
+  ctx.font = "bold 44px system-ui,sans-serif";
+  ctx.fillText(title, 36, 64);
+  ctx.font = "36px system-ui,sans-serif";
+  lines.forEach((line, i) => {
+    const y = 150 + i * 56;
+    ctx.fillStyle = i % 2 ? "rgba(51,65,85,0.4)" : "transparent";
+    ctx.fillRect(20, y - 34, width - 40, 50);
     ctx.fillStyle = line.active ? "#7dd3fc" : "#f1f5f9";
-    ctx.fillText(line.label.slice(0, 42), 40, rowY);
+    ctx.fillText(String(line.label || "").slice(0, 40), 40, y);
   });
   if (footer) {
-    ctx.fillStyle = "rgba(56, 189, 248, 0.95)";
-    ctx.font = "bold 32px system-ui,Segoe UI,sans-serif";
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 30px system-ui,sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(footer, width / 2, height - 40);
+    ctx.fillText(footer, width / 2, height - 36);
   }
   return canvas;
 }
 
-/**
- * @param {object} opts
- */
 export function createViewportXR(opts) {
   const {
     renderer,
@@ -175,90 +110,121 @@ export function createViewportXR(opts) {
     onPresentingChange = null,
     fitCamera = null,
     buttonEl = null,
-    getExplorerItems = null,
-    onExplorerSelect = null,
-    getPromptDraft = null,
-    onPromptSubmit = null,
+    spawnModalEl = null,
     hideSceneChrome = null,
     restoreSceneChrome = null,
+    getPoseStorageKey = null,
   } = opts;
 
-  if (!renderer) throw new Error("createViewportXR: renderer required");
-
   let supported = false;
-  let sessionMode = "immersive-vr";
+  let sessionMode = "immersive-ar";
   let session = null;
   let presenting = false;
   let activeTool = "grab";
-  let basePresentationScale = 1;
   let userZoom = 1;
+  let baseScale = 1;
   let presentationScale = 1;
+  let activeSpawnId = "eye";
 
-  const xrRoot = new THREE.Group();
-  xrRoot.name = "xrRoot";
-  xrRoot.visible = false;
-  scene.add(xrRoot);
+  const xrHud = new THREE.Group();
+  xrHud.name = "xrHud";
+  xrHud.visible = false;
+  scene.add(xrHud);
 
-  const panelsRoot = new THREE.Group();
-  panelsRoot.name = "xrPanels";
-  xrRoot.add(panelsRoot);
+  // Dedicated lights so CAD PBR materials aren't black in AR
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x556677, 1.35);
+  const key = new THREE.DirectionalLight(0xffffff, 1.8);
+  key.position.set(0.4, 1.2, 0.6);
+  const fill = new THREE.DirectionalLight(0xaaccff, 0.7);
+  fill.position.set(-0.8, 0.4, -0.3);
+  xrHud.add(hemi, key, fill);
+
+  // Always-on probe so we can tell if XR is drawing anything at all
+  const faceProbe = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false }),
+  );
+  faceProbe.name = "xrFaceProbe";
+  faceProbe.renderOrder = 5000;
+  faceProbe.frustumCulled = false;
+  xrHud.add(faceProbe);
+  // Axis helper next to probe
+  const probeAxes = new THREE.AxesHelper(0.18);
+  probeAxes.frustumCulled = false;
+  faceProbe.add(probeAxes);
 
   const controllers = [];
   const grips = [];
   const hands = [];
   const raycaster = new THREE.Raycaster();
-  const tempMatrix = new THREE.Matrix4();
-  const _v = new THREE.Vector3();
-  const _q = new THREE.Quaternion();
-  const _scale = new THREE.Vector3();
-  const _forward = new THREE.Vector3();
-  const _up = new THREE.Vector3(0, 1, 0);
   const _headPos = new THREE.Vector3();
   const _headQuat = new THREE.Quaternion();
+  const _fwd = new THREE.Vector3();
+  const _v = new THREE.Vector3();
+  const _q = new THREE.Quaternion();
+  const _s = new THREE.Vector3();
+  const _mat = new THREE.Matrix4();
 
-  let savedMesh = null;
-  let savedPos = null;
-  let savedQuat = null;
-  let savedScale = null;
-  let savedBackground = null;
-  let savedBgWasNull = false;
-  let grabState = null; // model or panel
+  let saved = null; // { mesh, pos, quat, scale, parent }
+  let grabState = null;
   let panelDrag = null;
+  let placePanel = null;
+  let beacon = null;
+  let savedBackground = null;
+  let savedFog = null;
+  let savedShadowMap = null;
+  let frustumBackup = [];
 
   // Measure
   const measureGroup = new THREE.Group();
-  measureGroup.name = "xrMeasure";
-  xrRoot.add(measureGroup);
+  xrHud.add(measureGroup);
   const measurePoints = [];
   let measureLine = null;
   let measureLabel = null;
-  let hoverMarker = null;
 
-  // Left-hand dock (vertical Meta-style tool strip)
+  // Head-locked tool dock — huge solid discs (canvas overlays optional)
   const dock = new THREE.Group();
-  dock.name = "xrLeftDock";
+  dock.name = "xrToolDock";
   dock.visible = false;
+  dock.renderOrder = 10000;
   const dockButtons = [];
-  const BUTTON_R = 0.028;
-  const BUTTON_GAP = 0.062;
+  const BTN_R = 0.065;
+  const BTN_GAP = 0.14;
   DOCK_TOOLS.forEach((tool, i) => {
-    const geo = new THREE.CircleGeometry(BUTTON_R, 40);
-    const mat = new THREE.MeshBasicMaterial({
-      map: makeIconTexture(tool.glyph, tool.color, tool.label),
-      transparent: true,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    const y = ((DOCK_TOOLS.length - 1) / 2 - i) * BUTTON_GAP;
-    mesh.position.set(0, y, 0);
-    mesh.userData.xrTool = tool.id;
-    mesh.renderOrder = 1000;
-    dock.add(mesh);
-    dockButtons.push(mesh);
+    const btn = new THREE.Mesh(
+      new THREE.CircleGeometry(BTN_R, 48),
+      new THREE.MeshBasicMaterial({
+        color: tool.color,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    btn.position.set(0, ((DOCK_TOOLS.length - 1) / 2 - i) * BTN_GAP, 0);
+    btn.userData.xrTool = tool.id;
+    btn.renderOrder = 10050;
+    btn.frustumCulled = false;
+    dock.add(btn);
+    dockButtons.push(btn);
+    const label = new THREE.Mesh(
+      new THREE.CircleGeometry(BTN_R * 0.92, 48),
+      new THREE.MeshBasicMaterial({
+        map: makeIconTexture(tool.glyph, tool.color, tool.label),
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    label.position.copy(btn.position);
+    label.position.z = 0.002;
+    label.renderOrder = 10052;
+    label.frustumCulled = false;
+    label.raycast = () => {};
+    dock.add(label);
+    btn.userData.labelMesh = label;
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(BUTTON_R + 0.002, BUTTON_R + 0.006, 40),
+      new THREE.RingGeometry(BTN_R + 0.004, BTN_R + 0.014, 48),
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -267,89 +233,100 @@ export function createViewportXR(opts) {
         depthTest: false,
       }),
     );
-    ring.position.copy(mesh.position);
-    ring.renderOrder = 1001;
+    ring.position.copy(btn.position);
+    ring.position.z = 0.003;
+    ring.renderOrder = 10053;
+    ring.frustumCulled = false;
     dock.add(ring);
-    mesh.userData.ring = ring;
+    btn.userData.ring = ring;
   });
-  // Backplate
-  const plateH = DOCK_TOOLS.length * BUTTON_GAP + 0.04;
   const plate = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.09, plateH),
+    new THREE.PlaneGeometry(0.22, DOCK_TOOLS.length * BTN_GAP + 0.1),
     new THREE.MeshBasicMaterial({
-      color: 0x0f172a,
+      color: 0x020617,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.92,
       depthTest: false,
       side: THREE.DoubleSide,
     }),
   );
-  plate.position.z = -0.01;
-  plate.renderOrder = 990;
+  plate.position.z = -0.015;
+  plate.renderOrder = 10040;
+  plate.frustumCulled = false;
   dock.add(plate);
+  xrHud.add(dock);
 
   const controllerModelFactory = new XRControllerModelFactory();
   const handModelFactory = new XRHandModelFactory();
 
-  function attachDockTo(parent, { isHand = false } = {}) {
-    if (!parent || dock.parent === parent) {
-      if (parent) parent.add(dock);
-      return;
+  // Gamepad edge detection
+  const prevTrigger = [false, false];
+
+  function poseKey() {
+    try {
+      return (typeof getPoseStorageKey === "function" && getPoseStorageKey()) || LS_POSE;
+    } catch {
+      return LS_POSE;
     }
-    parent.add(dock);
-    if (isHand) {
-      // Sit above the palm, facing outward for pointing
-      dock.position.set(0, 0.04, 0.08);
-      dock.rotation.set(-Math.PI / 2.4, 0, 0);
-    } else {
-      dock.position.set(0.02, 0.1, -0.08);
-      dock.rotation.set(-0.55, 0.15, 0.08);
-    }
-    dock.visible = presenting;
   }
 
-  function setInputVisible(on) {
-    controllers.forEach((c) => {
-      c.visible = !!on;
-    });
-    grips.forEach((g) => {
-      g.visible = !!on;
-    });
-    hands.forEach((h) => {
-      h.visible = !!on;
-    });
-    dock.visible = !!on;
+  function saveRoomPose() {
+    const mesh = getLiveMesh();
+    if (!mesh || !presenting) return;
+    const data = {
+      position: mesh.position.toArray(),
+      quaternion: mesh.quaternion.toArray(),
+      scale: mesh.scale.toArray(),
+      userZoom,
+      activeSpawnId,
+      at: Date.now(),
+    };
+    try {
+      localStorage.setItem(poseKey(), JSON.stringify(data));
+    } catch {
+      /* ignore */
+    }
   }
 
-  /** @type {Map<string, {group: THREE.Group, plane: THREE.Mesh, titleHit: THREE.Mesh, kind: string, tex: THREE.CanvasTexture, lines: any[]}>} */
-  const panels = new Map();
+  function loadRoomPose() {
+    try {
+      const raw = localStorage.getItem(poseKey());
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
 
-  function setButtonUi(active) {
+  function getLiveMesh() {
+    try {
+      return getMeshRoot?.() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setButtonUi(on) {
     if (!buttonEl) return;
-    buttonEl.classList.toggle("active", !!active);
-    buttonEl.setAttribute("aria-pressed", active ? "true" : "false");
-    buttonEl.title = active ? "Exit AR/VR" : "Enter AR (Meta Quest — view in your room)";
+    buttonEl.classList.toggle("active", !!on);
+    buttonEl.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
-  function flashTool(id) {
-    const btn = dockButtons.find((b) => b.userData.xrTool === id);
-    if (!btn) return;
-    btn.scale.setScalar(1.28);
-    setTimeout(() => {
-      btn.scale.setScalar(btn.userData.xrTool === activeTool ? 1.14 : 1);
-    }, 160);
-  }
-
-  function syncDockSelection() {
+  function syncDock() {
     dockButtons.forEach((btn) => {
       const on = btn.userData.xrTool === activeTool;
-      btn.scale.setScalar(on ? 1.14 : 1);
-      if (btn.userData.ring) btn.userData.ring.material.opacity = on ? 0.9 : 0;
+      btn.scale.setScalar(on ? 1.15 : 1);
+      if (btn.userData.ring) btn.userData.ring.material.opacity = on ? 0.95 : 0;
     });
   }
 
   function getHeadPose() {
     const xrCam = renderer.xr.getCamera?.();
+    if (xrCam?.cameras?.[0]) {
+      xrCam.cameras[0].getWorldPosition(_headPos);
+      xrCam.cameras[0].getWorldQuaternion(_headQuat);
+      return true;
+    }
     if (xrCam) {
       xrCam.getWorldPosition(_headPos);
       xrCam.getWorldQuaternion(_headQuat);
@@ -360,106 +337,328 @@ export function createViewportXR(opts) {
     return false;
   }
 
-  function headForward(out = _forward) {
-    out.set(0, 0, -1).applyQuaternion(_headQuat);
-    out.y = 0;
-    if (out.lengthSq() < 1e-6) out.set(0, 0, -1);
-    else out.normalize();
+  /** Full gaze forward (includes pitch) — keeps model in your view. */
+  function headForward(out = _fwd) {
+    out.set(0, 0, -1).applyQuaternion(_headQuat).normalize();
     return out;
   }
 
-  function applyUserZoom(factor) {
-    userZoom = THREE.MathUtils.clamp(userZoom * factor, 0.15, 8);
-    presentationScale = basePresentationScale * userZoom;
-    // Scale mesh about its current center
-    const mesh = getMeshRoot?.();
-    if (!mesh || !savedMesh) return;
-    mesh.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(mesh);
-    if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const ratio = factor;
-    mesh.scale.multiplyScalar(ratio);
-    mesh.position.sub(center).multiplyScalar(ratio).add(center);
-    mesh.updateMatrixWorld(true);
+  async function waitForHead(frames = 40) {
+    for (let i = 0; i < frames; i += 1) {
+      await new Promise((r) => requestAnimationFrame(r));
+      getHeadPose();
+      if (_headPos.y > 0.4) return;
+    }
+    _headPos.set(0, 1.55, 0);
+    _headQuat.identity();
   }
 
-  function placeModelInFront({ distance = 0.95, heightOffset = -0.12 } = {}) {
-    const mesh = getMeshRoot?.();
-    if (!mesh) return;
+  function captureDesktop(mesh) {
+    if (saved?.mesh === mesh) return;
+    saved = {
+      mesh,
+      pos: mesh.position.clone(),
+      quat: mesh.quaternion.clone(),
+      scale: mesh.scale.clone(),
+      parent: mesh.parent,
+    };
+  }
 
-    if (!savedMesh) {
-      savedMesh = mesh;
-      savedPos = mesh.position.clone();
-      savedQuat = mesh.quaternion.clone();
-      savedScale = mesh.scale.clone();
+  function restoreDesktop() {
+    if (!saved?.mesh) return;
+    const { mesh, pos, quat, scale } = saved;
+    mesh.position.copy(pos);
+    mesh.quaternion.copy(quat);
+    mesh.scale.copy(scale);
+    mesh.updateMatrixWorld(true);
+    for (const [obj, fc] of frustumBackup) {
+      if (obj) obj.frustumCulled = fc;
+    }
+    frustumBackup = [];
+    saved = null;
+  }
+
+  function prepareMeshesForXr(mesh) {
+    frustumBackup = [];
+    mesh.traverse((o) => {
+      if (!o.isMesh) return;
+      frustumBackup.push([o, o.frustumCulled]);
+      o.frustumCulled = false;
+      o.visible = true;
+      // Lift very dark PBR so CAD isn't invisible in AR
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m) continue;
+        if (m.emissive && m.emissiveIntensity != null) {
+          if (!m.userData._xrEmissiveBak) {
+            m.userData._xrEmissiveBak = {
+              color: m.emissive.clone(),
+              intensity: m.emissiveIntensity,
+            };
+            m.emissive.setHex(0x222222);
+            m.emissiveIntensity = Math.max(m.emissiveIntensity || 0, 0.15);
+          }
+        }
+      }
+    });
+  }
+
+  function restoreMeshMaterials() {
+    if (!saved?.mesh) return;
+    saved.mesh.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        const bak = m?.userData?._xrEmissiveBak;
+        if (!bak) continue;
+        m.emissive.copy(bak.color);
+        m.emissiveIntensity = bak.intensity;
+        delete m.userData._xrEmissiveBak;
+      }
+    });
+  }
+
+  /**
+   * Always put the CAD assembly directly in front of the headset.
+   */
+  function placeInFront(opts = {}) {
+    const mesh = getLiveMesh();
+    if (!mesh) {
+      console.warn("[viewport-xr] No CAD model loaded — load a model before entering AR");
+      return false;
+    }
+    captureDesktop(mesh);
+    prepareMeshesForXr(mesh);
+
+    const spawnId = opts.spawnId || activeSpawnId || "eye";
+    const preset = SPAWN_PRESETS.find((p) => p.id === spawnId) || SPAWN_PRESETS[0];
+    activeSpawnId = preset.id;
+    if (!opts.keepZoom) userZoom = opts.userZoom || 1;
+
+    mesh.position.copy(saved.pos);
+    mesh.quaternion.copy(saved.quat);
+    mesh.scale.copy(saved.scale);
+    mesh.updateMatrixWorld(true);
+
+    let box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty()) {
+      box = new THREE.Box3(new THREE.Vector3(-50, -50, -50), new THREE.Vector3(50, 50, 50));
+    }
+    const size0 = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
+    const targetM = Math.min(preset.sizeM || 0.2, 0.22) * Math.max(userZoom, 0.12);
+
+    getHeadPose();
+    if (!Number.isFinite(_headPos.y) || _headPos.y < 0.2) _headPos.set(0, 1.55, 0);
+    const forward = headForward();
+    const dist = preset.distance || 0.7;
+    const target = _headPos.clone().addScaledVector(forward, dist);
+    if (preset.yMode === "floor") target.y = Math.max(0.12, targetM * 0.5);
+
+    const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    const flatBack = forward.clone();
+    flatBack.y = 0;
+    if (flatBack.lengthSq() < 1e-6) flatBack.set(0, 0, 1);
+    else flatBack.normalize();
+    const face = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatBack.clone().negate());
+    const worldQuat = face.multiply(zUpToYUp);
+
+    const parent = mesh.parent;
+    if (parent) {
+      const pwq = parent.getWorldQuaternion(new THREE.Quaternion());
+      mesh.quaternion.copy(pwq.clone().invert().multiply(worldQuat));
     } else {
-      mesh.position.copy(savedPos);
-      mesh.quaternion.copy(savedQuat);
-      mesh.scale.copy(savedScale);
+      mesh.quaternion.copy(worldQuat);
+    }
+
+    const factor = targetM / maxDim;
+    mesh.scale.copy(saved.scale).multiplyScalar(factor);
+    mesh.updateMatrixWorld(true);
+
+    box.setFromObject(mesh);
+    const c1 = box.getCenter(new THREE.Vector3());
+    const delta = target.clone().sub(c1);
+    if (parent) {
+      const wp = mesh.getWorldPosition(new THREE.Vector3()).add(delta);
+      mesh.position.copy(parent.worldToLocal(wp));
+    } else {
+      mesh.position.add(delta);
     }
     mesh.updateMatrixWorld(true);
 
+    presentationScale = Math.abs(mesh.scale.x) || factor;
+    baseScale = presentationScale / Math.max(userZoom, 1e-6);
+    enforceHandheldSize(mesh, Math.min(targetM, 0.22));
+
+    console.info("[viewport-xr] placed", {
+      maxDimBefore: maxDim,
+      targetM,
+      scale: mesh.scale.x,
+      worldSize: new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()).toArray(),
+    });
+
+    showBeacon(target);
+    saveRoomPose();
+    return true;
+  }
+
+  function enforceHandheldSize(mesh, targetMax = 0.2) {
+    mesh.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(mesh);
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3());
+    const maxD = Math.max(size.x, size.y, size.z);
+    if (!(maxD > 1e-8)) return;
+    const factor = targetMax / maxD;
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    if (Math.abs(1 - factor) < 0.02) return;
     const center = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
-    // Comfortable handheld / desk size in room (~40cm)
-    basePresentationScale = 0.4 / maxDim;
-    presentationScale = basePresentationScale * userZoom;
-
+    const parent = mesh.parent;
+    const localCenter = parent ? parent.worldToLocal(center.clone()) : center.clone();
+    mesh.scale.multiplyScalar(factor);
+    mesh.position.sub(localCenter).multiplyScalar(factor).add(localCenter);
+    presentationScale = Math.abs(mesh.scale.x) || presentationScale * factor;
+    baseScale = presentationScale / Math.max(userZoom, 1e-6);
+    mesh.updateMatrixWorld(true);
     getHeadPose();
-    const forward = headForward();
-    const targetCenter = _headPos
-      .clone()
-      .addScaledVector(forward, distance)
-      .addScaledVector(_up, heightOffset);
-
-    // CAD Z-up → room Y-up, then yaw so the model faces the user
-    const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-    const faceUser = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 0, 1), // after z-up→y-up, original -Y often faces "front"; use +Z as facing axis in Y-up
-      forward.clone().negate(), // face toward head
-    );
-    // Prefer yaw-only facing so model stays upright
-    const flatAway = forward.clone().negate();
-    flatAway.y = 0;
-    if (flatAway.lengthSq() > 1e-6) {
-      flatAway.normalize();
-      faceUser.setFromUnitVectors(new THREE.Vector3(0, 0, 1), flatAway);
-    }
-    const orient = faceUser.clone().multiply(zUpToYUp);
-
-    const toOrigin = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
-    const sc = new THREE.Matrix4().makeScale(presentationScale, presentationScale, presentationScale);
-    const rot = new THREE.Matrix4().makeRotationFromQuaternion(orient);
-    const toTarget = new THREE.Matrix4().makeTranslation(targetCenter.x, targetCenter.y, targetCenter.z);
-    const present = new THREE.Matrix4().multiplyMatrices(toTarget, rot).multiply(sc).multiply(toOrigin);
-
-    const world = mesh.matrixWorld.clone();
-    const nextWorld = new THREE.Matrix4().multiplyMatrices(present, world);
-    if (mesh.parent) {
-      const parentInv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
-      new THREE.Matrix4().multiplyMatrices(parentInv, nextWorld).decompose(
-        mesh.position,
-        mesh.quaternion,
-        mesh.scale,
-      );
+    const f = headForward();
+    const want = _headPos.clone().addScaledVector(f, 0.7);
+    const c2 = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    const dlt = want.sub(c2);
+    if (parent) {
+      const worldPos = mesh.getWorldPosition(new THREE.Vector3()).add(dlt);
+      mesh.position.copy(parent.worldToLocal(worldPos));
     } else {
-      nextWorld.decompose(mesh.position, mesh.quaternion, mesh.scale);
+      mesh.position.add(dlt);
     }
     mesh.updateMatrixWorld(true);
   }
 
-  function restoreMeshTransform() {
-    if (!savedMesh) return;
-    savedMesh.position.copy(savedPos);
-    savedMesh.quaternion.copy(savedQuat);
-    savedMesh.scale.copy(savedScale);
-    savedMesh.updateMatrixWorld(true);
-    savedMesh = null;
-    savedPos = savedQuat = savedScale = null;
+  function applySavedPose() {
+    const mesh = getLiveMesh();
+    const data = loadRoomPose();
+    if (!mesh || !data?.position) return placeInFront({ spawnId: "eye" });
+    captureDesktop(mesh);
+    prepareMeshesForXr(mesh);
+    mesh.position.fromArray(data.position);
+    mesh.quaternion.fromArray(data.quaternion);
+    mesh.scale.fromArray(data.scale);
+    userZoom = data.userZoom || 1;
+    activeSpawnId = data.activeSpawnId || "eye";
+    presentationScale = mesh.scale.x || 1;
+    baseScale = presentationScale / Math.max(userZoom, 1e-6);
+    mesh.updateMatrixWorld(true);
+    enforceHandheldSize(mesh, 0.22);
+    showBeacon(mesh.getWorldPosition(new THREE.Vector3()));
+    return true;
+  }
+
+  function showBeacon(worldPos) {
+    if (!beacon) {
+      beacon = new THREE.Mesh(
+        new THREE.RingGeometry(0.1, 0.14, 40),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        }),
+      );
+      beacon.rotation.x = -Math.PI / 2;
+      beacon.renderOrder = 1500;
+      xrHud.add(beacon);
+    }
+    beacon.position.set(worldPos.x, Math.max(0.02, worldPos.y - 0.25), worldPos.z);
+    beacon.visible = true;
+    beacon.userData.born = performance.now();
+  }
+
+  function applyZoom(factor) {
+    const mesh = getLiveMesh();
+    if (!mesh || !presenting) return;
+    userZoom = THREE.MathUtils.clamp(userZoom * factor, 0.25, 3);
+    const next = baseScale * userZoom;
+    const ratio = next / Math.max(presentationScale, 1e-9);
+    presentationScale = next;
+    mesh.updateMatrixWorld(true);
+    const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    // Scale about center in parent space
+    const localCenter = mesh.parent
+      ? mesh.parent.worldToLocal(center.clone())
+      : center.clone();
+    mesh.scale.multiplyScalar(ratio);
+    mesh.position.sub(localCenter).multiplyScalar(ratio).add(localCenter);
+    mesh.updateMatrixWorld(true);
+    saveRoomPose();
+  }
+
+  function setTool(id) {
+    if (id === "front") {
+      placeInFront({ spawnId: activeSpawnId || "eye", keepZoom: false });
+      return;
+    }
+    if (id === "restore") {
+      applySavedPose();
+      return;
+    }
+    if (id === "zoom_in") {
+      applyZoom(1.2);
+      return;
+    }
+    if (id === "zoom_out") {
+      applyZoom(1 / 1.2);
+      return;
+    }
+    if (id === "place") {
+      openPlacePanel();
+      return;
+    }
+    if (id === "exit") {
+      exit();
+      return;
+    }
+    if (id === "measure") {
+      activeTool = "measure";
+      syncDock();
+      return;
+    }
+    if (id === "grab" || id === "rotate") {
+      activeTool = id;
+      syncDock();
+    }
+  }
+
+  function openPlacePanel() {
+    if (!placePanel) {
+      const canvas = drawPanelCanvas("Place model", [], "Trigger a row");
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.5, 0.38),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: false }),
+      );
+      plane.renderOrder = 2100;
+      plane.userData.xrPlacePanel = true;
+      placePanel = { group: new THREE.Group(), plane, tex, lines: [] };
+      placePanel.group.add(plane);
+      xrHud.add(placePanel.group);
+    }
+    const lines = SPAWN_PRESETS.map((p) => ({
+      id: p.id,
+      label: `${p.id === activeSpawnId ? "● " : "○ "}${p.label}`,
+      active: p.id === activeSpawnId,
+    }));
+    lines.push({ id: "__saved__", label: "↺  Last saved spot", active: true });
+    placePanel.lines = lines;
+    const canvas = drawPanelCanvas("Place model", lines, "Point + trigger");
+    placePanel.tex.image = canvas;
+    placePanel.tex.needsUpdate = true;
+    placePanel.group.visible = true;
+    getHeadPose();
+    const f = headForward();
+    placePanel.group.position.copy(_headPos).addScaledVector(f, 0.9).add(new THREE.Vector3(0.35, 0, 0));
+    placePanel.group.quaternion.copy(_headQuat);
   }
 
   function clearMeasure() {
@@ -467,643 +666,460 @@ export function createViewportXR(opts) {
     while (measureGroup.children.length) {
       const c = measureGroup.children.pop();
       c.geometry?.dispose?.();
-      if (c.material?.map) c.material.map.dispose?.();
+      c.material?.map?.dispose?.();
       c.material?.dispose?.();
     }
     measureLine = null;
     measureLabel = null;
-    hoverMarker = null;
   }
 
-  function addMeasureMarker(worldPoint, color = 0xfbbf24) {
-    const m = new THREE.Mesh(
-      new THREE.SphereGeometry(0.01, 18, 14),
-      new THREE.MeshBasicMaterial({ color, depthTest: true }),
-    );
-    m.position.copy(worldPoint);
-    measureGroup.add(m);
-    return m;
-  }
-
-  function updateMeasureVisuals() {
-    if (measureLine) {
-      measureGroup.remove(measureLine);
-      measureLine.geometry.dispose();
-      measureLine.material.dispose();
-      measureLine = null;
-    }
-    if (measureLabel) {
-      measureGroup.remove(measureLabel);
-      measureLabel.material.map?.dispose?.();
-      measureLabel.material.dispose();
-      measureLabel = null;
-    }
-    if (measurePoints.length === 2) {
-      const [a, b] = measurePoints;
-      measureLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([a, b]),
-        new THREE.LineBasicMaterial({ color: 0xfbbf24, depthTest: false }),
-      );
-      measureLine.renderOrder = 998;
-      measureGroup.add(measureLine);
-      const worldDist = a.distanceTo(b);
-      const modelDist = worldDist / Math.max(presentationScale, 1e-9);
-      const mm = modelDist * (Number(getMmPerUnit?.()) || 1);
-      const label = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(2)} mm`;
-      measureLabel = makeLabelSprite(label, { scale: 0.16 });
-      measureLabel.position.copy(a).lerp(b, 0.5);
-      measureLabel.position.y += 0.035;
-      measureGroup.add(measureLabel);
-    }
-  }
-
-  function refreshPanelTexture(kind) {
-    const panel = panels.get(kind);
-    if (!panel) return;
-    let lines = [];
-    let footer = "Trigger a row to select";
-    if (kind === "explorer") {
-      const items = (typeof getExplorerItems === "function" ? getExplorerItems() : []) || [];
-      lines = items.slice(0, 12).map((it) => ({
-        label: it.label || it.name || "Item",
-        id: it.id || it.name,
-        active: !!it.active,
-      }));
-      if (!lines.length) lines = [{ label: "(no files in project)", id: null }];
-      footer = "Point + trigger to open · drag title to move";
-    } else if (kind === "prompt") {
-      const draft = (typeof getPromptDraft === "function" ? getPromptDraft() : "") || "";
-      const preview = draft.trim() || "(empty — edit on desktop, then submit here)";
-      const chunks = preview.match(/.{1,40}/g) || [preview];
-      lines = chunks.slice(0, 8).map((t, i) => ({ label: t, id: `line-${i}` }));
-      lines.push({ label: "▶  Submit prompt", id: "__submit__", active: true });
-      footer = "Drag title to place panel in your room";
-    }
-    panel.lines = lines;
-    const canvas = drawPanelCanvas(kind === "prompt" ? "AI Prompt" : "Explorer", lines, {
-      footer,
-    });
-    panel.tex.image = canvas;
-    panel.tex.needsUpdate = true;
-  }
-
-  function spawnPanel(kind) {
-    if (panels.has(kind)) {
-      refreshPanelTexture(kind);
-      const existing = panels.get(kind);
-      existing.group.visible = true;
-      // Bring in front of user again
-      getHeadPose();
-      const forward = headForward();
-      existing.group.position.copy(_headPos).addScaledVector(forward, 0.85).addScaledVector(_up, kind === "prompt" ? 0.05 : -0.05);
-      existing.group.position.addScaledVector(new THREE.Vector3().crossVectors(_up, forward).normalize(), kind === "prompt" ? 0.35 : -0.35);
-      existing.group.quaternion.copy(_headQuat);
-      return;
-    }
-
-    const canvas = drawPanelCanvas(kind === "prompt" ? "AI Prompt" : "Explorer", [], {});
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const w = 0.55;
-    const h = 0.42;
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h),
-      new THREE.MeshBasicMaterial({
-        map: tex,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthTest: true,
-      }),
-    );
-    plane.userData.xrPanel = kind;
-    plane.userData.xrPanelBody = true;
-
-    // Invisible thicker title hit target (top ~18% of panel)
-    const titleHit = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, h * 0.16),
-      new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        side: THREE.DoubleSide,
-      }),
-    );
-    titleHit.position.y = h * 0.42;
-    titleHit.userData.xrPanel = kind;
-    titleHit.userData.xrPanelTitle = true;
-
-    const group = new THREE.Group();
-    group.name = `xrPanel-${kind}`;
-    group.add(plane);
-    group.add(titleHit);
-    panelsRoot.add(group);
-
-    panels.set(kind, { group, plane, titleHit, kind, tex, lines: [] });
-    refreshPanelTexture(kind);
-
-    getHeadPose();
-    const forward = headForward();
-    const side = new THREE.Vector3().crossVectors(_up, forward).normalize();
-    group.position
-      .copy(_headPos)
-      .addScaledVector(forward, 0.9)
-      .addScaledVector(_up, kind === "prompt" ? 0.08 : -0.02)
-      .addScaledVector(side, kind === "prompt" ? 0.4 : -0.4);
-    group.quaternion.copy(_headQuat);
-  }
-
-  function disposePanels() {
-    for (const panel of panels.values()) {
-      panelsRoot.remove(panel.group);
-      panel.plane.geometry.dispose();
-      panel.plane.material.map?.dispose?.();
-      panel.plane.material.dispose();
-      panel.titleHit.geometry.dispose();
-      panel.titleHit.material.dispose();
-      panel.tex.dispose();
-    }
-    panels.clear();
-  }
-
-  function getPickables() {
-    const root = getMeshRoot?.();
-    if (!root) return [];
-    const list = [];
-    root.traverse((o) => {
-      if (o.isMesh && o.visible && !o.userData?.isEdge && !o.userData?.isSilhouette) list.push(o);
-    });
-    return list;
-  }
-
-  function allPanelMeshes() {
-    const out = [];
-    for (const p of panels.values()) {
-      if (!p.group.visible) continue;
-      out.push(p.plane, p.titleHit);
-    }
-    return out;
-  }
-
-  function raycastController(controller) {
-    tempMatrix.identity().extractRotation(controller.matrixWorld);
+  function pickWithController(controller) {
+    _mat.identity().extractRotation(controller.matrixWorld);
     raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_mat);
 
-    // Dock first
-    if (dock.visible) {
-      const hits = raycaster.intersectObjects(dockButtons, false);
-      if (hits.length) {
-        return { kind: "tool", tool: hits[0].object.userData.xrTool, point: hits[0].point };
+    // Dock
+    const dockHits = raycaster.intersectObjects(dockButtons, false);
+    if (dockHits.length) return { kind: "tool", tool: dockHits[0].object.userData.xrTool };
+
+    // Place panel
+    if (placePanel?.group.visible) {
+      const ph = raycaster.intersectObject(placePanel.plane, false);
+      if (ph.length) {
+        const local = placePanel.plane.worldToLocal(ph[0].point.clone());
+        const v = 1 - (local.y + 0.19) / 0.38;
+        const idx = Math.floor(((v - 0.16) / 0.75) * placePanel.lines.length);
+        const line = placePanel.lines[Math.max(0, Math.min(placePanel.lines.length - 1, idx))];
+        return { kind: "place", line };
       }
     }
 
-    // Spatial panels
-    const panelHits = raycaster.intersectObjects(allPanelMeshes(), false);
-    if (panelHits.length) {
-      const obj = panelHits[0].object;
-      const kind = obj.userData.xrPanel;
-      const panel = panels.get(kind);
-      const local = panel.plane.worldToLocal(panelHits[0].point.clone());
-      // PlaneGeometry is centered; x in [-w/2,w/2], y in [-h/2,h/2]
-      const w = 0.55;
-      const h = 0.42;
-      const u = (local.x + w / 2) / w;
-      const v = 1 - (local.y + h / 2) / h; // 0 top → 1 bottom
-      return {
-        kind: "panel",
-        panelKind: kind,
-        isTitle: !!obj.userData.xrPanelTitle || v < 0.14,
-        u,
-        v,
-        point: panelHits[0].point.clone(),
-        object: obj,
-      };
-    }
-
-    const meshHits = raycaster.intersectObjects(getPickables(), false);
-    if (meshHits.length) {
-      return { kind: "mesh", point: meshHits[0].point.clone(), object: meshHits[0].object };
+    const mesh = getLiveMesh();
+    if (mesh) {
+      const hits = raycaster.intersectObject(mesh, true).filter((h) => h.object.isMesh);
+      if (hits.length) return { kind: "mesh", point: hits[0].point.clone() };
     }
     return null;
   }
 
-  function handlePanelClick(hit) {
-    const panel = panels.get(hit.panelKind);
-    if (!panel) return;
-    if (hit.isTitle) return; // drag handled separately
-    // Map v into row index (content starts ~after title)
-    const contentV = (hit.v - 0.14) / 0.78;
-    if (contentV < 0 || contentV > 1) return;
-    const idx = Math.floor(contentV * Math.max(panel.lines.length, 1));
-    const line = panel.lines[idx];
-    if (!line) return;
-    if (hit.panelKind === "explorer" && line.id != null) {
-      try {
-        onExplorerSelect?.(line.id, line);
-      } catch (e) {
-        console.warn("[xr] explorer select", e);
+  function handleSelect(controller) {
+    const hit = pickWithController(controller);
+    if (!hit) {
+      // Trigger with no hit in grab mode: still allow grabbing whole model if ray is near
+      if (activeTool === "grab" || activeTool === "rotate") {
+        beginGrab(controller);
       }
-      refreshPanelTexture("explorer");
-    }
-    if (hit.panelKind === "prompt" && line.id === "__submit__") {
-      try {
-        onPromptSubmit?.();
-      } catch (e) {
-        console.warn("[xr] prompt submit", e);
-      }
-      flashTool("panel_prompt");
-    }
-  }
-
-  function setTool(id) {
-    if (id === "recenter") {
-      userZoom = 1;
-      placeModelInFront();
-      flashTool("recenter");
       return;
     }
-    if (id === "zoom_in") {
-      applyUserZoom(1.18);
-      flashTool("zoom_in");
-      return;
-    }
-    if (id === "zoom_out") {
-      applyUserZoom(1 / 1.18);
-      flashTool("zoom_out");
-      return;
-    }
-    if (id === "clear") {
-      clearMeasure();
-      flashTool("clear");
-      return;
-    }
-    if (id === "exit") {
-      exit();
-      return;
-    }
-    if (id === "panel_prompt") {
-      spawnPanel("prompt");
-      flashTool("panel_prompt");
-      return;
-    }
-    if (id === "panel_explorer") {
-      spawnPanel("explorer");
-      flashTool("panel_explorer");
-      return;
-    }
-    if (!DOCK_TOOLS.some((t) => t.id === id)) return;
-    activeTool = id;
-    syncDockSelection();
-  }
-
-  function onSelectStart(event) {
-    const controller = event.target;
-    const hit = raycastController(controller);
-
-    if (hit?.kind === "tool") {
+    if (hit.kind === "tool") {
       setTool(hit.tool);
       return;
     }
-
-    if (hit?.kind === "panel") {
-      if (hit.isTitle) {
-        const panel = panels.get(hit.panelKind);
-        if (!panel) return;
-        panel.group.updateMatrixWorld(true);
-        const inv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
-        const local = new THREE.Matrix4().multiplyMatrices(inv, panel.group.matrixWorld);
-        local.decompose(_v, _q, _scale);
-        panelDrag = {
-          controller,
-          panelKind: hit.panelKind,
-          offsetPos: _v.clone(),
-          offsetQuat: _q.clone(),
-          offsetScale: _scale.clone(),
-        };
-        return;
-      }
-      handlePanelClick(hit);
+    if (hit.kind === "place") {
+      if (hit.line?.id === "__saved__") applySavedPose();
+      else if (hit.line?.id) placeInFront({ spawnId: hit.line.id, keepZoom: false });
+      openPlacePanel();
       return;
     }
-
-    if (activeTool === "measure") {
-      if (!hit || hit.kind !== "mesh") return;
+    if (activeTool === "measure" && hit.kind === "mesh") {
       if (measurePoints.length >= 2) clearMeasure();
-      measurePoints.push(hit.point.clone());
-      addMeasureMarker(hit.point);
-      updateMeasureVisuals();
+      measurePoints.push(hit.point);
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.012, 12, 10),
+        new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false }),
+      );
+      m.position.copy(hit.point);
+      measureGroup.add(m);
+      if (measurePoints.length === 2) {
+        const [a, b] = measurePoints;
+        measureLine = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([a, b]),
+          new THREE.LineBasicMaterial({ color: 0xfbbf24, depthTest: false }),
+        );
+        measureGroup.add(measureLine);
+        const dist = a.distanceTo(b) / Math.max(presentationScale, 1e-9);
+        const mm = dist * (Number(getMmPerUnit?.()) || 1);
+        const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(1)} mm`;
+        // simple sprite
+        const c = document.createElement("canvas");
+        c.width = 512;
+        c.height = 128;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fillRect(0, 0, 512, 128);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 56px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(text, 256, 80);
+        const sp = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }),
+        );
+        sp.scale.set(0.28, 0.07, 1);
+        sp.position.copy(a).lerp(b, 0.5);
+        measureGroup.add(sp);
+        measureLabel = sp;
+      }
       return;
     }
-
-    if (activeTool === "grab" && hit?.kind === "mesh") {
-      const mesh = getMeshRoot?.();
-      if (!mesh) return;
-      mesh.updateMatrixWorld(true);
-      const inv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
-      const local = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
-      local.decompose(_v, _q, _scale);
-      grabState = {
-        controller,
-        offsetPos: _v.clone(),
-        offsetQuat: _q.clone(),
-        offsetScale: _scale.clone(),
-      };
-    }
+    if (hit.kind === "mesh") beginGrab(controller);
   }
 
-  function onSelectEnd(event) {
-    const controller = event.target;
-    if (grabState?.controller === controller) grabState = null;
-    if (panelDrag?.controller === controller) panelDrag = null;
+  function beginGrab(controller) {
+    const mesh = getLiveMesh();
+    if (!mesh) return;
+    mesh.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(controller.matrixWorld).invert();
+    const local = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
+    const op = new THREE.Vector3();
+    const oq = new THREE.Quaternion();
+    const os = new THREE.Vector3();
+    local.decompose(op, oq, os);
+    grabState = {
+      mode: activeTool === "rotate" ? "rotate" : "grab",
+      controller,
+      offsetPos: op,
+      offsetQuat: oq,
+      startCtrlYaw: new THREE.Euler().setFromQuaternion(controller.getWorldQuaternion(new THREE.Quaternion()), "YXZ").y,
+      startMeshYaw: new THREE.Euler().setFromQuaternion(mesh.quaternion.clone(), "YXZ").y,
+    };
+  }
+
+  function endGrab(controller) {
+    if (grabState?.controller === controller) {
+      grabState = null;
+      saveRoomPose();
+    }
   }
 
   function setupControllers() {
     for (let i = 0; i < 2; i += 1) {
       const controller = renderer.xr.getController(i);
-      controller.addEventListener("selectstart", onSelectStart);
-      controller.addEventListener("selectend", onSelectEnd);
-      controller.addEventListener("connected", (event) => {
+      controller.addEventListener("selectstart", (e) => handleSelect(e.target));
+      controller.addEventListener("selectend", (e) => endGrab(e.target));
+      controller.addEventListener("connected", () => {
         controller.visible = presenting;
-        // Controllers provide a target ray; keep it bright in passthrough
-        const style = event?.data?.targetRayMode;
-        controller.userData.targetRayMode = style || "";
-      });
-      controller.addEventListener("disconnected", () => {
-        controller.visible = false;
       });
 
-      const lineGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -1.5),
-      ]);
-      const line = new THREE.Line(
-        lineGeo,
-        new THREE.LineBasicMaterial({
-          color: 0x7dd3fc,
-          transparent: true,
-          opacity: 0.95,
-          depthTest: false,
-        }),
+      const ray = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -1.8),
+        ]),
+        new THREE.LineBasicMaterial({ color: 0x7dd3fc, depthTest: false, transparent: true, opacity: 1 }),
       );
-      line.name = "xrRay";
-      line.renderOrder = 1005;
-      controller.add(line);
+      ray.renderOrder = 3000;
+      controller.add(ray);
       const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.008, 12, 10),
+        new THREE.SphereGeometry(0.01, 10, 8),
         new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }),
       );
-      tip.position.z = -1.5;
-      tip.renderOrder = 1006;
+      tip.position.z = -1.8;
+      tip.renderOrder = 3001;
       controller.add(tip);
       controller.visible = false;
       scene.add(controller);
       controllers.push(controller);
 
       const grip = renderer.xr.getControllerGrip(i);
-      const ctrlModel = controllerModelFactory.createControllerModel(grip);
-      grip.add(ctrlModel);
-      // Always-on bright marker so a hand/controller is visible even if GLTF models fail
-      const fallback = new THREE.Group();
-      fallback.name = "xrGripFallback";
-      const palm = new THREE.Mesh(
-        new THREE.BoxGeometry(0.04, 0.015, 0.08),
+      grip.add(controllerModelFactory.createControllerModel(grip));
+      // Always-visible controller body
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(0.045, 0.02, 0.1),
         new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xf472b6 }),
       );
-      palm.position.z = 0.02;
-      fallback.add(palm);
-      const knuckle = new THREE.Mesh(
-        new THREE.SphereGeometry(0.012, 12, 10),
-        new THREE.MeshBasicMaterial({ color: 0xffffff }),
-      );
-      knuckle.position.set(0, 0.01, -0.02);
-      fallback.add(knuckle);
-      grip.add(fallback);
-      grip.addEventListener("connected", (event) => {
+      body.position.z = 0.02;
+      grip.add(body);
+      grip.addEventListener("connected", () => {
         grip.visible = presenting;
-        // Hide crude fallback once a real controller model profile connects
-        const hasGamepad = !!event?.data?.gamepad;
-        fallback.visible = !hasGamepad;
-        if (i === 0) attachDockTo(grip, { isHand: false });
-      });
-      grip.addEventListener("disconnected", () => {
-        grip.visible = false;
       });
       grip.visible = false;
       scene.add(grip);
       grips.push(grip);
 
-      // Tracked hands (Quest hand tracking — put controllers down / enable Hand Tracking)
       const hand = renderer.xr.getHand(i);
-      // Sphere joints always render (no GLB fetch). Visible in passthrough AR.
       hand.add(handModelFactory.createHandModel(hand, "spheres"));
-      hand.addEventListener("selectstart", onSelectStart);
-      hand.addEventListener("selectend", onSelectEnd);
-      hand.addEventListener("connected", (event) => {
+      const palm = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 14, 12),
+        new THREE.MeshBasicMaterial({
+          color: i === 0 ? 0x38bdf8 : 0xf472b6,
+          depthTest: false,
+          transparent: true,
+          opacity: 0.95,
+        }),
+      );
+      palm.renderOrder = 3002;
+      hand.add(palm);
+      hand.addEventListener("selectstart", (e) => handleSelect(e.target));
+      hand.addEventListener("selectend", (e) => endGrab(e.target));
+      hand.addEventListener("connected", () => {
         hand.visible = presenting;
-        if (event?.data?.hand && i === 0) {
-          attachDockTo(hand, { isHand: true });
-        }
-      });
-      hand.addEventListener("disconnected", () => {
-        hand.visible = false;
       });
       hand.visible = false;
       scene.add(hand);
       hands.push(hand);
-
-      if (i === 0) {
-        // Default dock on left grip until a hand/controller connects
-        attachDockTo(grip, { isHand: false });
-      }
     }
   }
 
-  function pollThumbsticks() {
-    const src = renderer.xr.getSession?.();
-    if (!src) return;
-    for (const source of src.inputSources) {
+  function attachHudToCamera() {
+    // Keep dock/probe in scene HUD — world billboard every frame (Quest-safe)
+    if (dock.parent !== xrHud) {
+      if (dock.parent) dock.parent.remove(dock);
+      xrHud.add(dock);
+    }
+    if (faceProbe.parent !== xrHud) {
+      if (faceProbe.parent) faceProbe.parent.remove(faceProbe);
+      xrHud.add(faceProbe);
+    }
+    dock.visible = true;
+    faceProbe.visible = true;
+  }
+
+  function detachHudFromCamera() {
+    if (dock.parent && dock.parent !== xrHud) {
+      dock.parent.remove(dock);
+      xrHud.add(dock);
+    }
+    if (faceProbe.parent && faceProbe.parent !== xrHud) {
+      faceProbe.parent.remove(faceProbe);
+      xrHud.add(faceProbe);
+    }
+    dock.visible = false;
+    faceProbe.visible = false;
+  }
+
+  function updateDockFollow() {
+    attachHudToCamera();
+    getHeadPose();
+    const f = headForward();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(_headQuat).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_headQuat).normalize();
+
+    // Large strip on the LEFT of your view, ~0.55m ahead
+    dock.position
+      .copy(_headPos)
+      .addScaledVector(f, 0.55)
+      .addScaledVector(right, -0.28)
+      .addScaledVector(up, 0.02);
+    dock.quaternion.copy(_headQuat);
+    dock.visible = true;
+    dock.scale.setScalar(1);
+
+    // Cyan cube ahead-right — if missing, XR is not drawing meshes
+    faceProbe.position
+      .copy(_headPos)
+      .addScaledVector(f, 0.75)
+      .addScaledVector(right, 0.18)
+      .addScaledVector(up, -0.12);
+    faceProbe.quaternion.copy(_headQuat);
+    faceProbe.scale.setScalar(0.35);
+    faceProbe.visible = true;
+
+    const pointer = controllers[1] || controllers[0];
+    if (!pointer) return;
+    const hit = pickWithController(pointer);
+    dockButtons.forEach((btn) => {
+      const hover = hit?.kind === "tool" && hit.tool === btn.userData.xrTool;
+      const on = btn.userData.xrTool === activeTool;
+      btn.scale.setScalar(hover ? 1.2 : on ? 1.12 : 1);
+      if (btn.userData.ring) btn.userData.ring.material.opacity = hover || on ? 1 : 0;
+    });
+  }
+
+  function pollGamepads() {
+    const sess = renderer.xr.getSession?.();
+    if (!sess) return;
+    let idx = 0;
+    for (const source of sess.inputSources) {
       const gp = source.gamepad;
-      if (!gp?.axes?.length) continue;
-      // Quest: axes[2], axes[3] often thumbstick X/Y (or 0/1)
-      const axisY = gp.axes.length >= 4 ? gp.axes[3] : gp.axes[1];
-      if (!Number.isFinite(axisY) || Math.abs(axisY) < 0.2) continue;
-      // Hold stick: continuous zoom
-      const factor = Math.exp(-axisY * 0.035);
-      applyUserZoom(factor);
+      if (!gp) continue;
+      const handIndex = source.handedness === "left" ? 0 : source.handedness === "right" ? 1 : idx;
+      const controller = controllers[handIndex] || controllers[idx] || controllers[0];
+      // Trigger = button 0 on Quest
+      const trigger = !!(gp.buttons?.[0]?.pressed || (gp.buttons?.[0]?.value || 0) > 0.7);
+      if (trigger && !prevTrigger[handIndex] && controller) {
+        handleSelect(controller);
+      }
+      if (!trigger && prevTrigger[handIndex] && controller) {
+        endGrab(controller);
+      }
+      prevTrigger[handIndex] = trigger;
+
+      // Squeeze (button 1) opens place menu on left
+      if (source.handedness === "left" && gp.buttons?.[1]?.pressed) {
+        openPlacePanel();
+      }
+
+      // Stick zoom / rotate
+      const ax = gp.axes || [];
+      const axisX = ax.length >= 4 ? ax[2] : ax[0];
+      const axisY = ax.length >= 4 ? ax[3] : ax[1];
+      if (Math.abs(axisY || 0) > 0.25) applyZoom(Math.exp(-axisY * 0.03));
+      if (Math.abs(axisX || 0) > 0.25 && getLiveMesh()) {
+        getLiveMesh().rotation.y -= axisX * 0.045;
+        saveRoomPose();
+      }
+      idx += 1;
     }
   }
 
   function updateGrab() {
-    if (grabState) {
-      const mesh = getMeshRoot?.();
-      if (mesh) {
-        const { controller, offsetPos, offsetQuat, offsetScale } = grabState;
-        controller.updateMatrixWorld(true);
-        const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, offsetScale);
-        const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
-        if (mesh.parent) {
-          const parentInv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
-          new THREE.Matrix4().multiplyMatrices(parentInv, world).decompose(
-            mesh.position,
-            mesh.quaternion,
-            mesh.scale,
-          );
-        } else {
-          world.decompose(mesh.position, mesh.quaternion, mesh.scale);
-        }
+    if (!grabState) return;
+    const mesh = getLiveMesh();
+    if (!mesh) return;
+    const { controller, mode, offsetPos, offsetQuat, startCtrlYaw, startMeshYaw } = grabState;
+    controller.updateMatrixWorld(true);
+    if (mode === "rotate") {
+      const yaw = new THREE.Euler().setFromQuaternion(
+        controller.getWorldQuaternion(new THREE.Quaternion()),
+        "YXZ",
+      ).y;
+      mesh.rotation.y = startMeshYaw + (yaw - startCtrlYaw);
+    } else {
+      const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, new THREE.Vector3(1, 1, 1));
+      const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
+      if (mesh.parent) {
+        const inv = new THREE.Matrix4().copy(mesh.parent.matrixWorld).invert();
+        new THREE.Matrix4().multiplyMatrices(inv, world).decompose(mesh.position, mesh.quaternion, _s);
+      } else {
+        world.decompose(mesh.position, mesh.quaternion, _s);
       }
+      // Preserve uniform presentation scale
+      const sx = presentationScale || mesh.scale.x;
+      mesh.scale.setScalar(sx);
     }
-    if (panelDrag) {
-      const panel = panels.get(panelDrag.panelKind);
-      if (panel) {
-        const { controller, offsetPos, offsetQuat, offsetScale } = panelDrag;
-        controller.updateMatrixWorld(true);
-        const next = new THREE.Matrix4().compose(offsetPos, offsetQuat, offsetScale);
-        const world = new THREE.Matrix4().multiplyMatrices(controller.matrixWorld, next);
-        world.decompose(panel.group.position, panel.group.quaternion, panel.group.scale);
-      }
-    }
-  }
-
-  function updateHover(controller) {
-    const hit = raycastController(controller);
-    dockButtons.forEach((btn) => {
-      const hover = hit?.kind === "tool" && hit.tool === btn.userData.xrTool;
-      const selected = btn.userData.xrTool === activeTool;
-      btn.scale.setScalar(hover ? 1.24 : selected ? 1.14 : 1);
-      if (btn.userData.ring) btn.userData.ring.material.opacity = hover ? 1 : selected ? 0.9 : 0;
-    });
-
-    if (activeTool === "measure") {
-      if (!hoverMarker) {
-        hoverMarker = new THREE.Mesh(
-          new THREE.SphereGeometry(0.008, 14, 12),
-          new THREE.MeshBasicMaterial({
-            color: 0x38bdf8,
-            transparent: true,
-            opacity: 0.9,
-            depthTest: false,
-          }),
-        );
-        hoverMarker.renderOrder = 997;
-        measureGroup.add(hoverMarker);
-      }
-      if (hit?.kind === "mesh") {
-        hoverMarker.visible = true;
-        hoverMarker.position.copy(hit.point);
-      } else if (hoverMarker) hoverMarker.visible = false;
-    } else if (hoverMarker) hoverMarker.visible = false;
-  }
-
-  function billboardPanels() {
-    // Keep slight face-to-user while free-floating (optional soft billboard of title only — skip full billboard so arranged layout stays)
-    if (measureLabel && renderer.xr.getCamera) {
-      measureLabel.quaternion.copy(renderer.xr.getCamera().quaternion);
-    }
-  }
-
-  async function pickSessionMode() {
-    if (!navigator.xr) return null;
-    try {
-      if (await navigator.xr.isSessionSupported("immersive-ar")) return "immersive-ar";
-    } catch (_) {
-      /* continue */
-    }
-    try {
-      if (await navigator.xr.isSessionSupported("immersive-vr")) return "immersive-vr";
-    } catch (_) {
-      /* continue */
-    }
-    return null;
   }
 
   async function enter() {
-    if (presenting) return;
-    if (!navigator.xr) return;
-    const mode = (await pickSessionMode()) || sessionMode;
-    sessionMode = mode;
+    if (presenting || !navigator.xr) return;
+
+    // Skip modal — always start in front of you. Place menu available in-session.
+    activeSpawnId = "eye";
     try {
-      renderer.xr.enabled = true;
-      // Passthrough / AR: clear background so the room shows through
-      savedBackground = scene.background;
-      savedBgWasNull = scene.background == null;
-      if (mode === "immersive-ar") {
-        scene.background = null;
-        renderer.setClearAlpha?.(0);
-      }
-      session = await navigator.xr.requestSession(mode, {
-        optionalFeatures: [
-          "local-floor",
-          "bounded-floor",
-          "hand-tracking",
-          "layers",
-          "dom-overlay",
-          "hit-test",
-        ],
-      });
-      await renderer.xr.setSession(session);
-      presenting = true;
-      userZoom = 1;
-      xrRoot.visible = true;
-      setInputVisible(true);
-      // If hand tracking is available, Quest will fire hand `connected` and show mesh hands.
-      // Keep controllers visible too when Touch controllers are in use.
-      if (controls) controls.enabled = false;
-      if (transformControls) transformControls.enabled = false;
-      try {
-        hideSceneChrome?.();
-      } catch (_) {
-        /* ignore */
-      }
-      // Wait one frame so XR camera pose is valid, then place model in front of you
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      placeModelInFront();
-      clearMeasure();
-      activeTool = "grab";
-      syncDockSelection();
-      setButtonUi(true);
-      onPresentingChange?.(true);
-      session.addEventListener("end", onSessionEnd);
-    } catch (err) {
-      console.warn("[viewport-xr] failed to enter", err);
-      presenting = false;
-      renderer.xr.enabled = false;
-      if (!savedBgWasNull) scene.background = savedBackground;
-      setButtonUi(false);
-      throw err;
+      localStorage.setItem(LS_SPAWN, "eye");
+    } catch {
+      /* ignore */
     }
+
+    let mode = "immersive-ar";
+    try {
+      if (!(await navigator.xr.isSessionSupported("immersive-ar"))) {
+        mode = (await navigator.xr.isSessionSupported("immersive-vr")) ? "immersive-vr" : null;
+      }
+    } catch {
+      mode = null;
+    }
+    if (!mode) throw new Error("WebXR unavailable");
+    sessionMode = mode;
+
+    renderer.xr.enabled = true;
+    savedBackground = scene.background;
+    savedFog = scene.fog;
+    scene.fog = null;
+    scene.background = null;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setClearAlpha(0);
+
+    try {
+      session = await navigator.xr.requestSession(mode, {
+        optionalFeatures: ["local-floor", "bounded-floor", "hand-tracking", "hit-test"],
+      });
+    } catch (e) {
+      session = await navigator.xr.requestSession(mode);
+    }
+
+    const blend = session.environmentBlendMode || "";
+    const passthrough = mode === "immersive-ar" || blend === "alpha-blend" || blend === "additive";
+    if (!passthrough) {
+      scene.background = new THREE.Color(0x334155);
+      renderer.setClearColor(0x334155, 1);
+    }
+
+    await renderer.xr.setSession(session);
+    if (passthrough) {
+      scene.background = null;
+      renderer.setClearColor(0x000000, 0);
+      renderer.setClearAlpha(0);
+    }
+
+    // Shadows + exotic depth paths are a common Quest "draw nothing" cause
+    savedShadowMap = renderer.shadowMap?.enabled;
+    if (renderer.shadowMap) renderer.shadowMap.enabled = false;
+
+    presenting = true;
+    xrHud.visible = true;
+    attachHudToCamera();
+    faceProbe.visible = true;
+    controllers.forEach((c) => {
+      c.visible = true;
+    });
+    grips.forEach((g) => {
+      g.visible = true;
+    });
+    hands.forEach((h) => {
+      h.visible = true;
+    });
+    dock.visible = true;
+    if (controls) controls.enabled = false;
+    if (transformControls) transformControls.enabled = false;
+    try {
+      hideSceneChrome?.();
+    } catch {
+      /* ignore */
+    }
+
+    await waitForHead(50);
+
+    // Always re-place in front after tracking settles (saved pose is optional via Saved tool)
+    placeInFront({ spawnId: "eye", keepZoom: false });
+    setTimeout(() => {
+      if (presenting) placeInFront({ spawnId: "eye", keepZoom: true });
+    }, 500);
+
+    activeTool = "grab";
+    syncDock();
+    setButtonUi(true);
+    onPresentingChange?.(true);
+    session.addEventListener("end", onSessionEnd);
   }
 
   function onSessionEnd() {
+    saveRoomPose();
     presenting = false;
     session = null;
-    xrRoot.visible = false;
-    setInputVisible(false);
+    xrHud.visible = false;
+    dock.visible = false;
+    if (placePanel) placePanel.group.visible = false;
+    controllers.forEach((c) => {
+      c.visible = false;
+    });
+    grips.forEach((g) => {
+      g.visible = false;
+    });
+    hands.forEach((h) => {
+      h.visible = false;
+    });
     grabState = null;
-    panelDrag = null;
     clearMeasure();
-    disposePanels();
-    restoreMeshTransform();
-    if (!savedBgWasNull) scene.background = savedBackground;
-    else scene.background = null;
-    try {
-      renderer.setClearAlpha?.(1);
-    } catch (_) {
-      /* ignore */
-    }
+    restoreMeshMaterials();
+    restoreDesktop();
+    scene.background = savedBackground;
+    scene.fog = savedFog;
+    if (renderer.shadowMap && savedShadowMap != null) renderer.shadowMap.enabled = savedShadowMap;
+    renderer.setClearColor(0x000000, 0);
+    detachHudFromCamera();
     if (controls) controls.enabled = true;
     if (transformControls) transformControls.enabled = true;
     renderer.xr.enabled = false;
     setButtonUi(false);
     try {
       restoreSceneChrome?.();
-    } catch (_) {
+    } catch {
       /* ignore */
     }
     onPresentingChange?.(false);
     try {
       fitCamera?.();
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }
@@ -1112,7 +1128,7 @@ export function createViewportXR(opts) {
     if (session) {
       try {
         await session.end();
-      } catch (_) {
+      } catch {
         onSessionEnd();
       }
     }
@@ -1125,33 +1141,41 @@ export function createViewportXR(opts) {
 
   function update() {
     if (!presenting) return;
+    // Force overlays visible every frame (Quest can flip them off)
+    xrHud.visible = true;
+    dock.visible = true;
+    faceProbe.visible = true;
+    controllers.forEach((c) => {
+      c.visible = true;
+    });
+    grips.forEach((g) => {
+      g.visible = true;
+    });
     updateGrab();
-    pollThumbsticks();
-    const pointer = controllers[1] || controllers[0];
-    if (pointer) updateHover(pointer);
-    billboardPanels();
-    // Soft-refresh panel content occasionally
-    if ((performance.now() / 1000) % 2 < 0.05) {
-      if (panels.has("explorer")) refreshPanelTexture("explorer");
-      if (panels.has("prompt")) refreshPanelTexture("prompt");
+    updateDockFollow();
+    pollGamepads();
+    if (beacon?.visible && beacon.userData.born && performance.now() - beacon.userData.born > 5000) {
+      beacon.visible = false;
     }
+    getHeadPose();
+    key.position.copy(_headPos).add(new THREE.Vector3(0.5, 1.0, 0.4));
   }
 
   function isPresenting() {
-    return presenting;
-  }
-
-  function isSupported() {
-    return supported;
+    return presenting || !!renderer.xr?.isPresenting;
   }
 
   let buttonBound = false;
-
   async function probeSupport() {
     try {
-      const mode = await pickSessionMode();
-      supported = !!mode;
-      if (mode) sessionMode = mode;
+      if (!navigator.xr) supported = false;
+      else if (await navigator.xr.isSessionSupported("immersive-ar")) {
+        supported = true;
+        sessionMode = "immersive-ar";
+      } else if (await navigator.xr.isSessionSupported("immersive-vr")) {
+        supported = true;
+        sessionMode = "immersive-vr";
+      } else supported = false;
     } catch {
       supported = false;
     }
@@ -1159,31 +1183,22 @@ export function createViewportXR(opts) {
       buttonEl.hidden = !supported;
       buttonEl.classList.toggle("hidden", !supported);
       buttonEl.disabled = !supported;
-      if (supported) {
-        buttonEl.title =
-          sessionMode === "immersive-ar"
-            ? "AR — view the model in your room (Meta Quest)"
-            : "VR — view the model (Meta Quest)";
-        buttonEl.querySelector("span") && (buttonEl.querySelector("span").textContent = sessionMode === "immersive-ar" ? "AR" : "VR");
-      }
+      const span = buttonEl.querySelector("span");
+      if (span) span.textContent = sessionMode === "immersive-ar" ? "AR" : "VR";
       if (supported && !buttonBound) {
         buttonBound = true;
         buttonEl.addEventListener("click", (e) => {
           e.preventDefault();
-          toggle().catch((err) => {
-            console.warn("[viewport-xr]", err);
-            buttonEl.title = "Open this page in Meta Quest Browser";
-          });
+          // Require a model
+          if (!getLiveMesh()) {
+            buttonEl.title = "Load a CAD model first, then enter AR";
+            console.warn("[viewport-xr] load a model before AR");
+          }
+          toggle().catch((err) => console.warn("[viewport-xr]", err));
         });
       }
     }
     return supported;
-  }
-
-  try {
-    renderer.xr.enabled = false;
-  } catch (_) {
-    /* ignore */
   }
 
   setupControllers();
@@ -1194,11 +1209,12 @@ export function createViewportXR(opts) {
     exit,
     toggle,
     update,
-    isPresenting,
-    isSupported,
+    isPresenting: () => isPresenting(),
+    isSupported: () => supported,
     probeSupport,
     setTool,
-    getActiveTool: () => activeTool,
     getSessionMode: () => sessionMode,
+    placeInFront,
+    saveRoomPose,
   };
 }

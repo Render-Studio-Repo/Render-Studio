@@ -41758,3 +41758,87 @@ body.xr-presenting .mobile-showcase-bar {
   border-color: rgba(56, 189, 248, 0.7);
   background: rgba(8, 47, 73, 0.35);
 }
+
+/* ── AR spawn picker modal ───────────────────────────────────────────── */
+.xr-spawn-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 8, 20, 0.55);
+  backdrop-filter: blur(8px);
+}
+.xr-spawn-modal.hidden { display: none !important; }
+.xr-spawn-modal-card {
+  width: min(420px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.97), rgba(8, 15, 28, 0.98));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  padding: 18px 16px 14px;
+  color: #e2e8f0;
+}
+.xr-spawn-modal-title {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: #7dd3fc;
+  letter-spacing: 0.02em;
+}
+.xr-spawn-modal-sub {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+.xr-spawn-modal-options {
+  display: grid;
+  gap: 8px;
+}
+.xr-spawn-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(30, 41, 59, 0.65);
+  color: #f1f5f9;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.xr-spawn-option strong {
+  font-size: 0.86rem;
+}
+.xr-spawn-option span {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.xr-spawn-option:hover,
+.xr-spawn-option.active {
+  border-color: rgba(56, 189, 248, 0.75);
+  background: rgba(8, 47, 73, 0.55);
+}
+.xr-spawn-cancel {
+  margin-top: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px;
+}
+.xr-spawn-cancel:hover { color: #e2e8f0; }
+
+/* xr canvas transparent */
+#viewport canvas {
+  background: transparent !important;
+}
