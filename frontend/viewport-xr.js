@@ -597,6 +597,8 @@ export function createViewportXR(opts) {
   let userZoom = 1;
   let baseScale = 1;
   let presentationScale = 1;
+  /** mm per CAD/model unit — captured at identity scale during placeInFront (not XR world size). */
+  let xrMmPerUnit = 1;
   let activeSpawnId = "eye";
   let menuTab = "projects";
   let menuScroll = 0;
@@ -1027,6 +1029,8 @@ export function createViewportXR(opts) {
     }
     const size0 = box.getSize(new THREE.Vector3());
     let maxDim = Math.max(size0.x, size0.y, size0.z, 1e-4);
+    // Same heuristic as units.js mmPerModelUnit, but on *unscaled* CAD extent
+    xrMmPerUnit = maxDim >= 1.0 ? 1 : 1000;
     const targetM = Math.min(preset.sizeM || 0.11, 0.12) * Math.max(Math.min(userZoom, 1.2), 0.6);
 
     getHeadPose();
@@ -2033,6 +2037,24 @@ export function createViewportXR(opts) {
     }
   }
 
+  /**
+   * Convert two world-space points to millimetres using the CAD/model frame.
+   * Do NOT use desktop currentMmPerModelUnit() here — after XR handheld scaling
+   * the world bbox is ~0.1m so that heuristic wrongly returns 1000×.
+   */
+  function measureDistanceMm(worldA, worldB) {
+    const mesh = getLiveMesh();
+    if (mesh) {
+      const a = mesh.worldToLocal(worldA.clone());
+      const b = mesh.worldToLocal(worldB.clone());
+      const localDist = a.distanceTo(b);
+      const mmPer = Number.isFinite(xrMmPerUnit) && xrMmPerUnit > 0 ? xrMmPerUnit : 1;
+      return localDist * mmPer;
+    }
+    // Fallback: treat world units as metres
+    return worldA.distanceTo(worldB) * 1000;
+  }
+
   function finishEdgeMeasure() {
     if (measureEdges.length < 2) return;
     const [e0, e1] = measureEdges;
@@ -2043,8 +2065,7 @@ export function createViewportXR(opts) {
     );
     measureLine.renderOrder = 2610;
     measureGroup.add(measureLine);
-    const worldDist = dist / Math.max(presentationScale, 1e-9);
-    const mm = worldDist * (Number(getMmPerUnit?.()) || 1);
+    const mm = measureDistanceMm(pa, pb);
     const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(2)} mm`;
     const c = document.createElement("canvas");
     c.width = 640;
@@ -2231,8 +2252,7 @@ export function createViewportXR(opts) {
           new THREE.LineBasicMaterial({ color: 0xfbbf24, depthTest: false }),
         );
         measureGroup.add(measureLine);
-        const dist = a.distanceTo(b) / Math.max(presentationScale, 1e-9);
-        const mm = dist * (Number(getMmPerUnit?.()) || 1);
+        const mm = measureDistanceMm(a, b);
         const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(1)} mm`;
         const c = document.createElement("canvas");
         c.width = 512; c.height = 128;

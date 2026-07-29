@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-ar-captures";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-mic-menu";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-measure-mm";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
