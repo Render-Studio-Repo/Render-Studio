@@ -1290,13 +1290,22 @@ def resolve_step_module_sidecar(project_path: Path, filename: str) -> Path | Non
     return None
 
 
-def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, stem: str = "_export_visible_assembly") -> list[dict[str, Any]]:
+def build_visible_assembly_exports(
+    project_path: Path,
+    filenames: list[str],
+    *,
+    stem: str = "_export_visible_assembly",
+    include_companions: bool = True,
+) -> list[dict[str, Any]]:
     """Build downloadable artifacts for the currently visible browser components.
 
     Prefers existing viewer GLBs (copy / merge) over STEP retessellation so public
     share previews keep the same multi-body quality as the studio. Also tries to
     write a solid B-rep STEP compound from the visible native STEPs so Fusion /
     cloud push cannot fall back to a hidden sibling model.
+
+    When ``include_companions`` is False (share-link minting), only the viewer GLB
+    is written — skip STL / faceted STEP / 3MF / B-rep STEP which dominate latency.
     """
     safe_names: list[str] = []
     seen: set[str] = set()
@@ -1388,12 +1397,21 @@ def build_visible_assembly_exports(project_path: Path, filenames: list[str], *, 
     if not out_glb.is_file():
         raise ValueError("Could not build visible assembly GLB.")
 
+    outputs = [out_glb]
+    if not include_companions:
+        return [
+            {
+                "name": out_glb.name,
+                "format": "glb",
+                "size": out_glb.stat().st_size,
+            }
+        ]
+
     # Companion mesh exports for download menu (STL / faceted STEP / 3MF).
     try:
         combined_mesh = load_mesh(out_glb)
     except Exception:
         combined_mesh = None
-    outputs = [out_glb]
     if combined_mesh is not None and not combined_mesh.is_empty:
         stl = project_path / f"{stem}.stl"
         step = project_path / faceted_step_name(stem)

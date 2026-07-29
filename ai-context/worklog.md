@@ -1,3 +1,12 @@
+## 2026-07-29 — Faster Create share link
+
+- Root cause: minting a share re-ran full `build_visible_assembly_exports` (STL + huge faceted STEP + 3MF + B-rep), not just the viewer GLB.
+- Share bake now uses `include_companions=False` (GLB only). Export menu still builds companions.
+- Share prep starts in parallel with export listing; viewport snapshot uses JPEG instead of PNG.
+- Cache-bust `?v=20260729-share-fast`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-29 — Mesh Improve → img2threejs realistic look-dev
 
 - Mesh **Improve** follows GitHub img2threejs rendering rules (`shading_realism` + `threejs_texture_reference`):

@@ -14533,6 +14533,7 @@ def _share_metadata(token: str, request: Request | None = None) -> dict[str, Any
                         project_path,
                         exportable,
                         stem=stem,
+                        include_companions=False,
                     )
                 if glb_path.is_file():
                     share["viewer_filename"] = glb_path.name
@@ -14888,10 +14889,13 @@ def create_file_share(
                 ]
                 if exportable:
                     stem = f"_share_visible_{token[:8]}"
+                    # Share mint only needs a viewer GLB. Companion STL/STEP/3MF
+                    # exports are for the Export menu and can take many seconds.
                     built = cad_service.build_visible_assembly_exports(
                         project_path,
                         exportable,
                         stem=stem,
+                        include_companions=False,
                     )
                     glb = next(
                         (

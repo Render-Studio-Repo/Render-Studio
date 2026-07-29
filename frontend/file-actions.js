@@ -763,51 +763,9 @@ export async function openFileExportMenu({
   renderExportPlaceholders(list);
   setExportActionsPreparing(menu, true);
 
-  let data = null;
-  let fetchError = null;
-  try {
-    if (exportsRequest) {
-      data = await withTimeout(
-        api(exportsRequest.path, exportsRequest.options || {}),
-        18000,
-        "Export preparation is taking too long. Showing available download formats.",
-      );
-    } else {
-      data = await withTimeout(
-        api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/exports`),
-        18000,
-        "Export preparation is taking too long. Showing available download formats.",
-      );
-    }
-  } catch (err) {
-    fetchError = err;
-  }
-
-  let exports = collapseExportsToSingleStep(data?.exports || []);
-  // Prefer the baked assembly GLB/STEP from exportsRequest — never share the
-  // placeholder label "visible assembly" / "project assembly" (404 → old token).
-  const bakedGlb = (data?.exports || []).find((item) => item.format === "glb" && String(item.name || "").startsWith("_export_visible_assembly"))
-    || (data?.filename && String(data.filename).endsWith(".glb") ? { name: data.filename } : null);
-  // Public share needs a GLB (or STEP) — never root the share on a regenerated 3MF.
-  const shareFilename = preferShareFilename(
-    bakedGlb?.name || filename,
-    data?.exports || exports,
-    data?.filename,
-  );
-  if (data?.filename && data.filename !== filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename))) {
-    const titleEl = menu.querySelector(".file-export-title");
-    if (titleEl && !title) titleEl.textContent = `Export ${data.filename}`;
-  }
-
-  if (!exports.length && !exportsRequest) {
-    exports = fallbackExports(filename);
-  }
-  if (extraExports.length) {
-    exports = collapseExportsToSingleStep([...exports, ...extraExports]);
-  }
-
   let preparedShareUrl = "";
   let preparingShare = false;
+  let shareFilename = preferShareFilename(filename, [], null);
   const shareReadyLabel = () => "Copy share link";
   const prepareShareLink = async () => {
     if (!shareBtn || preparingShare || preparedShareUrl) return;
@@ -816,8 +774,9 @@ export async function openFileExportMenu({
     shareBtn.classList.add("is-loading");
     shareBtn.textContent = "Creating share link...";
     try {
-      if (!shareFilename) throw new Error("No shareable model file prepared yet.");
-      preparedShareUrl = await createShareUrl(projectId, shareFilename, shareContext);
+      const name = shareFilename || preferShareFilename(filename, [], null);
+      if (!name) throw new Error("No shareable model file prepared yet.");
+      preparedShareUrl = await createShareUrl(projectId, name, shareContext);
       shareBtn.textContent = shareReadyLabel();
       shareBtn.disabled = false;
     } catch (err) {
@@ -832,7 +791,7 @@ export async function openFileExportMenu({
       if (!preparedShareUrl) shareBtn.disabled = false;
     }
   };
-  // Always wire share even when export list is empty / errored.
+  // Mint the share in parallel with export listing — do not wait on STEP/3MF prep.
   void prepareShareLink();
   shareBtn?.addEventListener("click", async () => {
     try {
@@ -869,6 +828,55 @@ export async function openFileExportMenu({
       shareBtn.disabled = false;
     }
   });
+
+  let data = null;
+  let fetchError = null;
+  try {
+    if (exportsRequest) {
+      data = await withTimeout(
+        api(exportsRequest.path, exportsRequest.options || {}),
+        18000,
+        "Export preparation is taking too long. Showing available download formats.",
+      );
+    } else {
+      data = await withTimeout(
+        api(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/exports`),
+        18000,
+        "Export preparation is taking too long. Showing available download formats.",
+      );
+    }
+  } catch (err) {
+    fetchError = err;
+  }
+
+  let exports = collapseExportsToSingleStep(data?.exports || []);
+  // Prefer the baked assembly GLB/STEP from exportsRequest — never share the
+  // placeholder label "visible assembly" / "project assembly" (404 → old token).
+  const bakedGlb = (data?.exports || []).find((item) => item.format === "glb" && String(item.name || "").startsWith("_export_visible_assembly"))
+    || (data?.filename && String(data.filename).endsWith(".glb") ? { name: data.filename } : null);
+  // Public share needs a GLB (or STEP) — never root the share on a regenerated 3MF.
+  // Keep the early-minted shareFilename unless exports found a better same-stem GLB.
+  const preferredShare = preferShareFilename(
+    bakedGlb?.name || filename,
+    data?.exports || exports,
+    data?.filename,
+  );
+  if (preferredShare && !preparedShareUrl && !preparingShare) {
+    shareFilename = preferredShare;
+  } else if (preferredShare) {
+    shareFilename = preferredShare;
+  }
+  if (data?.filename && data.filename !== filename && !/^(visible|project)\s+assembly$/i.test(String(data.filename))) {
+    const titleEl = menu.querySelector(".file-export-title");
+    if (titleEl && !title) titleEl.textContent = `Export ${data.filename}`;
+  }
+
+  if (!exports.length && !exportsRequest) {
+    exports = fallbackExports(filename);
+  }
+  if (extraExports.length) {
+    exports = collapseExportsToSingleStep([...exports, ...extraExports]);
+  }
 
   if (fetchError && !(data?.exports?.length)) {
     list.innerHTML = "";

@@ -21338,7 +21338,8 @@ function currentVisibleShareContext() {
   let viewportImage = "";
   try {
     renderer.render(scene, camera);
-    viewportImage = renderer.domElement.toDataURL("image/png");
+    // JPEG keeps share mint payloads small; PNG data-URLs can be multi-MB and slow.
+    viewportImage = renderer.domElement.toDataURL("image/jpeg", 0.82);
   } catch {
     viewportImage = "";
   }
