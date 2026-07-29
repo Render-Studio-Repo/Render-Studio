@@ -13751,6 +13751,7 @@ async def upload_file(
     file: UploadFile = File(...),
     history_kind: str | None = Form(None),
     history_label: str | None = Form(None),
+    reference_folder: str | None = Form(None),
     user: dict[str, Any] = Depends(get_current_user),
 ):
     path = _require_project(user, project_id)
@@ -13798,16 +13799,26 @@ async def upload_file(
         }
 
     if is_reference:
-        dest = cad_service.unique_reference_path(path, file.filename or f"reference{suffix}")
+        folder = (reference_folder or "").strip() or None
+        try:
+            dest = cad_service.unique_reference_path(
+                path,
+                file.filename or f"reference{suffix}",
+                folder=folder,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         with dest.open("wb") as f:
             shutil.copyfileobj(file.file, f)
         project_store.touch_project(path)
+        folder_name = dest.parent.name if dest.parent.name in cad_service.REFERENCE_SUBFOLDERS else None
         _notify_project(
             project_id,
             {
                 "type": "reference.added",
                 "filename": dest.name,
                 "kind": cad_service.reference_kind(dest.name),
+                "folder": folder_name,
                 "url": f"/api/projects/{project_id}/files/{dest.name}",
                 "uploaded_filename": dest.name,
                 "by": user["display_name"],
@@ -13821,6 +13832,7 @@ async def upload_file(
             "url": f"/api/projects/{project_id}/files/{dest.name}",
             "timeline_index": None,
             "reference": True,
+            "folder": folder_name,
             "kind": cad_service.reference_kind(dest.name),
         }
 

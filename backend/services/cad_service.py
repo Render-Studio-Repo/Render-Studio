@@ -132,13 +132,22 @@ SUPPORTED_REFERENCE = {
     ".svg",
     ".tif",
     ".tiff",
+    ".webm",
+    ".mp4",
+    ".mov",
+    ".m4v",
 }
 REFERENCE_TEXT_SUFFIXES = {".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".html", ".htm", ".rtf"}
 REFERENCE_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tif", ".tiff"}
+REFERENCE_VIDEO_SUFFIXES = {".webm", ".mp4", ".mov", ".m4v"}
 REFERENCE_DIRNAME = "references"
 RENDERS_DIRNAME = "renders"
+# Nested folder under references/ for Quest / WebXR POV screenshots + clips.
+REFERENCE_AR_DIRNAME = "AR"
 MCMASTER_LIBRARY_DIRNAME = "mcmaster_library"
 MARKUP_FOLDER_NAMES = frozenset({REFERENCE_DIRNAME, RENDERS_DIRNAME})
+# Allowed one-level subfolders inside references/ (basename only).
+REFERENCE_SUBFOLDERS = frozenset({REFERENCE_AR_DIRNAME})
 
 DEFAULT_APPEARANCE_PALETTE = np.array(
     [
@@ -209,6 +218,44 @@ def references_dir(project_path: Path) -> Path:
     path = Path(project_path) / REFERENCE_DIRNAME
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def reference_subdir(project_path: Path, folder: str | None) -> Path:
+    """Return references/ or an allowed nested folder like references/AR/."""
+    root = references_dir(project_path)
+    name = str(folder or "").strip().strip("/\\")
+    if not name:
+        return root
+    safe = Path(name).name
+    if safe not in REFERENCE_SUBFOLDERS:
+        raise ValueError(f"Unknown reference folder: {safe}")
+    path = root / safe
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def ar_references_dir(project_path: Path) -> Path:
+    return reference_subdir(project_path, REFERENCE_AR_DIRNAME)
+
+
+def is_markup_path(project_path: Path, file_path: Path) -> bool:
+    """True when file lives under references/ (incl. AR/) or renders/."""
+    try:
+        rel = Path(file_path).resolve().relative_to(Path(project_path).resolve())
+    except ValueError:
+        return False
+    parts = rel.parts
+    if not parts:
+        return False
+    if parts[0] == RENDERS_DIRNAME:
+        return True
+    if parts[0] != REFERENCE_DIRNAME:
+        return False
+    if len(parts) == 2:
+        return True
+    if len(parts) == 3 and parts[1] in REFERENCE_SUBFOLDERS:
+        return True
+    return False
 
 
 def renders_dir(project_path: Path) -> Path:
@@ -447,6 +494,8 @@ def reference_kind(filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix in REFERENCE_IMAGE_SUFFIXES:
         return "image"
+    if suffix in REFERENCE_VIDEO_SUFFIXES:
+        return "video"
     if suffix == ".pdf":
         return "pdf"
     if suffix in REFERENCE_TEXT_SUFFIXES:
@@ -481,8 +530,23 @@ def find_step_source(project_path: Path, stem: str) -> Path | None:
 
 
 def resolve_project_file(project_path: Path, filename: str) -> Path | None:
-    """Resolve a basename in the project root, references/, or renders/ folder."""
-    safe = Path(filename).name
+    """Resolve a basename in the project root, references/ (+ AR/), or renders/."""
+    raw = str(filename or "").replace("\\", "/").strip()
+    if not raw or ".." in raw.split("/"):
+        return None
+    parts = [p for p in Path(raw).parts if p not in {".", ""}]
+    if len(parts) >= 2 and parts[0] == REFERENCE_DIRNAME:
+        candidate = Path(project_path).joinpath(*parts)
+        if candidate.is_file() and is_markup_path(project_path, candidate):
+            return candidate
+        return None
+    if len(parts) == 2 and parts[0] in REFERENCE_SUBFOLDERS:
+        candidate = Path(project_path) / REFERENCE_DIRNAME / parts[0] / parts[1]
+        if candidate.is_file():
+            return candidate
+        return None
+
+    safe = Path(raw).name
     if not safe or safe in {".", ".."}:
         return None
     root = Path(project_path) / safe
@@ -491,6 +555,10 @@ def resolve_project_file(project_path: Path, filename: str) -> Path | None:
     ref = Path(project_path) / REFERENCE_DIRNAME / safe
     if ref.is_file():
         return ref
+    for sub in sorted(REFERENCE_SUBFOLDERS):
+        nested = Path(project_path) / REFERENCE_DIRNAME / sub / safe
+        if nested.is_file():
+            return nested
     render = Path(project_path) / RENDERS_DIRNAME / safe
     if render.is_file():
         return render
@@ -600,24 +668,36 @@ def list_reference_files(project_path: Path) -> list[dict[str, Any]]:
     ref_root = Path(project_path) / REFERENCE_DIRNAME
     if not ref_root.is_dir():
         return refs
-    for f in sorted(ref_root.iterdir(), key=lambda p: p.name.lower()):
+
+    def _append_file(f: Path, *, folder: str | None = None) -> None:
         if not f.is_file():
-            continue
+            return
         if f.name.endswith(".markup.json"):
-            continue
+            return
         if f.suffix.lower() not in SUPPORTED_REFERENCE:
-            continue
+            return
+        rel_url = f"references/{folder}/{f.name}" if folder else f"references/{f.name}"
         refs.append(
             {
-                "id": f.stem,
+                "id": f"{folder}:{f.stem}" if folder else f.stem,
                 "name": f.name,
                 "stem": f.stem,
                 "format": f.suffix.lower().lstrip("."),
                 "kind": reference_kind(f.name),
                 "size": f.stat().st_size,
-                "url": f"references/{f.name}",
+                "url": rel_url,
+                "folder": folder,
+                "label": f.name,
             }
         )
+
+    for f in sorted(ref_root.iterdir(), key=lambda p: p.name.lower()):
+        if f.is_file():
+            _append_file(f)
+            continue
+        if f.is_dir() and f.name in REFERENCE_SUBFOLDERS:
+            for child in sorted(f.iterdir(), key=lambda p: p.name.lower(), reverse=True):
+                _append_file(child, folder=f.name)
     return refs
 
 
@@ -650,18 +730,29 @@ def list_render_files(project_path: Path) -> list[dict[str, Any]]:
     return items
 
 
-def unique_reference_path(project_path: Path, filename: str) -> Path:
-    dest_dir = references_dir(project_path)
+def unique_reference_path(
+    project_path: Path,
+    filename: str,
+    *,
+    folder: str | None = None,
+) -> Path:
+    dest_dir = reference_subdir(project_path, folder)
     safe = Path(filename).name or "reference.bin"
     dest = dest_dir / safe
-    if not dest.exists():
+    # Also avoid colliding with the same basename in references/ root or AR/.
+    def _taken(path: Path) -> bool:
+        if path.exists():
+            return True
+        return resolve_project_file(project_path, path.name) is not None
+
+    if not _taken(dest):
         return dest
     stem = dest.stem
     suffix = dest.suffix
     n = 2
     while True:
         candidate = dest_dir / f"{stem}_{n}{suffix}"
-        if not candidate.exists():
+        if not _taken(candidate):
             return candidate
         n += 1
 
@@ -674,7 +765,7 @@ def rename_reference_file(project_path: Path, old_filename: str, new_filename: s
     if Path(new).suffix.lower() not in SUPPORTED_REFERENCE:
         raise ValueError(f"Unsupported reference type. Use: {sorted(SUPPORTED_REFERENCE)}")
     src = resolve_project_file(project_path, old)
-    if src is None or src.parent.name not in MARKUP_FOLDER_NAMES:
+    if src is None or not is_markup_path(project_path, src):
         raise ValueError("Reference file not found")
     dest = src.with_name(new)
     if dest.exists() and dest.resolve() != src.resolve():
@@ -694,7 +785,7 @@ def rename_reference_file(project_path: Path, old_filename: str, new_filename: s
 
 def delete_reference_file(project_path: Path, filename: str) -> list[str]:
     src = resolve_project_file(project_path, filename)
-    if src is None or src.parent.name not in MARKUP_FOLDER_NAMES:
+    if src is None or not is_markup_path(project_path, src):
         raise FileNotFoundError(f"Cannot delete missing reference: {filename}")
     deleted = [src.name]
     markup = markup_sidecar_path(src)

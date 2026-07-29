@@ -45,7 +45,7 @@ import {
   clearSavedMeasureAnnotations,
   updateMeasureLivePreview,
   clearMeasureLivePreview,
-} from "./picking.js?v=20260715-fusion-edge-measure";
+} from "./picking.js?v=20260729-xr-edge";
 import {
   FUSION,
   setupSceneLighting,
@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-mobile-capture-x";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-mobile-capture-x";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-menu-fix";
+import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-gravity";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3097,6 +3097,11 @@ const viewportXR = createViewportXR({
       scene.traverse((o) => {
         if (o?.userData?.isFloor || o?.userData?.isShadowFloor) o.visible = false;
       });
+      try {
+        transformControls?.detach?.();
+        const helper = transformControls?.getHelper?.();
+        if (helper) helper.visible = false;
+      } catch (_) {}
     } catch (_) {}
   },
   restoreSceneChrome: () => {
@@ -3107,6 +3112,10 @@ const viewportXR = createViewportXR({
       scene.traverse((o) => {
         if (o?.userData?.isFloor || o?.userData?.isShadowFloor) o.visible = true;
       });
+      try {
+        const helper = transformControls?.getHelper?.();
+        if (helper) helper.visible = true;
+      } catch (_) {}
     } catch (_) {}
   },
   getExplorerItems: () => {
@@ -3145,6 +3154,52 @@ const viewportXR = createViewportXR({
       return "";
     }
   },
+  getProjectFiles: () => {
+    try {
+      const files = lastProjectFiles || [];
+      return files.slice(0, 12).map((f) => {
+        const name = typeof f === "string" ? f : (f?.name || f?.filename || "");
+        return {
+          id: name,
+          label: name,
+          name,
+          active: name === selectedFile,
+        };
+      }).filter((f) => f.id);
+    } catch (_) {
+      return [];
+    }
+  },
+  onUndo: () => {
+    try {
+      if (!undoViewportAction?.()) undoTimeline?.();
+    } catch (err) {
+      console.warn("[xr] undo", err);
+    }
+  },
+  onRedo: () => {
+    try {
+      if (!redoViewportAction?.()) redoTimeline?.();
+    } catch (err) {
+      console.warn("[xr] redo", err);
+    }
+  },
+  isTranscribing: () => {
+    try {
+      return !!document.querySelector(".prompt-mic-btn.mic-active");
+    } catch {
+      return false;
+    }
+  },
+  onTranscribeToggle: () => {
+    try {
+      const btn = document.querySelector('.prompt-mic-btn[data-mic-target="prompt-input"]')
+        || document.querySelector(".prompt-mic-btn");
+      btn?.click();
+    } catch (err) {
+      console.warn("[xr] transcribe", err);
+    }
+  },
   onPromptSubmit: () => {
     try {
       document.getElementById("btn-prompt")?.click();
@@ -3152,7 +3207,7 @@ const viewportXR = createViewportXR({
       console.warn("[xr] prompt submit failed", err);
     }
   },
-  onToolAction: (id) => {
+  onToolAction: (id, payload) => {
     try {
       if (id === "screenshot") {
         void captureXrScreenshotForShare();
@@ -3201,6 +3256,43 @@ const viewportXR = createViewportXR({
       }
       if (id === "bambu") {
         document.getElementById("btn-export-model")?.click();
+        setTimeout(() => document.querySelector(".file-export-bambu")?.click(), 250);
+        return;
+      }
+      if (id === "prompt_clear") {
+        const ta = document.getElementById("prompt-input");
+        if (ta) {
+          ta.value = "";
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        return;
+      }
+      if (id === "link_part") {
+        const name = selectedFile;
+        if (!name) return;
+        const ta = document.getElementById("prompt-input");
+        if (ta) {
+          const add = `@${String(name).replace(/\s+/g, "_")} `;
+          ta.value = (ta.value ? ta.value.replace(/\s*$/, " ") : "") + add;
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        return;
+      }
+      if (id === "link_file") {
+        const name = payload || selectedFile;
+        if (!name) return;
+        const ta = document.getElementById("prompt-input");
+        if (ta) {
+          const add = `@${String(name).replace(/\s+/g, "_")} `;
+          ta.value = (ta.value ? ta.value.replace(/\s*$/, " ") : "") + add;
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        // Also try loading the file as the active model
+        try {
+          if (typeof selectAssemblyComponent === "function") {
+            selectAssemblyComponent(name, { fitView: false, autoGizmo: false });
+          }
+        } catch (_) {}
         return;
       }
     } catch (err) {

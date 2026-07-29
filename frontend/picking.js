@@ -1719,6 +1719,44 @@ export function getMeasureAnnotGroup() { return measureAnnotGroup; }
 export function getMeasureHoverGroup() { return measureHoverGroup; }
 export function getSavedMeasureGroup() { return savedMeasureGroup; }
 
+
+/** World-space edge nearest to a mesh raycast hit (for XR measure). */
+export function nearestWorldEdgeFromHit(hit) {
+  if (!hit?.face || !hit?.object?.geometry?.attributes?.position) return null;
+  const geom = hit.object.geometry;
+  const pos = geom.attributes.position;
+  const click = hit.point.clone();
+  const edges = [
+    [hit.face.a, hit.face.b],
+    [hit.face.b, hit.face.c],
+    [hit.face.c, hit.face.a],
+  ];
+  let best = null;
+  let bestD = Infinity;
+  for (const [i, j] of edges) {
+    const v0 = new THREE.Vector3().fromBufferAttribute(pos, i);
+    const v1 = new THREE.Vector3().fromBufferAttribute(pos, j);
+    hit.object.localToWorld(v0);
+    hit.object.localToWorld(v1);
+    const line = new THREE.Line3(v0, v1);
+    const closest = new THREE.Vector3();
+    line.closestPointToPoint(click, true, closest);
+    const d = closest.distanceTo(click);
+    if (d < bestD) {
+      bestD = d;
+      best = {
+        start: v0.clone(),
+        end: v1.clone(),
+        mid: v0.clone().add(v1).multiplyScalar(0.5),
+        closest: closest.clone(),
+        length: v0.distanceTo(v1),
+        pick_distance: d,
+      };
+    }
+  }
+  return best;
+}
+
 export { scaleForMesh };
 
 function _refVec(ref) {

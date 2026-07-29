@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
 import { XRHandModelFactory } from "three/addons/webxr/XRHandModelFactory.js";
+import { nearestWorldEdgeFromHit } from "./picking.js?v=20260729-xr-edge";
 
 const LS_POSE = "render3d:xr-room-pose";
 const LS_SPAWN = "render3d:xr-spawn-preset";
@@ -22,84 +23,52 @@ const SPAWN_PRESETS = [
 ];
 
 const QUICK_DOCK = [
-  { id: "menu", label: "Menu", color: 0x0ea5e9, glyph: "UI" },
-  { id: "grab", label: "Move", color: 0x3b82f6, glyph: "Mv" },
-  { id: "rotate", label: "Rotate", color: 0xf97316, glyph: "Ro" },
-  { id: "measure", label: "Measure", color: 0xf59e0b, glyph: "Me" },
-  { id: "exit", label: "Exit", color: 0xef4444, glyph: "X" },
+  { id: "menu", label: "Menu", color: 0x94a3b8, glyph: "☰", icon: "menu" },
+  { id: "undo", label: "Undo", color: 0x64748b, glyph: "↶", icon: "undo" },
+  { id: "redo", label: "Redo", color: 0x64748b, glyph: "↷", icon: "redo" },
+  { id: "grab", label: "Move", color: 0x3b82f6, glyph: "✥", icon: "move" },
+  { id: "measure", label: "Measure", color: 0xf59e0b, glyph: "⌖", icon: "measure" },
+  { id: "exit", label: "Exit", color: 0xef4444, glyph: "✕", icon: "exit" },
 ];
-
-// Back-compat alias used by older dock loops
 const DOCK_TOOLS = QUICK_DOCK;
 
 const MENU_TABS = [
   { id: "projects", label: "Projects" },
-  { id: "parts", label: "Parts" },
+  { id: "parts", label: "Models" },
+  { id: "files", label: "Files" },
+  { id: "ai", label: "AI" },
   { id: "tools", label: "Tools" },
   { id: "view", label: "View" },
 ];
 
 const TOOL_ACTIONS = [
-  { id: "front", label: "Place in front", section: "tools" },
-  { id: "place", label: "Placement presets", section: "tools" },
-  { id: "zoom_in", label: "Scale up", section: "tools" },
-  { id: "zoom_out", label: "Scale down", section: "tools" },
-  { id: "restore", label: "Restore saved pose", section: "tools" },
-  { id: "export", label: "Export model", section: "tools" },
-  { id: "bambu", label: "Send to Bambu", section: "tools" },
-  { id: "prompt", label: "Run AI prompt", section: "tools" },
-  { id: "fit", label: "Fit / recenter", section: "view" },
-  { id: "explode", label: "Toggle explode", section: "view" },
-  { id: "section", label: "Toggle section", section: "view" },
-  { id: "wireframe", label: "Toggle wireframe", section: "view" },
-  { id: "units", label: "Cycle units", section: "view" },
-  { id: "screenshot", label: "Screenshot → Share to X", section: "view" },
-  { id: "record", label: "Record video → Share to X", section: "view" },
+  { id: "front", label: "Place in front", section: "tools", icon: "front" },
+  { id: "place", label: "Placement presets", section: "tools", icon: "place" },
+  { id: "zoom_in", label: "Scale up", section: "tools", icon: "plus" },
+  { id: "zoom_out", label: "Scale down", section: "tools", icon: "minus" },
+  { id: "restore", label: "Restore saved pose", section: "tools", icon: "restore" },
+  { id: "export", label: "Export model", section: "tools", icon: "export" },
+  { id: "bambu", label: "Send to Bambu", section: "tools", icon: "bambu" },
+  { id: "fit", label: "Fit / recenter", section: "view", icon: "fit" },
+  { id: "explode", label: "Toggle explode", section: "view", icon: "explode" },
+  { id: "section", label: "Toggle section", section: "view", icon: "section" },
+  { id: "wireframe", label: "Toggle wireframe", section: "view", icon: "wire" },
+  { id: "units", label: "Cycle units", section: "view", icon: "units" },
+  { id: "screenshot", label: "Screenshot → Share", section: "view", icon: "cam" },
+  { id: "record", label: "Record video", section: "view", icon: "rec" },
 ];
 
-/** Canvas layout for the XR console — keep hit-testing in sync with drawConsoleCanvas. */
 const MENU_CANVAS = {
-  w: 1280,
-  h: 900,
-  headerEnd: 110,
-  tabStart: 128,
-  tabEnd: 192,
+  w: 1400,
+  h: 980,
+  headerEnd: 100,
+  tabStart: 118,
+  tabEnd: 188,
   listTop: 220,
-  rowH: 70,
-  footerTop: 816,
+  rowH: 78,
+  footerTop: 900,
 };
-const MENU_PLANE = { w: 0.62, h: 0.44 };
-function makeIconTexture(glyph, bgHex, label) {
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  const c = new THREE.Color(bgHex);
-  // Soft rounded square (modern chip)
-  const r = 48;
-  ctx.fillStyle = `#${c.getHexString()}`;
-  roundRect(ctx, 28, 28, 200, 200, r);
-  ctx.fill();
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
-  roundRect(ctx, 28, 28, 200, 200, r);
-  ctx.stroke();
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const ascii = String(glyph || "?").replace(/[^\x20-\x7E]/g, "").slice(0, 2) || "?";
-  ctx.font = "bold 92px Arial,sans-serif";
-  ctx.fillText(ascii, 128, label ? 112 : 128);
-  if (label) {
-    ctx.font = "bold 32px Arial,sans-serif";
-    ctx.fillText(String(label).slice(0, 9), 128, 178);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
+const MENU_PLANE = { w: 0.72, h: 0.5 };
 
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -112,14 +81,129 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+function drawGlyphIcon(ctx, icon, cx, cy, size, color = "#e2e8f0") {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(2.5, size * 0.08);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  const s = size * 0.32;
+  if (icon === "menu") {
+    for (const dy of [-s * 0.7, 0, s * 0.7]) {
+      ctx.beginPath();
+      ctx.moveTo(cx - s, cy + dy);
+      ctx.lineTo(cx + s, cy + dy);
+      ctx.stroke();
+    }
+  } else if (icon === "undo") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, s, Math.PI * 0.2, Math.PI * 1.4, true);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.2, cy - s);
+    ctx.lineTo(cx - s, cy - s * 0.35);
+    ctx.lineTo(cx - s * 0.05, cy - s * 0.25);
+    ctx.fill();
+  } else if (icon === "redo") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, s, Math.PI * 0.8, Math.PI * -0.4, false);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.2, cy - s);
+    ctx.lineTo(cx + s, cy - s * 0.35);
+    ctx.lineTo(cx + s * 0.05, cy - s * 0.25);
+    ctx.fill();
+  } else if (icon === "move") {
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
+    ctx.stroke();
+  } else if (icon === "measure") {
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy + s * 0.4);
+    ctx.lineTo(cx + s, cy - s * 0.4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx - s, cy + s * 0.4, s * 0.22, 0, Math.PI * 2);
+    ctx.arc(cx + s, cy - s * 0.4, s * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (icon === "exit") {
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.7, cy - s * 0.7);
+    ctx.lineTo(cx + s * 0.7, cy + s * 0.7);
+    ctx.moveTo(cx + s * 0.7, cy - s * 0.7);
+    ctx.lineTo(cx - s * 0.7, cy + s * 0.7);
+    ctx.stroke();
+  } else if (icon === "mic") {
+    roundRect(ctx, cx - s * 0.35, cy - s, s * 0.7, s * 1.2, s * 0.35);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy + s * 0.35, s * 0.7, 0, Math.PI, false);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + s * 1.05); ctx.lineTo(cx, cy + s * 1.4);
+    ctx.moveTo(cx - s * 0.45, cy + s * 1.4); ctx.lineTo(cx + s * 0.45, cy + s * 1.4);
+    ctx.stroke();
+  } else if (icon === "ai") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx - s * 0.3, cy - s * 0.1, s * 0.15, 0, Math.PI * 2);
+    ctx.arc(cx + s * 0.3, cy - s * 0.1, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // default diamond
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s);
+    ctx.lineTo(cx + s, cy);
+    ctx.lineTo(cx, cy + s);
+    ctx.lineTo(cx - s, cy);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function makeIconTexture(glyph, bgHex, label, icon = null) {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  // Brushed metal disc
+  const g = ctx.createRadialGradient(90, 80, 10, 128, 128, 120);
+  g.addColorStop(0, "#f8fafc");
+  g.addColorStop(0.35, "#94a3b8");
+  g.addColorStop(0.7, "#334155");
+  g.addColorStop(1, "#0f172a");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(128, 128, 118, 0, Math.PI * 2);
+  ctx.fill();
+  const c = new THREE.Color(bgHex);
+  ctx.strokeStyle = `#${c.getHexString()}`;
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(128, 128, 112, 0, Math.PI * 2);
+  ctx.stroke();
+  drawGlyphIcon(ctx, icon || "move", 128, 118, 140, "#f8fafc");
+  if (label) {
+    ctx.fillStyle = "rgba(248,250,252,0.92)";
+    ctx.font = "bold 28px Arial,sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(label).slice(0, 8), 128, 200);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function drawPanelCanvas(title, lines, footer = "") {
-  return drawConsoleCanvas({
-    title,
-    tabs: [],
-    activeTab: "",
-    lines,
-    footer,
-  });
+  return drawConsoleCanvas({ title, tabs: [], activeTab: "", lines, footer });
 }
 
 function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], footer = "" }) {
@@ -130,80 +214,118 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
   canvas.height = height;
   const ctx = canvas.getContext("2d");
 
-  // Deep glass panel
-  ctx.fillStyle = "rgba(8,12,22,0.94)";
-  roundRect(ctx, 0, 0, width, height, 36);
+  // Metallic chassis
+  const body = ctx.createLinearGradient(0, 0, width, height);
+  body.addColorStop(0, "#1e293b");
+  body.addColorStop(0.35, "#0f172a");
+  body.addColorStop(0.7, "#111827");
+  body.addColorStop(1, "#020617");
+  ctx.fillStyle = body;
+  roundRect(ctx, 0, 0, width, height, 28);
   ctx.fill();
-  // Accent border
-  ctx.strokeStyle = "rgba(56,189,248,0.45)";
-  ctx.lineWidth = 4;
-  roundRect(ctx, 2, 2, width - 4, height - 4, 34);
+
+  // Chrome rim
+  const rim = ctx.createLinearGradient(0, 0, width, 0);
+  rim.addColorStop(0, "#94a3b8");
+  rim.addColorStop(0.25, "#e2e8f0");
+  rim.addColorStop(0.5, "#38bdf8");
+  rim.addColorStop(0.75, "#e2e8f0");
+  rim.addColorStop(1, "#64748b");
+  ctx.strokeStyle = rim;
+  ctx.lineWidth = 5;
+  roundRect(ctx, 3, 3, width - 6, height - 6, 26);
   ctx.stroke();
 
-  // Header gradient bar
-  const g = ctx.createLinearGradient(0, 0, width, 0);
-  g.addColorStop(0, "#0ea5e9");
-  g.addColorStop(0.55, "#6366f1");
-  g.addColorStop(1, "#22d3ee");
-  ctx.fillStyle = g;
-  roundRect(ctx, 0, 0, width, 110, 36);
+  // Header metal bar
+  const hg = ctx.createLinearGradient(0, 0, width, 0);
+  hg.addColorStop(0, "#334155");
+  hg.addColorStop(0.4, "#64748b");
+  hg.addColorStop(0.6, "#94a3b8");
+  hg.addColorStop(1, "#1e293b");
+  ctx.fillStyle = hg;
+  roundRect(ctx, 0, 0, width, MENU_CANVAS.headerEnd, 28);
   ctx.fill();
-  ctx.fillStyle = "#0ea5e9";
-  ctx.fillRect(0, 70, width, 40);
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, MENU_CANVAS.headerEnd - 28, width, 28);
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 52px Arial,sans-serif";
+  ctx.fillStyle = "#f8fafc";
+  ctx.font = "bold 48px Arial,sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(String(title || "Render Studio").slice(0, 28), 48, 55);
+  ctx.fillText(String(title || "Render Studio").slice(0, 32), 48, 48);
+  ctx.fillStyle = "#38bdf8";
+  ctx.font = "bold 22px Arial,sans-serif";
+  ctx.fillText("SPATIAL WORKSPACE", 48, 82);
 
-  // Tabs
   if (tabs.length) {
-    const tabW = Math.min(220, (width - 80) / tabs.length);
+    const tabW = Math.min(200, (width - 72) / tabs.length - 10);
     tabs.forEach((tab, i) => {
-      const x = 40 + i * (tabW + 12);
+      const x = 36 + i * (tabW + 10);
       const on = tab.id === activeTab;
-      ctx.fillStyle = on ? "rgba(255,255,255,0.22)" : "rgba(15,23,42,0.55)";
-      roundRect(ctx, x, 128, tabW, 64, 18);
+      const tg = ctx.createLinearGradient(x, MENU_CANVAS.tabStart, x, MENU_CANVAS.tabEnd);
+      if (on) {
+        tg.addColorStop(0, "#38bdf8");
+        tg.addColorStop(1, "#0284c7");
+      } else {
+        tg.addColorStop(0, "#334155");
+        tg.addColorStop(1, "#1e293b");
+      }
+      ctx.fillStyle = tg;
+      roundRect(ctx, x, MENU_CANVAS.tabStart, tabW, MENU_CANVAS.tabEnd - MENU_CANVAS.tabStart, 14);
       ctx.fill();
-      ctx.fillStyle = on ? "#e0f2fe" : "#94a3b8";
-      ctx.font = on ? "bold 34px Arial,sans-serif" : "32px Arial,sans-serif";
+      ctx.fillStyle = on ? "#0f172a" : "#cbd5e1";
+      ctx.font = on ? "bold 30px Arial,sans-serif" : "28px Arial,sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(String(tab.label).slice(0, 12), x + tabW / 2, 160);
+      ctx.fillText(String(tab.label).slice(0, 12), x + tabW / 2, (MENU_CANVAS.tabStart + MENU_CANVAS.tabEnd) / 2);
     });
   }
 
   const listTop = tabs.length ? MENU_CANVAS.listTop : 150;
-  const rowH = MENU_CANVAS.rowH;
   lines.forEach((line, i) => {
-    const y = listTop + i * rowH;
-    if (y > height - 110) return;
-    ctx.fillStyle = line.active ? "rgba(14,165,233,0.22)" : (i % 2 ? "rgba(30,41,59,0.55)" : "rgba(15,23,42,0.25)");
-    roundRect(ctx, 36, y - 28, width - 72, 58, 14);
-    ctx.fill();
+    const y = listTop + i * MENU_CANVAS.rowH;
+    if (y > MENU_CANVAS.footerTop - 20) return;
+    const rowG = ctx.createLinearGradient(40, y - 30, width - 40, y + 30);
     if (line.active) {
-      ctx.fillStyle = "#38bdf8";
-      roundRect(ctx, 36, y - 28, 10, 58, 14);
-      ctx.fill();
+      rowG.addColorStop(0, "rgba(56,189,248,0.28)");
+      rowG.addColorStop(1, "rgba(14,165,233,0.12)");
+    } else {
+      rowG.addColorStop(0, i % 2 ? "rgba(51,65,85,0.55)" : "rgba(30,41,59,0.35)");
+      rowG.addColorStop(1, "rgba(15,23,42,0.5)");
     }
+    ctx.fillStyle = rowG;
+    roundRect(ctx, 36, y - 30, width - 72, 64, 16);
+    ctx.fill();
+    // Icon badge
+    const ig = ctx.createRadialGradient(78, y, 4, 78, y, 26);
+    ig.addColorStop(0, "#e2e8f0");
+    ig.addColorStop(1, "#475569");
+    ctx.fillStyle = ig;
+    ctx.beginPath();
+    ctx.arc(78, y, 24, 0, Math.PI * 2);
+    ctx.fill();
+    drawGlyphIcon(ctx, line.icon || (line.kind === "project" ? "front" : line.kind === "part" ? "move" : "ai"), 78, y, 44, "#0f172a");
     ctx.fillStyle = line.active ? "#f0f9ff" : "#e2e8f0";
-    ctx.font = line.active ? "bold 36px Arial,sans-serif" : "34px Arial,sans-serif";
+    ctx.font = line.active ? "bold 34px Arial,sans-serif" : "32px Arial,sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(String(line.label || "").slice(0, 48), 64, y + 4);
+    ctx.fillText(String(line.label || "").slice(0, 46), 120, y + 2);
   });
 
   if (footer) {
-    ctx.fillStyle = "rgba(15,23,42,0.9)";
-    ctx.fillRect(0, height - 84, width, 84);
+    const fg = ctx.createLinearGradient(0, height - 80, 0, height);
+    fg.addColorStop(0, "#1e293b");
+    fg.addColorStop(1, "#020617");
+    ctx.fillStyle = fg;
+    ctx.fillRect(0, height - 80, width, 80);
     ctx.fillStyle = "#7dd3fc";
-    ctx.font = "bold 30px Arial,sans-serif";
+    ctx.font = "bold 28px Arial,sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(String(footer).slice(0, 70), width / 2, height - 42);
+    ctx.fillText(String(footer).slice(0, 78), width / 2, height - 40);
   }
   return canvas;
 }
 
 export function createViewportXR(opts) {
+
 
   const {
     renderer,
@@ -225,9 +347,14 @@ export function createViewportXR(opts) {
     onExplorerSelect = null,
     getProjects = null,
     onOpenProject = null,
+    getProjectFiles = null,
     getPromptDraft = null,
     onPromptSubmit = null,
     onToolAction = null,
+    onUndo = null,
+    onRedo = null,
+    onTranscribeToggle = null,
+    isTranscribing = null,
   } = opts;
 
   let supported = false;
@@ -299,8 +426,10 @@ export function createViewportXR(opts) {
   const measureGroup = new THREE.Group();
   xrHud.add(measureGroup);
   const measurePoints = [];
+  const measureEdges = [];
   let measureLine = null;
   let measureLabel = null;
+  let measureHoverEdge = null;
 
   // Left-controller tool dock (Meta-style palette on the grip)
   const dock = new THREE.Group();
@@ -330,7 +459,7 @@ export function createViewportXR(opts) {
     const label = new THREE.Mesh(
       new THREE.CircleGeometry(BTN_R * 0.9, 32),
       new THREE.MeshBasicMaterial({
-        map: makeIconTexture(tool.glyph, tool.color, tool.label),
+        map: makeIconTexture(tool.glyph, tool.color, tool.label, tool.icon),
         transparent: true,
         side: THREE.DoubleSide,
         depthTest: false,
@@ -764,6 +893,14 @@ export function createViewportXR(opts) {
       openMenuConsole({ tab: menuTab || "projects" });
       return;
     }
+    if (id === "undo") {
+      try { onUndo?.(); } catch (err) { console.warn("[viewport-xr] undo", err); }
+      return;
+    }
+    if (id === "redo") {
+      try { onRedo?.(); } catch (err) { console.warn("[viewport-xr] redo", err); }
+      return;
+    }
     if (id === "explorer") {
       openMenuConsole({ tab: "projects" });
       return;
@@ -904,7 +1041,10 @@ export function createViewportXR(opts) {
         }),
       );
       const tabY = MENU_PLANE.h / 2 - ((MENU_CANVAS.tabStart + MENU_CANVAS.tabEnd) / 2 / MENU_CANVAS.h) * MENU_PLANE.h;
-      hit.position.set(-0.22 + i * 0.145, tabY, 0.003);
+      const span = MENU_PLANE.w - 0.06;
+      const tabW = span / Math.max(MENU_TABS.length, 1);
+      hit.scale.set(tabW / 0.13, 1, 1);
+      hit.position.set(-MENU_PLANE.w / 2 + 0.03 + tabW * (i + 0.5), tabY, 0.003);
       hit.renderOrder = 2202;
       hit.frustumCulled = false;
       hit.userData.xrMenuTab = tab.id;
@@ -929,61 +1069,71 @@ export function createViewportXR(opts) {
   function menuLinesForTab(tab) {
     if (tab === "projects") {
       let items = [];
-      try {
-        items = (typeof getProjects === "function" && getProjects()) || [];
-      } catch {
-        items = [];
-      }
-      if (!items.length) {
-        return [{ id: "", label: "No projects yet — create one on desktop", active: false, kind: "hint" }];
-      }
-      return items.slice(0, 10).map((it) => ({
+      try { items = (typeof getProjects === "function" && getProjects()) || []; } catch { items = []; }
+      if (!items.length) return [{ id: "", label: "No projects yet", active: false, kind: "hint", icon: "front" }];
+      return items.slice(0, 9).map((it) => ({
         id: it.id,
         label: it.label || it.name || it.id,
         active: !!it.active,
         kind: "project",
+        icon: "front",
       }));
     }
     if (tab === "parts") {
       let items = [];
-      try {
-        items = (typeof getExplorerItems === "function" && getExplorerItems()) || [];
-      } catch {
-        items = [];
-      }
-      if (!items.length) {
-        return [{ id: "", label: "No parts in this project", active: false, kind: "hint" }];
-      }
-      return items.slice(0, 10).map((it) => ({
+      try { items = (typeof getExplorerItems === "function" && getExplorerItems()) || []; } catch { items = []; }
+      if (!items.length) return [{ id: "", label: "No models in this project", active: false, kind: "hint", icon: "move" }];
+      return items.slice(0, 9).map((it) => ({
         id: it.id || it.name || "",
         label: it.label || it.name || it.id,
         active: !!it.active,
         kind: "part",
+        icon: "move",
       }));
+    }
+    if (tab === "files") {
+      let items = [];
+      try { items = (typeof getProjectFiles === "function" && getProjectFiles()) || []; } catch { items = []; }
+      if (!items.length) return [{ id: "", label: "No files — upload on desktop/mobile", active: false, kind: "hint", icon: "export" }];
+      return items.slice(0, 9).map((it) => ({
+        id: it.id || it.name || "",
+        label: it.label || it.name || it.id,
+        active: !!it.active,
+        kind: "file",
+        icon: "export",
+      }));
+    }
+    if (tab === "ai") {
+      let draft = "";
+      try { draft = String(getPromptDraft?.() || ""); } catch { draft = ""; }
+      const listening = !!(typeof isTranscribing === "function" && isTranscribing());
+      const preview = draft.trim() ? draft.trim().slice(0, 42) : "(empty prompt)";
+      return [
+        { id: "transcribe", label: listening ? "Stop transcribe" : "Transcribe (mic)", active: listening, kind: "action", icon: "mic" },
+        { id: "prompt_preview", label: preview, active: false, kind: "hint", icon: "ai" },
+        { id: "prompt", label: "Run AI prompt", active: false, kind: "action", icon: "ai" },
+        { id: "prompt_clear", label: "Clear prompt", active: false, kind: "action", icon: "exit" },
+        { id: "link_part", label: "Link selected model to prompt", active: false, kind: "action", icon: "move" },
+      ];
     }
     if (tab === "tools") {
       return TOOL_ACTIONS.filter((a) => a.section === "tools").map((a) => ({
-        id: a.id,
-        label: a.label,
-        active: false,
-        kind: "action",
+        id: a.id, label: a.label, active: false, kind: "action", icon: a.icon || "move",
       }));
     }
-    // view
     return TOOL_ACTIONS.filter((a) => a.section === "view").map((a) => ({
-      id: a.id,
-      label: a.label,
-      active: false,
-      kind: "action",
+      id: a.id, label: a.label, active: false, kind: "action", icon: a.icon || "fit",
     }));
   }
 
   function defaultMenuFooter() {
     if (menuFooterHint) return menuFooterHint;
-    if (menuTab === "projects") return "Trigger a project to load · grab header to move";
-    if (menuTab === "parts") return "Trigger a part to select · grab header to move";
-    if (menuTab === "view") return "Screenshot / Record live here · Share to X after capture";
-    return "Trigger a tool · squeeze both grips to resize model";
+    if (menuTab === "projects") return "Load any project · grab metal header to move panel";
+    if (menuTab === "parts") return "Switch models in this project";
+    if (menuTab === "files") return "Open / link project files";
+    if (menuTab === "ai") return "Transcribe with mic · run prompt · link models";
+    if (menuTab === "view") return "Capture & view tools · Share to X after capture";
+    return "Tools · squeeze both grips to resize · undo/redo on left controller";
   }
 
   function openMenuConsole(opts = {}) {
@@ -993,7 +1143,7 @@ export function createViewportXR(opts) {
     const lines = menuLinesForTab(menuTab);
     panel.lines = lines;
     const canvas = drawConsoleCanvas({
-      title: "Render Studio XR",
+      title: "RENDER STUDIO",
       tabs: MENU_TABS,
       activeTab: menuTab,
       lines,
@@ -1016,6 +1166,8 @@ export function createViewportXR(opts) {
 
   function clearMeasure() {
     measurePoints.length = 0;
+    measureEdges.length = 0;
+    measureHoverEdge = null;
     while (measureGroup.children.length) {
       const c = measureGroup.children.pop();
       c.geometry?.dispose?.();
@@ -1095,9 +1247,106 @@ export function createViewportXR(opts) {
     const mesh = getLiveMesh();
     if (mesh) {
       const hits = raycaster.intersectObject(mesh, true).filter((h) => h.object.isMesh);
-      if (hits.length) return { kind: "mesh", point: hits[0].point.clone() };
+      if (hits.length) {
+        const hit = hits[0];
+        if (activeTool === "measure") {
+          try {
+            const edge = nearestWorldEdgeFromHit(hit);
+            if (edge && edge.pick_distance < Math.max(0.04, edge.length * 0.35)) {
+              return { kind: "edge", edge, point: edge.closest.clone() };
+            }
+          } catch (err) {
+            console.warn("[viewport-xr] edge snap", err);
+          }
+        }
+        return { kind: "mesh", point: hit.point.clone() };
+      }
     }
     return null;
+  }
+
+  function closestPointsOnSegments(a0, a1, b0, b1) {
+    // Robust segment-segment closest points
+    const u = a1.clone().sub(a0);
+    const v = b1.clone().sub(b0);
+    const w0 = a0.clone().sub(b0);
+    const a = u.dot(u);
+    const b = u.dot(v);
+    const c = v.dot(v);
+    const d = u.dot(w0);
+    const e = v.dot(w0);
+    const denom = a * c - b * b;
+    let sc, tc;
+    if (denom < 1e-12) {
+      sc = 0;
+      tc = (b > c ? d / b : e / c);
+    } else {
+      sc = (b * e - c * d) / denom;
+      tc = (a * e - b * d) / denom;
+    }
+    sc = THREE.MathUtils.clamp(sc, 0, 1);
+    tc = THREE.MathUtils.clamp(tc, 0, 1);
+    const pa = a0.clone().addScaledVector(u, sc);
+    const pb = b0.clone().addScaledVector(v, tc);
+    return { pa, pb, dist: pa.distanceTo(pb) };
+  }
+
+  function addMeasureEdgeVisual(edge, color = 0xfbbf24) {
+    const geo = new THREE.BufferGeometry().setFromPoints([edge.start, edge.end]);
+    const line = new THREE.Line(
+      geo,
+      new THREE.LineBasicMaterial({ color, depthTest: false, linewidth: 2 }),
+    );
+    line.renderOrder = 2600;
+    measureGroup.add(line);
+    const ends = [edge.start, edge.end];
+    for (const p of ends) {
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.008, 10, 8),
+        new THREE.MeshBasicMaterial({ color, depthTest: false }),
+      );
+      m.position.copy(p);
+      m.renderOrder = 2601;
+      measureGroup.add(m);
+    }
+  }
+
+  function finishEdgeMeasure() {
+    if (measureEdges.length < 2) return;
+    const [e0, e1] = measureEdges;
+    const { pa, pb, dist } = closestPointsOnSegments(e0.start, e0.end, e1.start, e1.end);
+    measureLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([pa, pb]),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, depthTest: false }),
+    );
+    measureLine.renderOrder = 2610;
+    measureGroup.add(measureLine);
+    const worldDist = dist / Math.max(presentationScale, 1e-9);
+    const mm = worldDist * (Number(getMmPerUnit?.()) || 1);
+    const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(2)} mm`;
+    const c = document.createElement("canvas");
+    c.width = 640;
+    c.height = 140;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(15,23,42,0.92)";
+    ctx.fillRect(0, 0, 640, 140);
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, 632, 132);
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 54px Arial,sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(text, 320, 70);
+    ctx.fillStyle = "#7dd3fc";
+    ctx.font = "bold 28px Arial,sans-serif";
+    ctx.fillText("edge distance", 320, 112);
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }),
+    );
+    sp.scale.set(0.32, 0.07, 1);
+    sp.position.copy(pa).lerp(pb, 0.5);
+    measureGroup.add(sp);
+    measureLabel = sp;
   }
 
   function handleSelect(controller) {
@@ -1153,6 +1402,40 @@ export function createViewportXR(opts) {
         }
         return;
       }
+      if (line?.kind === "file" || menuTab === "files") {
+        if (line?.id) {
+          try {
+            onExplorerSelect?.(line.id);
+            onToolAction?.("link_file", line.id);
+          } catch (err) {
+            console.warn("[viewport-xr] file select", err);
+          }
+          openMenuConsole({ tab: "files", keepPose: true });
+        }
+        return;
+      }
+      if (menuTab === "ai") {
+        if (line?.id === "transcribe") {
+          try { onTranscribeToggle?.(); } catch (err) { console.warn("[viewport-xr] mic", err); }
+          setTimeout(() => openMenuConsole({ tab: "ai", keepPose: true }), 200);
+          return;
+        }
+        if (line?.id === "prompt_clear") {
+          try { onToolAction?.("prompt_clear"); } catch (_) {}
+          openMenuConsole({ tab: "ai", keepPose: true });
+          return;
+        }
+        if (line?.id === "link_part") {
+          try { onToolAction?.("link_part"); } catch (_) {}
+          openMenuConsole({ tab: "ai", keepPose: true });
+          return;
+        }
+        if (line?.id === "prompt") {
+          try { onPromptSubmit?.(); } catch (_) {}
+          return;
+        }
+        return;
+      }
       // tools / view actions stay inside the general Menu console
       if (line?.id === "front" || line?.id === "place" || line?.id === "zoom_in" || line?.id === "zoom_out" || line?.id === "restore") {
         setTool(line.id);
@@ -1179,11 +1462,18 @@ export function createViewportXR(opts) {
       openPlacePanel();
       return;
     }
-    if (activeTool === "measure" && hit.kind === "mesh") {
-      if (measurePoints.length >= 2) clearMeasure();
+    if (activeTool === "measure" && (hit.kind === "edge" || hit.kind === "mesh")) {
+      if (measureEdges.length >= 2) clearMeasure();
+      if (hit.kind === "edge" && hit.edge) {
+        measureEdges.push(hit.edge);
+        addMeasureEdgeVisual(hit.edge, measureEdges.length === 1 ? 0xfbbf24 : 0x38bdf8);
+        if (measureEdges.length === 2) finishEdgeMeasure();
+        return;
+      }
+      // Fallback: point pick if no edge snap
       measurePoints.push(hit.point);
       const m = new THREE.Mesh(
-        new THREE.SphereGeometry(0.012, 12, 10),
+        new THREE.SphereGeometry(0.01, 12, 10),
         new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false }),
       );
       m.position.copy(hit.point);
@@ -1199,18 +1489,15 @@ export function createViewportXR(opts) {
         const mm = dist * (Number(getMmPerUnit?.()) || 1);
         const text = typeof formatLength === "function" ? formatLength(mm) : `${mm.toFixed(1)} mm`;
         const c = document.createElement("canvas");
-        c.width = 512;
-        c.height = 128;
+        c.width = 512; c.height = 128;
         const ctx = c.getContext("2d");
-        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fillStyle = "rgba(15,23,42,0.9)";
         ctx.fillRect(0, 0, 512, 128);
         ctx.fillStyle = "#fff";
-        ctx.font = "bold 56px system-ui";
+        ctx.font = "bold 56px Arial,sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(text, 256, 80);
-        const sp = new THREE.Sprite(
-          new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }),
-        );
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
         sp.scale.set(0.28, 0.07, 1);
         sp.position.copy(a).lerp(b, 0.5);
         measureGroup.add(sp);
