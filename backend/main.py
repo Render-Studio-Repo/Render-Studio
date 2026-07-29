@@ -18750,25 +18750,19 @@ Rules for improved_prompt:
 
 IMPROVE_MESH_PROMPT_SYSTEM = """You rewrite user prompts into stronger Mesh-mode prompts for Render Studio (img2threejs).
 
-Mesh mode builds a procedural Three.js mesh for viewport rendering — named mesh parts with PBR materials — then exports GLB.
-Your job is ONLY to improve how the meshes and their materials should look when rendered in the viewport.
-It is NOT parametric CAD/STEP, NOT Mode 2.0 feature trees, NOT manufacturing/wall-thickness/tolerances, and NOT a photoreal camera/environment brief of an existing CAD model.
+Mesh mode rebuilds an object as a CODE-ONLY procedural Three.js model (primitives + materials + hierarchy), then exports GLB. It is NOT photogrammetry and NOT parametric CAD/STEP.
 
 Return JSON only:
 {"improved_prompt":"..."}
 
 Rules for improved_prompt:
-- Start with the short object name (2–5 words), then a colon, then mesh + material details.
-  Example: "Desk lamp: cylindrical base, tapered stem, conical shade; brushed black metal stem (metalness 0.85, roughness 0.35), warm cream fabric shade (roughness 0.8), soft plastic switch."
-- Optimize for RENDERED MESHES: silhouette, named mesh parts, proportions, part hierarchy, and PBR materials
-  (base color / hex or plain color name, metalness, roughness, clearcoat, transmission/opacity, or emissive only when useful).
-- Give each distinct finish its own named mesh part (metal vs plastic vs glass vs rubber vs painted body vs fabric).
-- Prefer hard-surface primitives and a clear hierarchy over organic micro-detail.
-- If a reference image is implied, call out silhouette match, colors/materials, and which parts should be separate meshes so materials can differ.
-- FORBIDDEN CAD/STEP wording: extrude, loft, pocket, pad, B-rep, feature tree, wall thickness for machining,
-  parametric constraints, fillets/chamfers as CAD ops, Mode 2.0 assembly, STEP, CNC, FDM print settings.
-- Do NOT rewrite into a photoreal scene-render brief (kitchen counter, studio HDRI, camera mm). Stay on mesh geometry + materials.
-- For edits, say which mesh parts or materials to change and what to keep.
+- Start with the short object name (2–5 words), then a colon, then reconstruction details.
+  Example: "Desk lamp: cylindrical base, tapered stem, conical shade; matte black metal stem, warm cream shade interior."
+- Describe silhouette, major part breakdown (named parts), proportions, and PBR materials (color, metalness, roughness).
+- Prefer hard-surface primitives and clear hierarchy over organic micro-detail.
+- If a reference image is implied, call out silhouette match, colors, and which parts should be separate meshes.
+- Avoid CAD jargon (extrude, loft, pocket, STEP, B-rep, feature tree).
+- For edits, say what to change on the existing procedural mesh and what to keep.
 - Put the entire rewrite inside the improved_prompt string. Escape newlines as \\n inside the JSON string.
 - Do not mention that you are an AI or that you rewrote the prompt.
 - Keep under 1200 characters when possible; hard max 4000.
@@ -18804,8 +18798,8 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
         "mesh": (
-            "Mesh mode (img2threejs): rewrite for viewport mesh rendering — named mesh parts, silhouette, "
-            "and PBR materials (color, metalness, roughness). Do NOT convert into Mode 2.0 CAD / STEP instructions."
+            "Mesh mode (img2threejs): procedural Three.js rebuild with primitives, materials, and named hierarchy. "
+            "Prefer silhouette, part breakdown, and PBR materials — not CAD feature trees."
         ),
         "architect": "Modular architecture / room kit parts with separate named bodies and snap interfaces.",
         "draw": "Direct modeling edit of selected faces/edges. Be specific about which features change.",
@@ -18831,8 +18825,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     else:
         system_prompt = IMPROVE_CAD_PROMPT_SYSTEM
     plain_retry = (
-        "Rewrite this into a stronger Mesh-mode prompt focused ONLY on rendered mesh parts and PBR materials "
-        "(color, metalness, roughness, named parts). Forbidden: CAD/STEP/Mode 2.0 wording, photoreal camera briefs. "
+        "Rewrite this into a stronger Mesh-mode prompt for procedural Three.js reconstruction. "
         "Return only the improved prompt text."
         if use_mesh_improve
         else (
@@ -18844,12 +18837,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     )
     user_content = (
         f"Mode: {mode}\n{mode_hint}\n{target_hint}\n\n"
-        + (
-            "IMPORTANT: Improve for mesh rendering and materials only. Do not turn this into a CAD design brief.\n\n"
-            if use_mesh_improve
-            else ""
-        )
-        + f"User prompt to improve:\n{original}"
+        f"User prompt to improve:\n{original}"
     )
     # Prefer fast, non-reasoning improve; the generated model still honors the
     # user's selected quality/speed when /api/projects/{id}/prompt starts.
@@ -18892,9 +18880,7 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
         "prompt": original,
         "improved_prompt": improved,
         "mode": mode,
-        "improve_style": (
-            "mesh" if use_mesh_improve else ("render" if use_render_improve else "cad")
-        ),
+        "improve_style": "render" if use_render_improve else "cad",
         "trace": {
             "model": call_trace.get("model"),
             "provider": call_trace.get("provider"),

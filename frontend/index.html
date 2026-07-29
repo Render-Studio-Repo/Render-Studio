@@ -518,7 +518,7 @@
           <div id="user-menu-ai-cost" class="user-menu-ai-cost" title="Estimated from tracked prompt token usage">
             <div class="user-menu-ai-cost-top">
               <span id="user-menu-ai-cost-label" class="user-menu-ai-cost-label">This month</span>
-              <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
+            <strong id="user-menu-ai-cost-value" class="user-menu-ai-cost-value">—</strong>
             </div>
             <div id="user-menu-ai-cost-bar" class="user-menu-ai-cost-bar" aria-hidden="true">
               <i id="user-menu-ai-cost-bar-claude" class="claude" style="flex:0"></i>
@@ -601,37 +601,37 @@
             <div class="user-menu-section-head">
               <span>AI &amp; billing</span>
               <small>Keys, credits, and spend</small>
-            </div>
-            <button type="button" id="btn-ai-key-menu" class="user-menu-item">
+          </div>
+          <button type="button" id="btn-ai-key-menu" class="user-menu-item">
               <span id="ai-key-menu-label">Manage AI Keys</span>
               <small id="ai-key-menu-hint">Keys, credits, and spend</small>
-            </button>
-            <button type="button" id="btn-costs-menu" class="user-menu-item">
-              <span>Costs</span>
-              <small>Total, shared users, and trend</small>
-            </button>
-            <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
+          </button>
+          <button type="button" id="btn-costs-menu" class="user-menu-item">
+            <span>Costs</span>
+            <small>Total, shared users, and trend</small>
+          </button>
+          <div id="profile-costs-panel" class="profile-costs-panel hidden"></div>
           </div>
           <div class="user-menu-section">
             <div class="user-menu-section-head">
               <span>Manage</span>
               <small>Workspaces, members, and roles</small>
             </div>
-            <!-- Admin dashboard — shown only for admin users by auth.js -->
-            <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
-              <span>Management dashboard</span>
-              <small>Users, projects, prompt history, and site stats</small>
-            </a>
+          <!-- Admin dashboard — shown only for admin users by auth.js -->
+          <a href="/admin-dashboard.html" id="btn-admin-dashboard" class="user-menu-item hidden">
+            <span>Management dashboard</span>
+            <small>Users, projects, prompt history, and site stats</small>
+          </a>
             <button type="button" id="btn-workspace-mgmt-menu" class="user-menu-item hidden">
               <span>Workspace management</span>
               <small>Roles, invite rights, and edit vs view access</small>
-            </button>
+          </button>
             <div id="profile-workspace-mgmt-panel" class="profile-workspace-mgmt-panel hidden"></div>
-            <button type="button" id="btn-workspace-menu" class="user-menu-item">
-              <span>Team workspaces</span>
-              <small>Members, invites, visibility, leave</small>
-            </button>
-            <div id="profile-workspace-panel" class="profile-workspace-panel hidden"></div>
+          <button type="button" id="btn-workspace-menu" class="user-menu-item">
+            <span>Team workspaces</span>
+            <small>Members, invites, visibility, leave</small>
+          </button>
+          <div id="profile-workspace-panel" class="profile-workspace-panel hidden"></div>
           </div>
           <div class="user-menu-section">
             <div class="user-menu-section-head">
@@ -709,11 +709,11 @@
           <p id="workspace-create-status" class="muted small"></p>
           <!-- Active workspace is managed via the Projects folder icon (shared-workspaces menu). -->
           <select id="team-select" class="team-select team-select--hidden" aria-label="Active workspace" hidden tabindex="-1">
-            <option value="">Sign in to load workspaces…</option>
-          </select>
+              <option value="">Sign in to load workspaces…</option>
+            </select>
           <button type="button" id="btn-rename-workspace" class="btn-icon" title="Rename workspace" hidden aria-label="Rename workspace" style="display:none">
-            <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
-          </button>
+              <svg class="icon-pencil" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5.62 12.62 2 13.5l.88-3.62L11.5 2.5z"/></svg>
+            </button>
           <label class="workspace-fusion-row checkbox-field" id="workspace-fusion-row">
             <input type="checkbox" id="workspace-connect-fusion" />
             Connect this workspace to Fusion
@@ -725,7 +725,7 @@
             <button type="button" id="btn-open-workspace-manage" class="btn secondary btn-compact workspace-manage-open-btn">
               Manage
             </button>
-          </div>
+            </div>
           <ul id="team-members" class="team-members"></ul>
           <div id="workspace-realtime-editor" class="workspace-realtime-editor is-compact">
             <button type="button" id="workspace-realtime-open" class="workspace-realtime-head workspace-realtime-open" aria-haspopup="dialog" aria-expanded="false" title="Open realtime editor">
@@ -736,7 +736,7 @@
               </div>
             </button>
             <div id="workspace-realtime-active" class="workspace-realtime-active hidden" aria-live="polite"></div>
-          </div>
+            </div>
         </section>
         <section id="workspace-realtime-focus" class="workspace-realtime-focus hidden" aria-label="Realtime open project">
           <div class="workspace-realtime-focus-head">
@@ -752,8 +752,8 @@
         <section class="workspace-browser-section">
           <div class="workspace-browser-head">
             <div>
-              <h2>Projects</h2>
-              <p class="workspace-browser-hint muted small">Drag into folders · ▾ to expand</p>
+            <h2>Projects</h2>
+            <p class="workspace-browser-hint muted small">Drag into folders · ▾ to expand</p>
             </div>
             <div class="shared-workspace-menu">
               <button type="button" id="btn-shared-workspaces-menu" class="shared-workspace-menu-btn" aria-expanded="false" aria-controls="shared-workspaces-menu" title="Manage workspaces">
@@ -883,7 +883,7 @@
                 <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-refresh">Refresh</button>
                 <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-reset">Reset pose</button>
                 <button type="button" class="btn secondary btn-compact" id="btn-rigging-vp-generate" title="Generate with Rigging AI">Generate</button>
-              </div>
+            </div>
               <label class="rigging-manage-row">
                 <span>Source</span>
                 <select id="rigging-vp-artifact-source" aria-label="Robot source file"></select>
@@ -1386,8 +1386,8 @@
         </div>
         <div class="feature-history-section">
           <h3 class="history-section-title">Feature history</h3>
-          <p class="muted small">Parametric timeline — edit values, suppress, reorder, then rebuild</p>
-          <div id="feature-editor" class="feature-editor"></div>
+        <p class="muted small">Parametric timeline — edit values, suppress, reorder, then rebuild</p>
+        <div id="feature-editor" class="feature-editor"></div>
         </div>
       </section>
 
@@ -1756,14 +1756,14 @@
                 </select>
               </label>
               <div class="prompt-codex-wrap hidden" id="prompt-codex-wrap">
-                <label
-                  id="prompt-codex-toggle"
+              <label
+                id="prompt-codex-toggle"
                   class="prompt-codex-toggle"
                   aria-describedby="prompt-codex-tip"
-                >
-                  <input type="checkbox" id="prompt-codex" />
-                  <span>Codex</span>
-                </label>
+              >
+                <input type="checkbox" id="prompt-codex" />
+                <span>Codex</span>
+              </label>
                 <div id="prompt-codex-tip" class="prompt-spice-tip prompt-codex-tip" role="tooltip">
                   <div class="prompt-spice-tip-top">
                     <span class="prompt-spice-tip-badge prompt-codex-tip-badge">During generate</span>
@@ -1782,8 +1782,8 @@
                 </div>
               </div>
               <div class="prompt-spice-wrap" id="prompt-spice-wrap">
-                <button
-                  type="button"
+                  <button
+                    type="button"
                   id="prompt-spice"
                   class="prompt-spice-btn"
                   aria-pressed="true"
@@ -1800,20 +1800,19 @@
                   <span class="prompt-spice-btn-switch" aria-hidden="true">
                     <span class="prompt-spice-btn-knob"></span>
                   </span>
-                </button>
+                  </button>
                 <div id="prompt-spice-tip" class="prompt-spice-tip" role="tooltip">
                   <div class="prompt-spice-tip-top">
                     <span class="prompt-spice-tip-badge">Before generate</span>
                     <strong class="prompt-spice-tip-title">Improve prompt with AI</strong>
                   </div>
                   <p class="prompt-spice-tip-body">
-                    In <b>Mesh</b>, Improve rewrites for rendered meshes and PBR materials (named parts, color, metalness, roughness) — not CAD.
-                    In <b>Render</b>, rewrites for photoreal scene/lighting/camera.
-                    In <b>2.0</b>, rewrites for parametric CAD dimensions and features.
+                    In <b>Render</b>, rewrites for a clearer photoreal image: scene, lighting, materials, and camera angle.
+                    In <b>2.0 / Fusion</b>, rewrites for parametric CAD dimensions and named features.
                   </p>
                   <ul class="prompt-spice-tip-list">
                     <li>On by default: polish the prompt for the active mode</li>
-                    <li>Mesh = materials + mesh parts · Render = image · 2.0 = CAD</li>
+                    <li>Render saves an image; 2.0 builds CAD geometry</li>
                     <li>Tap to turn improve on or off</li>
                   </ul>
                 </div>
@@ -2041,48 +2040,48 @@
 
           <div id="rigging-mode-bones" class="rigging-mode-pane">
             <p class="muted small"><strong>Bones mode</strong> is optional. The viewport shows your model; use the left overlay to load/manage the robot and the Adjustments strip for Jake-style joint/param sliders. Timeline is at the bottom.</p>
-            <div class="prompt-input-head">
-              <span class="prompt-input-head-label muted small">Rig prompt</span>
-              <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
-                <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
-              </button>
-            </div>
+          <div class="prompt-input-head">
+            <span class="prompt-input-head-label muted small">Rig prompt</span>
+            <button type="button" class="prompt-mic-btn" data-mic-target="rigging-prompt-input" title="Dictate prompt (click to start/stop)" aria-label="Dictate prompt">
+              <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
+            </button>
+          </div>
             <textarea id="rigging-prompt-input" rows="5" placeholder="e.g. 4-DOF arm: base_link fixed, shoulder/elbow/wrist revolute joints, ee_link gripper, joint limits, and a pick-and-place motion plan."></textarea>
-            <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
-              <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
-              <span>Add reference photo (optional)</span>
-            </div>
-            <div id="rigging-prompt-image-list" class="rigging-prompt-image-list"></div>
+          <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
+            <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <span>Add reference photo (optional)</span>
+          </div>
+          <div id="rigging-prompt-image-list" class="rigging-prompt-image-list"></div>
             <button type="button" id="btn-rigging-prompt" class="btn accent full">Generate robot rig / motion</button>
-            <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
-            <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
+          <button type="button" id="btn-rigging-demo-gear-train" class="btn secondary full">Build mounted 2-gear model</button>
+          <button type="button" id="btn-rigging-demo-arm" class="btn secondary full">Load demo (4-DOF arm)</button>
           </div>
 
           <div id="rigging-mode-urdf" class="rigging-mode-pane hidden">
             <p class="muted small">Jake-style robot description: author <code>gen_urdf()</code> / <code>gen_srdf()</code> from the CAD Python source, then simulate joints.</p>
-            <div class="urdf-joint-panel rigging-robot-artifacts">
-              <div class="cad-param-head">
-                <div>
-                  <strong>Robot Artifacts</strong>
+          <div class="urdf-joint-panel rigging-robot-artifacts">
+            <div class="cad-param-head">
+              <div>
+                <strong>Robot Artifacts</strong>
                   <span>Source → URDF / SRDF → Motion</span>
-                </div>
-                <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
               </div>
-              <label class="cad-param-row">
-                <span>Python source</span>
-                <select id="rigging-artifact-source"></select>
-              </label>
-              <div class="cad-param-actions">
-                <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-urdf">Generate URDF</button>
-                <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-srdf">Generate SRDF</button>
-                <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
-              </div>
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-artifacts-refresh">Refresh</button>
+            </div>
+            <label class="cad-param-row">
+              <span>Python source</span>
+              <select id="rigging-artifact-source"></select>
+            </label>
+            <div class="cad-param-actions">
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-urdf">Generate URDF</button>
+              <button type="button" class="btn secondary btn-compact" id="btn-rigging-generate-srdf">Generate SRDF</button>
+              <button type="button" class="btn accent btn-compact" id="btn-rigging-generate-robot">Generate Both</button>
+            </div>
               <button type="button" class="btn accent full" id="btn-rigging-author-jake">Author URDF/SRDF with AI (Jake)</button>
-              <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
+            <div class="urdf-artifact-list" id="rigging-artifact-list"></div>
               <div class="rigging-side-tree-head">
                 <strong>Link / joint tree</strong>
                 <span id="rigging-side-tree-summary" class="muted small">No robot loaded</span>
-              </div>
+          </div>
               <div id="rigging-side-link-tree" class="urdf-link-tree"></div>
               <button type="button" class="btn accent full" id="btn-open-urdf-motion" style="margin-top:10px">Open robot playground in viewport</button>
               <p class="muted small" style="margin-top:8px">Embeds joint sliders, SRDF states, and MoveIt2 tests directly in the viewport.</p>
@@ -2575,13 +2574,13 @@
             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#EA4335" d="M9 7.2v3.6h5.1c-.2 1.2-.9 2.2-1.9 2.9l3.1 2.4c1.8-1.7 2.8-4.1 2.8-7 0-.7-.1-1.3-.2-1.9H9z"/><path fill="#34A853" d="M4.1 10.7l-.7.5-2.3 1.8C2.6 15.7 5.5 18 9 18c2.4 0 4.4-.8 5.9-2.1l-3.1-2.4c-.8.6-1.9.9-2.8.9-2.2 0-4-1.5-4.7-3.5z"/><path fill="#4A90E2" d="M1.1 5.5C.4 6.9 0 8.4 0 9s.4 2.1 1.1 3.5l3-2.3c-.2-.5-.3-1.1-.3-1.2s.1-.7.3-1.2L1.1 5.5z"/><path fill="#FBBC05" d="M9 3.6c1.3 0 2.5.5 3.4 1.3L15.1 2C13.4.7 11.4 0 9 0 5.5 0 2.6 2.3 1.1 5.5l3 2.3C5 5.1 6.8 3.6 9 3.6z"/></svg>
           </span>
           Sign in with Google
-        </button>
+      </button>
         <button type="button" class="btn auth-social-btn auth-social-btn--apple" data-social-login="apple" data-social-label="Apple">
           <span class="auth-social-icon" aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M12.7 9.3c0-1.8 1.5-2.7 1.5-2.7s-1.2-1.8-3.2-1.8c-1.9 0-2.8 1.1-3.5 1.1-.7 0-1.8-1.1-3.1-1.1-2.4 0-4.7 2.1-4.7 5.9 0 2.4.9 4.9 2.1 6.5.9 1.2 1.8 2.4 3.1 2.4 1.2 0 1.7-.8 3.3-.8 1.6 0 1.9.8 3.3.8 1.3 0 2.2-1.1 3-2.3.5-.8.8-1.5 1-2.2-2.3-1-2.8-3.9-2.8-5.8zM10.6 3.6c.7-.9 1.3-2.1 1.1-3.3-1.1.1-2.4.8-3.1 1.7-.7.8-1.3 2.1-1.1 3.3 1.2 0 2.4-.7 3.1-1.7z"/></svg>
           </span>
           Sign in with Apple
-        </button>
+      </button>
       </div>
     </div>
   </div>
@@ -3099,7 +3098,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260729-mesh-improve"></script>
+  <script type="module" src="/app.js?v=20260729-no-pro-a1"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->
