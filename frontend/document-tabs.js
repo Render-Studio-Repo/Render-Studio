@@ -61,9 +61,11 @@ export function createDocumentTabBar(options = {}) {
                 ? "TXT"
                 : tab.kind === "image"
                   ? "IMG"
-                  : tab.kind === "mcmaster"
-                    ? "MC"
-                    : "FILE";
+                  : tab.kind === "video"
+                    ? "VID"
+                    : tab.kind === "mcmaster"
+                      ? "MC"
+                      : "FILE";
         return `<button type="button" class="dxf-tab ${active ? "active" : ""}" data-doc-tab="${escapeHtml(tab.id)}" role="tab" aria-selected="${active ? "true" : "false"}">
           <span class="doc-tab-kind">${badge}</span>
           <span class="dxf-tab-label">${escapeHtml(label)}</span>

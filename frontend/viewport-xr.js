@@ -24,6 +24,7 @@ const SPAWN_PRESETS = [
 
 const QUICK_DOCK = [
   { id: "menu", label: "Menu", color: 0x94a3b8, glyph: "☰", icon: "menu" },
+  { id: "ai", label: "AI VR", color: 0x38bdf8, glyph: "AI", icon: "ai" },
   { id: "undo", label: "Undo", color: 0x64748b, glyph: "↶", icon: "undo" },
   { id: "redo", label: "Redo", color: 0x64748b, glyph: "↷", icon: "redo" },
   { id: "grab", label: "Move", color: 0x3b82f6, glyph: "✥", icon: "move" },
@@ -101,19 +102,66 @@ function menuCanvasSizeToLocal(pw, ph) {
 }
 
 
-const AI_CANVAS = { w: 1080, h: 1420 };
-const AI_PLANE = { w: 0.4, h: 0.525 };
+const AI_LOGICAL = { w: 1080, h: 1680 };
+const AI_DPR = 2; // sharper text in headset (logical coords stay AI_LOGICAL)
+const AI_CANVAS = AI_LOGICAL; // hit-testing / UV mapping use logical pixels
+const AI_PLANE = { w: 0.42, h: 0.652 };
 const AI_LAYOUT = {
   headerEnd: 96,
-  mic: { cx: 540, cy: 250, r: 96 },
-  transcript: { x: 48, y: 380, w: 984, h: 220 },
-  modeY: 650,
-  speedY: 760,
-  keyY: 870,
-  targetY: 980,
-  run: { y: 1140, h: 100 },
-  hide: { y: 1280, h: 50 },
+  mic: { cx: 540, cy: 230, r: 88 },
+  transcript: { x: 48, y: 350, w: 984, h: 200 },
+  modeY: 600,
+  speedY: 700,
+  keyY: 800,
+  targetY: 900,
+  run: { y: 1060, h: 96 },
+  progress: { y: 1060, h: 220 },
+  details: { y: 1300, h: 280 },
+  hide: { y: 1610, h: 40 },
 };
+
+function aiHumanizeProgress(text, fallback = "Working…") {
+  const t = String(text || "").trim();
+  if (!t) return fallback;
+  if (/snapshot_review|visual review/i.test(t)) return "Reviewing multi-view snapshot…";
+  if (/snapshot/i.test(t)) return "Rendering multi-view snapshot…";
+  if (/inspect/i.test(t)) return "Inspecting geometry…";
+  if (/scripts\/step|\.step\b|tessellat/i.test(t)) return "Building STEP / GLB…";
+  if (/brief/i.test(t)) return "Writing CAD brief…";
+  if (/build123d|\.py\b|ai_source/i.test(t)) return "Editing CAD source…";
+  if (/finalize|export/i.test(t)) return "Finalizing artifacts…";
+  if (/analyze|prompt|improving/i.test(t)) return "Analyzing prompt…";
+  if (/OpenAI|Anthropic|Calling AI/i.test(t)) return "Calling AI model…";
+  if (/Design attempt|Planning geometry/i.test(t)) return "Planning geometry…";
+  if (/Kernel build|Building model|Meshing/i.test(t)) return "Building model…";
+  if (t.length > 72) return `${t.slice(0, 69)}…`;
+  return t;
+}
+
+function prepareAiCanvas(targetCanvas = null) {
+  const canvas = targetCanvas || _aiPromptCanvas || document.createElement("canvas");
+  const w = AI_LOGICAL.w * AI_DPR;
+  const h = AI_LOGICAL.h * AI_DPR;
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  if (!targetCanvas) _aiPromptCanvas = canvas;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(AI_DPR, 0, 0, AI_DPR, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  return { canvas, ctx, width: AI_LOGICAL.w, height: AI_LOGICAL.h };
+}
+
+function configureAiTexture(tex) {
+  if (!tex) return tex;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.flipY = true;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -241,6 +289,39 @@ function makeIconTexture(glyph, bgHex, label, icon = null) {
     ctx.textBaseline = "middle";
     ctx.fillText(String(label).slice(0, 8), 128, 200);
   }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Green AI VR badge used while a generation is running in headset. */
+function makeAiGeneratingTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createRadialGradient(90, 80, 10, 128, 128, 120);
+  g.addColorStop(0, "#bbf7d0");
+  g.addColorStop(0.4, "#22c55e");
+  g.addColorStop(0.75, "#15803d");
+  g.addColorStop(1, "#052e16");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(128, 128, 118, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#4ade80";
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.arc(128, 128, 112, 0, Math.PI * 2);
+  ctx.stroke();
+  drawGlyphIcon(ctx, "ai", 128, 112, 140, "#ecfdf5");
+  ctx.fillStyle = "#ecfdf5";
+  ctx.font = "bold 30px Arial,sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("AI VR", 128, 200);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
@@ -429,34 +510,48 @@ function drawAiPromptCanvas(state = {}, targetCanvas = null) {
   roundRect(ctx, 0, 0, width, height, 32);
   ctx.fill();
 
+  const generating = !!state.generating;
   const rim = ctx.createLinearGradient(0, 0, width, 0);
-  rim.addColorStop(0, "#64748b");
-  rim.addColorStop(0.5, "#38bdf8");
-  rim.addColorStop(1, "#94a3b8");
+  if (generating) {
+    rim.addColorStop(0, "#86efac");
+    rim.addColorStop(0.5, "#22c55e");
+    rim.addColorStop(1, "#4ade80");
+  } else {
+    rim.addColorStop(0, "#64748b");
+    rim.addColorStop(0.5, "#38bdf8");
+    rim.addColorStop(1, "#94a3b8");
+  }
   ctx.strokeStyle = rim;
   ctx.lineWidth = 5;
   roundRect(ctx, 3, 3, width - 6, height - 6, 30);
   ctx.stroke();
 
+
   // Header
   const hg = ctx.createLinearGradient(0, 0, width, 0);
-  hg.addColorStop(0, "#1e293b");
-  hg.addColorStop(0.5, "#334155");
-  hg.addColorStop(1, "#0f172a");
+  if (generating) {
+    hg.addColorStop(0, "#14532d");
+    hg.addColorStop(0.5, "#166534");
+    hg.addColorStop(1, "#052e16");
+  } else {
+    hg.addColorStop(0, "#1e293b");
+    hg.addColorStop(0.5, "#334155");
+    hg.addColorStop(1, "#0f172a");
+  }
   ctx.fillStyle = hg;
   roundRect(ctx, 0, 0, width, AI_LAYOUT.headerEnd, 32);
   ctx.fill();
-  ctx.fillStyle = "#0f172a";
+  ctx.fillStyle = generating ? "#052e16" : "#0f172a";
   ctx.fillRect(0, AI_LAYOUT.headerEnd - 22, width, 22);
 
   ctx.fillStyle = "#f8fafc";
   ctx.font = "bold 44px Arial,sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText("AI Prompt", 48, 44);
-  ctx.fillStyle = "#38bdf8";
+  ctx.fillText(generating ? "AI VR" : "AI Prompt", 48, 44);
+  ctx.fillStyle = generating ? "#4ade80" : "#38bdf8";
   ctx.font = "bold 22px Arial,sans-serif";
-  ctx.fillText("DIRECT MODEL · VOICE", 48, 78);
+  ctx.fillText(generating ? "GENERATING…" : "DIRECT MODEL · VOICE", 48, 78);
 
   // Close / hide chip
   ctx.fillStyle = "#334155";
@@ -616,7 +711,7 @@ function drawAiPromptCanvas(state = {}, targetCanvas = null) {
   ctx.font = "bold 40px Arial,sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("Run AI Prompt", width / 2, ry + AI_LAYOUT.run.h / 2);
+  ctx.fillText(generating ? "Generating in VR…" : "Run AI Prompt", width / 2, ry + AI_LAYOUT.run.h / 2);
 
   ctx.fillStyle = "#64748b";
   ctx.font = "22px Arial,sans-serif";
@@ -660,6 +755,8 @@ export function createViewportXR(opts) {
     isTranscribing = null,
     getAiPromptState = null,
     setAiPromptSetting = null,
+    getAiGenerationProgress = null,
+    onStopGeneration = null,
     onProjectOpened = null,
   } = opts;
 
@@ -683,6 +780,8 @@ export function createViewportXR(opts) {
   let prevSqueeze = [false, false];
   let aiPanel = null;
   let aiPanelRefreshAt = 0;
+  let aiGenerating = false;
+  let aiGeneratingMsg = "";
   let editModelPickActive = false;
   /** Folders tab drill-in: null = personal/shared roots; string = folder id (incl. __root__). */
   let folderBrowseId = null;
@@ -1210,10 +1309,68 @@ export function createViewportXR(opts) {
 
   function syncDock() {
     dockButtons.forEach((btn) => {
-      const on = btn.userData.xrTool === activeTool;
-      btn.scale.setScalar(on ? 1.15 : 1);
-      if (btn.userData.ring) btn.userData.ring.material.opacity = on ? 0.95 : 0;
+      const tool = btn.userData.xrTool;
+      const generatingAi = tool === "ai" && aiGenerating;
+      const on = tool === activeTool || generatingAi;
+      if (!(generatingAi && presenting)) btn.scale.setScalar(on ? 1.15 : 1);
+      if (btn.userData.labelMesh && !(generatingAi && presenting)) {
+        btn.userData.labelMesh.scale.setScalar(on ? 1.15 : 1);
+      }
+      if (btn.userData.ring) {
+        if (generatingAi) {
+          btn.userData.ring.material.color.setHex(0x4ade80);
+          btn.userData.ring.material.opacity = 0.95;
+        } else {
+          btn.userData.ring.material.color.setHex(0xffffff);
+          btn.userData.ring.material.opacity = on ? 0.95 : 0;
+        }
+      }
     });
+  }
+
+  function syncAiDockIcon() {
+    const btn = dockButtons.find((b) => b.userData.xrTool === "ai");
+    if (!btn) return;
+    const label = btn.userData.labelMesh;
+    if (label?.material?.map && !btn.userData.aiIdleMap) {
+      btn.userData.aiIdleMap = label.material.map;
+    }
+    if (!btn.userData.aiGenMap) {
+      btn.userData.aiGenMap = makeAiGeneratingTexture();
+    }
+    const tool = DOCK_TOOLS.find((t) => t.id === "ai");
+    if (aiGenerating) {
+      btn.material.color.setHex(0x22c55e);
+      if (label?.material) {
+        label.material.map = btn.userData.aiGenMap;
+        label.material.needsUpdate = true;
+      }
+    } else {
+      btn.material.color.setHex(tool?.color || 0x38bdf8);
+      if (label?.material && btn.userData.aiIdleMap) {
+        label.material.map = btn.userData.aiIdleMap;
+        label.material.needsUpdate = true;
+      }
+      if (label) label.scale.setScalar(1);
+      btn.scale.setScalar(1);
+    }
+    syncDock();
+  }
+
+  function setAiGenerating(active, message = "") {
+    const next = !!active;
+    const msg = String(message || "");
+    const changed = next !== aiGenerating || msg !== aiGeneratingMsg;
+    aiGenerating = next;
+    aiGeneratingMsg = msg;
+    syncAiDockIcon();
+    if (aiPanel) {
+      if (aiGenerating && aiGeneratingMsg) aiPanel.status = aiGeneratingMsg;
+      else if (!aiGenerating && aiPanel.status && /generat/i.test(aiPanel.status)) {
+        aiPanel.status = "";
+      }
+      if (changed) refreshAiPromptPanel();
+    }
   }
 
   function getHeadPose() {
@@ -1671,6 +1828,10 @@ export function createViewportXR(opts) {
       openMenuConsole({ tab: menuTab || "projects" });
       return;
     }
+    if (id === "ai" || id === "prompt") {
+      openAiPromptPanel();
+      return;
+    }
     if (id === "undo") {
       try { onUndo?.(); } catch (err) { console.warn("[viewport-xr] undo", err); }
       return;
@@ -1792,6 +1953,7 @@ export function createViewportXR(opts) {
       const s = typeof getAiPromptState === "function" ? getAiPromptState() : null;
       if (s && typeof s === "object") state = { ...state, ...s };
     } catch (_) {}
+    if (aiGenerating) state.generating = true;
     try {
       if (!state.draft && typeof getPromptDraft === "function") state.draft = String(getPromptDraft() || "");
     } catch (_) {}
@@ -1926,6 +2088,12 @@ export function createViewportXR(opts) {
     aiPanel.tex.needsUpdate = true;
   }
 
+  function setAiPanelStatus(msg = "") {
+    if (!aiPanel) return;
+    aiPanel.status = String(msg || "");
+    refreshAiPromptPanel();
+  }
+
   function openAiPromptPanel(opts = {}) {
     const panel = ensureAiPanel();
     refreshAiPromptPanel();
@@ -2058,7 +2226,28 @@ export function createViewportXR(opts) {
       return;
     }
     if (id === "run") {
-      try { onPromptSubmit?.(); } catch (err) { console.warn("[viewport-xr] run", err); }
+      if (aiPanel) aiPanel.status = "Starting generate…";
+      refreshAiPromptPanel();
+      try {
+        const result = onPromptSubmit?.();
+        Promise.resolve(result).then((res) => {
+          if (!aiPanel) return;
+          if (res && res.ok === false && res.error) {
+            aiPanel.status = String(res.error);
+          } else if (res?.ok) {
+            aiPanel.status = "Generating in project…";
+          }
+          refreshAiPromptPanel();
+        }).catch((err) => {
+          console.warn("[viewport-xr] run", err);
+          if (aiPanel) aiPanel.status = err?.message || "Generate failed";
+          refreshAiPromptPanel();
+        });
+      } catch (err) {
+        console.warn("[viewport-xr] run", err);
+        if (aiPanel) aiPanel.status = err?.message || "Generate failed";
+        refreshAiPromptPanel();
+      }
       return;
     }
     if (id.startsWith("mode:")) {
@@ -3516,6 +3705,9 @@ export function createViewportXR(opts) {
     try { disposeRecordSpectator(); } catch (_) {}
     presenting = false;
     session = null;
+    aiGenerating = false;
+    aiGeneratingMsg = "";
+    try { syncAiDockIcon(); } catch (_) {}
     xrHud.visible = false;
     dock.visible = false;
     captureDock.visible = false;
@@ -3615,10 +3807,23 @@ export function createViewportXR(opts) {
     // Live transcript while AI panel is open (fast while mic is on)
     if (aiPanel?.group.visible) {
       const listening = !!(typeof isTranscribing === "function" && isTranscribing());
-      const interval = listening ? 100 : 800;
+      const interval = listening || aiGenerating ? 100 : 800;
       if (performance.now() - aiPanelRefreshAt > interval) {
         refreshAiPromptPanel();
         aiPanelRefreshAt = performance.now();
+      }
+    }
+    // Green AI VR dock pulse while generating
+    if (aiGenerating) {
+      const btn = dockButtons.find((b) => b.userData.xrTool === "ai");
+      if (btn) {
+        const pulse = 1.12 + 0.1 * Math.sin(performance.now() / 220);
+        btn.scale.setScalar(pulse);
+        if (btn.userData.labelMesh) btn.userData.labelMesh.scale.setScalar(pulse);
+        if (btn.userData.ring) {
+          btn.userData.ring.material.color.setHex(0x4ade80);
+          btn.userData.ring.material.opacity = 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() / 220));
+        }
       }
     }
     // Grid / floors must stay off for the entire AR session
@@ -3745,10 +3950,10 @@ export function createViewportXR(opts) {
   }
 
   /**
-   * Paint a mono headset-eye view (model + controllers, no floating UI) for POV video.
-   * Must be called from the XR animation loop.
+   * Paint a mono headset view for POV video (model + controllers + floating UI).
+   * Must be called from the XR animation loop after the main XR render.
    */
-  function paintRecordOverlayCanvas(width = 1280, height = 720) {
+  function paintRecordOverlayCanvas(width = 1280, height = 720, opts = {}) {
     if (!renderer?.xr?.isPresenting) return null;
     const spec = ensureRecordSpectator(width, height);
     const hidePairs = [];
@@ -3757,34 +3962,59 @@ export function createViewportXR(opts) {
       hidePairs.push([obj, obj.visible]);
       obj.visible = false;
     };
-    // Hide 2D-style XR windows — keep controller models / rays / CAD.
-    stash(dock);
+    // Keep explorer / AI prompt / place windows — those are what you see in-headset.
+    // Only hide the left-hand Rec/Stop strip so it doesn't dominate the clip.
     stash(captureDock);
-    stash(explorerPanel?.group);
-    stash(aiPanel?.group);
-    stash(placePanel?.group);
-    stash(measureGroup);
-    stash(faceProbe);
-    stash(beacon);
+    const opaque = !!opts.opaque || sessionMode === "immersive-vr";
+    const prevBg = scene.background;
+    const prevClear = {
+      color: renderer.getClearColor(new THREE.Color()).getHex(),
+      alpha: renderer.getClearAlpha?.() ?? 1,
+    };
+    let tempBg = null;
     try {
       const xrCam = renderer.xr.getCamera?.(camera);
-      const eye = xrCam?.cameras?.[0] || xrCam || camera;
+      // Use the head ArrayCamera (center of both eyes), not a single stereo eye —
+      // eye offset + wrong aspect was putting controllers in the wrong place.
+      const head = xrCam || camera;
+      head.updateWorldMatrix?.(true, false);
       const dst = spec.camera;
-      dst.position.copy(eye.position);
-      dst.quaternion.copy(eye.quaternion);
-      if (eye.projectionMatrix) {
-        dst.projectionMatrix.copy(eye.projectionMatrix);
-        dst.projectionMatrixInverse.copy(
-          eye.projectionMatrixInverse || dst.projectionMatrix.clone().invert(),
-        );
-      } else {
-        dst.near = camera.near;
-        dst.far = camera.far;
-        dst.aspect = spec.canvas.width / Math.max(1, spec.canvas.height);
-        dst.updateProjectionMatrix();
+      dst.position.setFromMatrixPosition(head.matrixWorld);
+      dst.quaternion.setFromRotationMatrix(head.matrixWorld);
+
+      let fovy = 70;
+      const eye = xrCam?.cameras?.[0];
+      const e5 = eye?.projectionMatrix?.elements?.[5];
+      if (e5 && Number.isFinite(e5) && e5 !== 0) {
+        fovy = (2 * Math.atan(1 / e5) * 180) / Math.PI;
       }
-      dst.matrixWorld.copy(eye.matrixWorld || dst.matrixWorld);
-      dst.matrixWorldInverse.copy(eye.matrixWorldInverse || dst.matrixWorld.clone().invert());
+      dst.fov = Math.min(100, Math.max(40, fovy));
+      dst.aspect = spec.canvas.width / Math.max(1, spec.canvas.height);
+      dst.near = Math.min(camera.near || 0.02, 0.02);
+      dst.far = Math.max(camera.far || 200, 50);
+      dst.updateProjectionMatrix();
+      dst.updateMatrixWorld(true);
+
+      if (opaque) {
+        // VR: solid backdrop so the clip matches the headset (no misaligned passthrough).
+        if (!scene.background) {
+          tempBg = new THREE.Color(0x0f172a);
+          scene.background = tempBg;
+        }
+        spec.renderer.setClearColor(scene.background?.isColor ? scene.background : 0x0f172a, 1);
+      } else {
+        // AR: transparent so passthrough can sit underneath.
+        scene.background = null;
+        spec.renderer.setClearColor(0x000000, 0);
+      }
+
+      // Ensure controller / panel world matrices are current for this offscreen pass.
+      scene.updateMatrixWorld(true);
+      for (const c of controllers) c?.updateMatrixWorld?.(true);
+      for (const g of grips) g?.updateMatrixWorld?.(true);
+      if (explorerPanel?.group?.visible) explorerPanel.group.updateMatrixWorld(true);
+      if (aiPanel?.group?.visible) aiPanel.group.updateMatrixWorld(true);
+
       spec.renderer.render(scene, dst);
       return spec.canvas;
     } catch (err) {
@@ -3792,6 +4022,11 @@ export function createViewportXR(opts) {
       return null;
     } finally {
       for (const [obj, vis] of hidePairs) obj.visible = vis;
+      scene.background = prevBg;
+      if (tempBg) tempBg = null;
+      try {
+        spec.renderer.setClearColor(prevClear.color, prevClear.alpha);
+      } catch (_) {}
     }
   }
 
@@ -3820,6 +4055,8 @@ export function createViewportXR(opts) {
     openAiPromptPanel,
     closeAiPromptPanel,
     refreshAiPromptPanel,
+    setAiPanelStatus,
+    setAiGenerating,
     setMenuFooterHint: (hint) => {
       menuFooterHint = String(hint || "");
       if (presenting && explorerPanel?.group.visible) {

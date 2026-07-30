@@ -16,6 +16,14 @@ function isDxfEntry(entry) {
   return entry?.format === "dxf" || /\.dxf$/i.test(String(entry?.name || ""));
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function referenceSectionItems(browser = {}) {
   const drawings = [...(browser.drawings || [])];
   const refs = [...(browser.references || [])];
@@ -112,6 +120,7 @@ export function createProjectTree(options = {}) {
     onOpenDrawing,
     onOpenReference,
     onSendReferenceToPrompt,
+    onReferenceShareAction = null,
     onOpenSketch,
     onEditSketch,
     onOpenWiring,
@@ -139,6 +148,54 @@ export function createProjectTree(options = {}) {
   const childGroupsExpanded = new Set();
   const childGroupsInitialized = new Set();
   let suppressBrowserClick = false;
+  let shareContextMenu = null;
+
+  function closeShareContextMenu() {
+    shareContextMenu?.remove();
+    shareContextMenu = null;
+  }
+
+  function showReferenceShareContextMenu(e, entry, sectionId) {
+    closeShareContextMenu();
+    const label = entry.label || entry.stem || entry.name || "File";
+    const menu = document.createElement("div");
+    menu.className = "folder-context-menu component-context-menu";
+    menu.innerHTML = `
+      <div class="component-context-title">
+        <strong>${escapeHtml(label)}</strong>
+        <span>Share</span>
+      </div>
+      <button type="button" data-action="open">Open / view</button>
+      <button type="button" data-action="copy-link">Copy share link</button>
+      <button type="button" data-action="share-x">Share to X…</button>
+      <button type="button" data-action="download">Download</button>
+      <button type="button" data-action="export-share">Export / share…</button>
+    `;
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(e.clientX, window.innerWidth - rect.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(e.clientY, window.innerHeight - rect.height - 8))}px`;
+    shareContextMenu = menu;
+    const onDoc = (ev) => {
+      if (menu.contains(ev.target)) return;
+      closeShareContextMenu();
+      document.removeEventListener("mousedown", onDoc);
+    };
+    setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
+    menu.addEventListener("click", (ev) => {
+      const action = ev.target?.closest("button")?.dataset?.action;
+      if (!action) return;
+      closeShareContextMenu();
+      document.removeEventListener("mousedown", onDoc);
+      if (action === "open") {
+        if (sectionId === "renders") onOpenReference?.(entry);
+        else if (isDxfEntry(entry)) onOpenDrawing?.(entry);
+        else onOpenReference?.(entry);
+        return;
+      }
+      onReferenceShareAction?.(entry, sectionId, action);
+    });
+  }
 
   function clearBrowserClickSuppress() {
     window.setTimeout(() => {
@@ -452,6 +509,14 @@ export function createProjectTree(options = {}) {
       else onOpenWiring?.(entry);
       render();
     });
+    if ((sectionId === "references" || sectionId === "renders") && !entry?.virtual_folder && typeof onReferenceShareAction === "function") {
+      li.addEventListener("contextmenu", (e) => {
+        if (isDxfEntry(entry) && sectionId === "references") return;
+        e.preventDefault();
+        e.stopPropagation();
+        showReferenceShareContextMenu(e, entry, sectionId);
+      });
+    }
     if (sectionId === "sketches") {
       body.addEventListener("dblclick", (e) => {
         e.preventDefault();

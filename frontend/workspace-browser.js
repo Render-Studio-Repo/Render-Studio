@@ -359,6 +359,7 @@ export function createWorkspaceBrowser({
   onRenameHierarchyItem,
   onDeleteHierarchyItem,
   onExportHierarchyItem,
+  onReferenceShareAction = null,
   onAttachWiringComponent,
   onToggleHierarchyVisibility,
   isHierarchyItemHidden,
@@ -1671,6 +1672,11 @@ export function createWorkspaceBrowser({
       (sectionId === "references" || sectionId === "renders" || sectionId === "robots")
       && !!entry?.name
       && typeof onRenameHierarchyItem === "function";
+    const canShare =
+      (sectionId === "references" || sectionId === "renders")
+      && !!entry?.name
+      && !(entry.format === "dxf" || /\.dxf$/i.test(String(entry.name || "")))
+      && typeof onReferenceShareAction === "function";
     const menu = document.createElement("div");
     menu.className = "folder-context-menu component-context-menu";
     menu.innerHTML = `
@@ -1686,6 +1692,13 @@ export function createWorkspaceBrowser({
           ? `<button type="button" data-action="send-ai">Send to AI prompt</button>`
           : ""
       }
+      ${canShare ? `
+      <hr />
+      <button type="button" data-action="copy-link">Copy share link</button>
+      <button type="button" data-action="share-x">Share to X…</button>
+      <button type="button" data-action="download">Download</button>
+      <button type="button" data-action="export-share">Export / share…</button>
+      ` : ""}
       ${canRename ? `<button type="button" data-action="rename">Rename</button>` : ""}
       ${canDelete ? `<hr /><button type="button" data-action="delete" class="danger">Delete ${kindLabel}</button>` : ""}
     `;
@@ -1707,6 +1720,8 @@ export function createWorkspaceBrowser({
         onOpenHierarchyItem?.(project, entry, sectionId);
       } else if (action === "send-ai") {
         onSendReferenceToPrompt?.(project, entry);
+      } else if (action === "copy-link" || action === "share-x" || action === "download" || action === "export-share") {
+        onReferenceShareAction?.(project, entry, sectionId, action);
       } else if (action === "rename") {
         onRenameHierarchyItem?.(project, entry, sectionId);
       } else if (action === "delete") {

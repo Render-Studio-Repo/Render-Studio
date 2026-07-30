@@ -73,10 +73,10 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-xr-folders";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-ai-key";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-ai-vr-gen";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -92,7 +92,8 @@ import { createRibbon } from "./ribbon.js?v=20260729-quest-ar-panels";
 import { initPanelResize } from "./panel-resize.js?v=20260611-timeline-restore";
 import { createViewerOverlay } from "./viewer-overlay.js?v=20260727-fix-overlay";
 import { createViewCube, VIEW_CUBE_WORLD_UP } from "./view-cube.js?v=20260715-viewcube-faces";
-import { openFileExportMenu, closeFileExportMenu } from "./file-actions.js?v=20260730-bambu-prep-spin";
+import { openFileExportMenu, closeFileExportMenu, createShareUrl, downloadFile } from "./file-actions.js?v=20260730-ref-share";
+import { createDocumentTabBar } from "./document-tabs.js?v=20260730-vid-badge";
 import { initOnshapePanel } from "./onshape-panel.js?v=20260723-onshape-link";
 import { initFusionPanel } from "./fusion-panel.js?v=20260725-unlink-howto";
 import { formatLength, formatArea, initUnitSwitcher, mmPerModelUnit, onUnitsChanged, getUnits, setUnits, UNIT_OPTIONS } from "./units.js?v=20260714-units-ft-m";
@@ -109,7 +110,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260724-select-whole";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
-import { createProjectTree } from "./project-tree.js?v=20260730-recordings-mic";
+import { createProjectTree } from "./project-tree.js?v=20260730-ref-share";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -117,8 +118,7 @@ import {
   initClientVersionWatcher,
 } from "./client-reload.js?v=20260715-no-iphone-banner";
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
-import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260729-ar-captures";
-import { createDocumentTabBar } from "./document-tabs.js?v=20260720-mcmaster-tab";
+import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260730-ref-share";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260725-bright-cad";
 import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
 import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
@@ -401,10 +401,12 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
           ? { ...liveGen, status: "running", prompt: `${runningJobs.length} parts generating` }
           : (liveGen?.status === "running" ? liveGen : generationWatchOverlay),
       );
+      syncXrAiGeneratingIndicator();
     } else if (viewportOverlayPid === projectId && viewportOverlayState) {
       viewerOverlay.setGenerating(true, viewportOverlayState.message, viewportOverlayState);
       wiringOverlay?.setGenerating(false);
       syncViewportGenerationUserBadge(viewportOverlayState);
+      syncXrAiGeneratingIndicator();
     }
     return;
   }
@@ -427,6 +429,7 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
         ? { ...currentGeneration, status: "running", prompt: `${runningJobs.length} parts generating` }
         : currentGeneration,
     );
+    syncXrAiGeneratingIndicator();
     return;
   }
   viewerOverlay.setGenerating(false, null, {
@@ -439,6 +442,7 @@ function syncViewportGenerationOverlay(completeOpts = {}) {
   });
   syncViewportGenerationUserBadge(null);
   syncStopButtonVisibility();
+  syncXrAiGeneratingIndicator();
 }
 
 function generationRunningJobs(gen, watchOverlay = null) {
@@ -943,6 +947,14 @@ async function applyGenerationComplete(gen, pid = projectId) {
     }
     setEditStatus("ok", "Model ready — opened in 3D view.");
     pendingPromptSelectionContext = null;
+    try {
+      if (document.body.classList.contains("xr-presenting") || viewportXR?.isPresenting?.()) {
+        viewportXR?.setAiPanelStatus?.(
+          `Model ready: ${gen.filename || "part"}`,
+        );
+        viewportXR?.refreshAiPromptPanel?.();
+      }
+    } catch (_) {}
     void maybeAskGenerateSimulatedMotion(gen, pid);
     void maybeShowElectronicsSuggestDockAfterGeneration(pid);
     clearPendingViewportReveal(pid);
@@ -1148,9 +1160,37 @@ function syncStopButtonVisibility() {
   viewerOverlay.setStopVisible?.(cadGenerating ? runningCount : 0);
   wiringOverlay?.setStopVisible?.(wiringGenerating);
   syncCanvasGenerationUi();
+  syncXrAiGeneratingIndicator();
+}
+
+/** Green AI VR dock icon + panel header while generating in headset. */
+function syncXrAiGeneratingIndicator() {
+  try {
+    if (!viewportXR?.setAiGenerating) return;
+    if (!viewportXR.isPresenting?.()) {
+      viewportXR.setAiGenerating(false);
+      return;
+    }
+    const generating = !!(
+      (projectId && isGenerationUiActive(projectId) && isCadGenerationActive(projectId))
+      || (generationWatchPid === projectId && generationWatchOverlay)
+      || promptSubmitInFlight
+    );
+    const msg =
+      generationWatchOverlay?.message
+      || (generating ? "Generating in VR…" : "");
+    viewportXR.setAiGenerating(generating, msg);
+    if (generating) {
+      try { viewportXR.refreshAiPromptPanel?.(); } catch (_) {}
+    }
+  } catch (err) {
+    console.warn("[xr] ai generating indicator", err);
+  }
 }
 
 let promptSubmitInFlight = false;
+/** @type {{ source?: "ui" | "xr" }} */
+let promptSubmitOpts = { source: "ui" };
 let wiringPromptSubmitInFlight = false;
 let promptClickInFlight = false;
 
@@ -3275,6 +3315,11 @@ const viewportXR = createViewportXR({
         keyOptions,
         keyValue,
         keyLabel,
+        generating: !!(
+          (projectId && typeof isCadGenerationActive === "function" && isCadGenerationActive(projectId))
+          || (typeof generationWatchOverlay !== "undefined" && generationWatchOverlay)
+          || (typeof promptSubmitInFlight !== "undefined" && promptSubmitInFlight)
+        ),
       };
     } catch (err) {
       console.warn("[xr] getAiPromptState", err);
@@ -3288,6 +3333,7 @@ const viewportXR = createViewportXR({
         keyOptions: [],
         keyValue: "",
         keyLabel: "Default key",
+        generating: false,
       };
     }
   },
@@ -3440,9 +3486,10 @@ const viewportXR = createViewportXR({
   },
   onPromptSubmit: () => {
     try {
-      document.getElementById("btn-prompt")?.click();
+      return submitPromptFromXr();
     } catch (err) {
       console.warn("[xr] prompt submit failed", err);
+      return { ok: false, error: err?.message || "Generate failed" };
     }
   },
   onToolAction: (id, payload) => {
@@ -4491,6 +4538,14 @@ const promptPaneCompose = document.getElementById("prompt-pane-compose");
 const promptPanel = document.querySelector(".prompt-panel");
 
 function askConvertImageToDrawing() {
+  // Quest AR cannot interact with desktop confirm modals — keep the photo as-is.
+  if (
+    promptSubmitOpts?.source === "xr"
+    || document.body.classList.contains("xr-presenting")
+    || viewportXR?.isPresenting?.()
+  ) {
+    return Promise.resolve("no");
+  }
   return new Promise((resolve) => {
     const modal = document.getElementById("image-drawing-confirm-modal");
     if (!modal) {
@@ -5787,6 +5842,22 @@ function applyCodexOpenAiKey(key) {
 }
 
 function askCodexOpenAiKey(keys) {
+  // In XR, auto-pick a stored/first OpenAI key so Run AI never stalls on a desktop modal.
+  if (
+    (promptSubmitOpts?.source === "xr"
+      || document.body.classList.contains("xr-presenting")
+      || viewportXR?.isPresenting?.())
+    && Array.isArray(keys)
+    && keys.length
+  ) {
+    const preferred = getStoredCodexOpenAiKeyValue()
+      || getStoredProjectPromptAiKeyValue()
+      || getStoredPromptAiKeyValue()
+      || "";
+    const match = keys.find((key) => promptKeyOptionValue(key.source || "personal", key.id) === preferred)
+      || keys[0];
+    return Promise.resolve(match || null);
+  }
   return new Promise((resolve) => {
     const modal = document.getElementById("codex-openai-key-modal");
     const list = document.getElementById("codex-openai-key-list");
@@ -19396,6 +19467,14 @@ const workspaceBrowser = createWorkspaceBrowser({
       alert(err.message || "Could not load exports");
     });
   },
+  onReferenceShareAction: (project, entry, _sectionId, action) => {
+    void handleReferenceShareAction({
+      projectId: project?.id || projectId,
+      filename: entry?.name,
+      kind: entry?.kind,
+      action,
+    });
+  },
   onAttachWiringComponent: (project, entry, payload) => attachHierarchyComponentToWiring(project, entry, payload),
   isHierarchyItemHidden: (project, entry) => isHierarchyEntryHidden(project, entry),
   onToggleHierarchyVisibility: (project, entry, visible) => setHierarchyComponentVisible(project, entry, visible),
@@ -20244,6 +20323,89 @@ async function openRenderShareTargetPicker(payload = {}, pid = projectId) {
   }
 }
 
+async function handleReferenceShareAction(payload = {}) {
+  const filename = payload.filename;
+  const pid = payload.projectId || projectId;
+  const action = payload.action;
+  if (!filename || !pid || !action) return;
+  const kind = payload.kind
+    || (/\.(webm|mp4|mov|m4v)$/i.test(filename) ? "video"
+      : /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(filename) ? "image"
+        : /\.pdf$/i.test(filename) ? "pdf" : "file");
+  try {
+    if (action === "copy-link") {
+      const url = await createShareUrl(pid, filename, currentVisibleShareContext);
+      try {
+        await navigator.clipboard.writeText(url);
+        setEditStatus("ok", "Share link copied.");
+      } catch {
+        window.prompt("Copy this share link:", url);
+        setEditStatus("ok", "Share link ready.");
+      }
+      return;
+    }
+    if (action === "download") {
+      await downloadFile(
+        `/api/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(filename)}`,
+        filename,
+      );
+      setEditStatus("ok", `Downloaded ${filename}`);
+      return;
+    }
+    if (action === "export-share" || action === "share-link") {
+      const isMedia = kind === "video" || kind === "image" || kind === "pdf";
+      await openFileExportMenu({
+        api,
+        projectId: pid,
+        filename,
+        anchorEl: document.body,
+        shareContext: currentVisibleShareContext,
+        allowOnshape: !isMedia,
+        allowFusion: !isMedia,
+        title: `Share ${filename}`,
+        hint: isMedia
+          ? "Copy a public share link, or download CAD exports if this file is paired with a model."
+          : undefined,
+      });
+      setEditStatus("ok", "Opened export / share menu.");
+      return;
+    }
+    if (action === "share-x") {
+      setEditStatus("ok", kind === "video" ? "Preparing clip for X…" : "Preparing share for X…");
+      let blob = payload.blob || null;
+      if (!blob) {
+        const res = await rawFetch(
+          `/api/projects/${encodeURIComponent(pid)}/files/${encodeURIComponent(filename)}`,
+        );
+        if (!res.ok) throw new Error("Could not load file for sharing");
+        blob = await res.blob();
+      }
+      if (kind === "video" || String(blob.type || "").startsWith("video/")) {
+        await viewportVideoRecorder?.openShareModal?.(blob);
+        setEditStatus("ok", "Opened Share to X — edit, then post.");
+        return;
+      }
+      // Images / other: download + open X compose (same pattern as video studio desktop flow)
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      const params = new URLSearchParams();
+      params.set("text", "\n\nBuilt in Render Studio");
+      params.set("url", "https://render3d.app");
+      window.open(`https://x.com/intent/post?${params.toString()}`, "_blank", "noopener,noreferrer");
+      setEditStatus("ok", "Downloaded file and opened X — attach the download in compose.");
+      return;
+    }
+  } catch (err) {
+    setEditStatus("error", err?.message || "Share action failed");
+  }
+}
+
 async function handleReferenceImageAction(payload = {}) {
   if (!payload?.filename) return;
   const pid = payload.projectId || projectId;
@@ -20252,6 +20414,32 @@ async function handleReferenceImageAction(payload = {}) {
       await loadProject(pid);
     }
     await deleteProjectFile(payload.filename);
+    return;
+  }
+  if (payload.action === "copy-link" || payload.action === "share-x" || payload.action === "download" || payload.action === "export-share") {
+    await handleReferenceShareAction(payload);
+    return;
+  }
+  if (payload.action === "save-edited-video") {
+    const blob = payload.blob;
+    if (!blob) {
+      setEditStatus("error", "No edited clip to save.");
+      return;
+    }
+    const stem = String(payload.label || payload.filename || "clip").replace(/\.[^.]+$/, "");
+    const type = String(blob.type || "").toLowerCase();
+    const ext = type.includes("mp4") ? "mp4" : type.includes("webm") ? "webm" : "webm";
+    const file = new File([blob], `${stem}-edited.${ext}`, { type: blob.type || `video/${ext}` });
+    try {
+      await uploadReferenceProjectFile(file, {
+        projectId: pid,
+        referenceFolder: "recordings",
+        silent: false,
+      });
+      setEditStatus("ok", "Saved edited clip to Recordings.");
+    } catch (err) {
+      setEditStatus("error", err?.message || "Could not save edited clip.");
+    }
     return;
   }
   if (payload.action === "texture-model") {
@@ -20269,14 +20457,7 @@ async function handleReferenceImageAction(payload = {}) {
     return;
   }
   if (payload.action === "share-link") {
-    await openFileExportMenu({
-      api,
-      projectId: pid,
-      filename: payload.includeModel ? (currentModelFilenameForRenderTexture() || payload.filename) : payload.filename,
-      anchorEl: document.body,
-      shareContext: currentVisibleShareContext,
-    });
-    setEditStatus("ok", payload.includeModel ? "Opened share/export menu with model included." : "Opened share/export menu for render image.");
+    await handleReferenceShareAction({ ...payload, action: "export-share" });
     return;
   }
   if (payload.action === "share-chat") {
@@ -20359,6 +20540,14 @@ const projectTree = createProjectTree({
       await openReferenceFile(entry);
       await referenceFilesViewer.sendToPrompt?.(entry.name);
     })();
+  },
+  onReferenceShareAction: (entry, _sectionId, action) => {
+    void handleReferenceShareAction({
+      projectId,
+      filename: entry?.name,
+      kind: entry?.kind,
+      action,
+    });
   },
   onOpenProfile: (entry) => componentProfileUI.open(entry),
   getPartProfile,
@@ -27847,7 +28036,8 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   isFreeTrialCredits: () => isOnFreeTrialCredits(aiStatus),
   isXrPresenting: () => !!viewportXR?.isPresenting?.(),
   getXrModeLabel: () => currentXrCaptureModeLabel(),
-  getXrOverlayCanvas: (w, h) => viewportXR?.paintRecordOverlayCanvas?.(w, h) || null,
+  getXrSessionMode: () => viewportXR?.getSessionMode?.() || "",
+  getXrOverlayCanvas: (w, h, opts) => viewportXR?.paintRecordOverlayCanvas?.(w, h, opts) || null,
   onRecordingChange: (state) => {
     try { viewportXR?.setCaptureState?.(state); } catch (_) {}
     if (!state?.recording) {
@@ -29303,6 +29493,86 @@ document.getElementById("viewport-generation-user")?.addEventListener("click", a
 });
 
 document.getElementById("btn-prompt")?.addEventListener("click", async () => {
+  void handlePromptGenerateClick({ source: "ui" });
+});
+
+async function submitPromptFromXr() {
+  const setXrStatus = (msg) => {
+    try { viewportXR?.setAiPanelStatus?.(msg); } catch (_) {}
+  };
+  try {
+    setXrStatus("Preparing prompt…");
+    // Finish mic first so the spoken prompt lands in the compose box.
+    if (isPromptDictationActive()) {
+      setXrStatus("Finishing transcription…");
+      try {
+        await togglePromptDictation("prompt-input");
+      } catch (err) {
+        console.warn("[xr] finalize mic", err);
+      }
+    }
+    const ta = document.getElementById("prompt-input");
+    let text = String(
+      promptDictation.liveText
+      || promptDictation.committed
+      || composer?.getPromptText?.()
+      || ta?.value
+      || "",
+    ).trim();
+    text = text
+      .replace(/\n?\(Transcribing final…\)$/i, "")
+      .replace(/^Transcribing…$/i, "")
+      .replace(/^Listening(?: — speak now)?$/i, "")
+      .replace(/^Starting mic…$/i, "")
+      .trim();
+    if (!text) {
+      setXrStatus("Say or enter a prompt first");
+      return { ok: false, error: "Prompt is empty" };
+    }
+    try {
+      if (typeof composer?.setPromptText === "function") composer.setPromptText(text);
+      else if (ta) writePromptMicTranscript(ta, text);
+    } catch (_) {
+      if (ta) {
+        ta.value = text;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+
+    // Create/open a project if needed, then generate into it.
+    setXrStatus("Opening project…");
+    try {
+      await ensureProject();
+    } catch (err) {
+      const msg = err?.message || "Could not open project";
+      setXrStatus(msg);
+      return { ok: false, error: msg };
+    }
+    if (!projectId) {
+      setXrStatus("No project available");
+      return { ok: false, error: "No project" };
+    }
+
+    const targetMode = typeof getPromptTargetMode === "function" ? getPromptTargetMode() : "new";
+    setXrStatus(targetMode === "edit" ? "Editing model in project…" : "Creating model in project…");
+    const result = await handlePromptGenerateClick({ source: "xr" });
+    if (result?.ok === false) {
+      setXrStatus(result.error || "Generate failed");
+      return result;
+    }
+    setXrStatus(targetMode === "edit" ? "Editing in project…" : "Generating in project…");
+    try { viewportXR?.refreshAiPromptPanel?.(); } catch (_) {}
+    return { ok: true, projectId };
+  } catch (err) {
+    console.warn("[xr] submitPromptFromXr", err);
+    const msg = err?.message || "Generate failed";
+    setXrStatus(msg);
+    return { ok: false, error: msg };
+  }
+}
+
+async function handlePromptGenerateClick({ source = "ui" } = {}) {
+  promptSubmitOpts = { source: source === "xr" ? "xr" : "ui" };
   const canvasAttached = applyCanvasSketchToPrompt();
   if (canvasAttached && promptMode === "draw") applyPromptModeUI("v2");
   // Lock the mode the user picked before any async resume of an in-flight job.
@@ -29310,7 +29580,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
   let prompt = composer.getPromptText();
   if (canvasAttached) prompt = augmentPromptForCanvasSketch(prompt);
   if (canvasAttached && prompt !== composer.getPromptText()) composer.setPromptText(prompt);
-  if (!prompt) return;
+  if (!prompt) {
+    if (source === "xr") {
+      try { viewportXR?.setAiPanelStatus?.("Say or enter a prompt first"); } catch (_) {}
+    }
+    promptSubmitOpts = { source: "ui" };
+    return { ok: false, error: "Prompt is empty" };
+  }
   if (promptClickInFlight || promptSubmitInFlight) {
     const status = document.getElementById("prompt-status");
     if (status) {
@@ -29318,7 +29594,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       status.textContent = "Generation is already starting…";
     }
     syncStopButtonVisibility();
-    return;
+    if (source === "xr") {
+      try { viewportXR?.setAiPanelStatus?.("Generation already starting…"); } catch (_) {}
+    }
+    return { ok: false, error: "busy" };
   }
   promptClickInFlight = true;
   window.setTimeout(() => {
@@ -29343,7 +29622,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       wiringStatus.textContent = "Generating wiring schematic…";
     }
     document.getElementById("btn-wiring-prompt")?.click();
-    return;
+    promptSubmitOpts = { source: "ui" };
+    return { ok: true, wiring: true };
   }
   if (isGenerationUiActive(projectId)) {
     try {
@@ -29362,7 +29642,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         // Fall through only if not still applying; complete is fine to start new.
       } else if (generationWatchPid === projectId && generationWatchOverlay?.pendingStart) {
         // Still waiting for the server to accept a prior submit — keep the banner.
-        return;
+        promptSubmitOpts = { source: "ui" };
+        return { ok: false, error: "pending" };
       } else {
         // failed / canceled / idle — drop the stale UI and start a fresh generate.
         stopGenerationWatch(projectId);
@@ -29388,8 +29669,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     } catch (err) {
       setPromptPanelFailureStatus(document.getElementById("prompt-status"));
       showPromptGenerationFailure(err, lastPromptCopyContext || {});
+      promptSubmitOpts = { source: "ui" };
+      return { ok: false, error: err?.message || "Draw failed" };
     }
-    return;
+    promptSubmitOpts = { source: "ui" };
+    return { ok: true };
   }
   if (isDimensionQuestion(prompt)) {
     lastPromptCopyContext = promptCopyContextBase(prompt);
@@ -29399,8 +29683,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     } catch (err) {
       setPromptPanelFailureStatus(document.getElementById("prompt-status"));
       showPromptGenerationFailure(err, lastPromptCopyContext || {});
+      promptSubmitOpts = { source: "ui" };
+      return { ok: false, error: err?.message || "Dimension Q failed" };
     }
-    return;
+    promptSubmitOpts = { source: "ui" };
+    return { ok: true };
   }
   // Photoreal render only when the user explicitly chose Render mode.
   // Do NOT auto-hijack Mode 2.0 / Fusion / Architect CAD prompts that merely
@@ -29436,6 +29723,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       }
       await runSceneRenderPrompt(renderPrompt, promptReferencesForSubmit());
       clearActiveProjectPromptDraft();
+      return { ok: true };
     } catch (err) {
       hideViewportOverlay(projectId, { complete: false, force: true });
       const msg = formatUserError(err);
@@ -29445,7 +29733,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           status.textContent = "Render canceled.";
         }
         viewerOverlay.clearError();
-        return;
+        return { ok: false, error: "canceled" };
       }
       if (status) {
         status.className = "status error";
@@ -29453,12 +29741,13 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       }
       viewerOverlay.showError(msg);
       if (/openai key/i.test(msg)) aiKeyUi?.openRequired?.();
+      return { ok: false, error: msg };
     } finally {
       promptSubmitInFlight = false;
       promptClickInFlight = false;
       userCancelRequested = false;
+      promptSubmitOpts = { source: "ui" };
     }
-    return;
   }
   if (!aiStatus?.ai_ready && lockedPromptMode !== "render") {
     const status = document.getElementById("prompt-status");
@@ -29468,7 +29757,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       viewerOverlay.showError(status.textContent);
     }
     aiKeyUi?.openRequired();
-    return;
+    if (source === "xr") {
+      try { viewportXR?.setAiPanelStatus?.("Add an AI key on desktop first"); } catch (_) {}
+    }
+    promptSubmitOpts = { source: "ui" };
+    return { ok: false, error: "AI key required" };
   }
   if (["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled()) {
     const openAiKeys = listOpenAiKeysForCodex();
@@ -29485,7 +29778,8 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         message: "Codex requires an OpenAI API key. Add one below (Claude keys won't work for Codex).",
         openAdd: true,
       });
-      return;
+      promptSubmitOpts = { source: "ui" };
+      return { ok: false, error: "Codex needs OpenAI key" };
     }
     const storedCodexValue = getStoredCodexOpenAiKeyValue();
     const storedCodexKey = openAiKeys.find((key) => promptKeyOptionValue(key.source, key.id) === storedCodexValue);
@@ -29494,7 +29788,10 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
         applyCodexOpenAiKey(openAiKeys[0]);
       } else {
         const picked = await askCodexOpenAiKey(openAiKeys);
-        if (!picked) return;
+        if (!picked) {
+          promptSubmitOpts = { source: "ui" };
+          return { ok: false, error: "canceled" };
+        }
         applyCodexOpenAiKey(picked);
       }
     }
@@ -29513,7 +29810,11 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     // Mesh mode needs the reference image for img2threejs — never convert to DXF.
     if (hasPromptImages && !alreadyHasDxfRef && lockedPromptMode !== "mesh" && lockedPromptMode !== "fusion") {
       const choice = await askConvertImageToDrawing();
-      if (choice === "cancel") return;
+      if (choice === "cancel") {
+        promptSubmitOpts = { source: "ui" };
+        promptSubmitInFlight = false;
+        return { ok: false, error: "canceled" };
+      }
       convertImagesToDrawing = choice === "yes";
     }
 
@@ -29523,7 +29824,18 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     submitProjectId = projectId;
     if (!submitProjectId) {
       promptSubmitInFlight = false;
-      return;
+      promptSubmitOpts = { source: "ui" };
+      if (source === "xr") {
+        try { viewportXR?.setAiPanelStatus?.("No project available"); } catch (_) {}
+      }
+      return { ok: false, error: "No project" };
+    }
+    if (source === "xr") {
+      try {
+        viewportXR?.setAiPanelStatus?.(
+          getPromptTargetMode() === "edit" ? "Editing model in project…" : "Creating model in project…",
+        );
+      } catch (_) {}
     }
     syncPromptTargetUI();
     pendingPromptSelectionContext = capturePromptSelectionContext();
@@ -29710,7 +30022,7 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
       };
       lastPromptCopyContext = promptCopyContextBase(prompt, { promptMode: promptModeForRef(genMode) });
       const data = await api(
-        `/api/projects/${projectId}/prompt`,
+        `/api/projects/${submitProjectId || projectId}/prompt`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -29759,6 +30071,15 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
           filename: data.filename || lastPromptCopyContext?.filename,
           traceId: data.trace_id,
         };
+        try {
+          if (document.body.classList.contains("xr-presenting") || viewportXR?.isPresenting?.()) {
+            viewportXR?.setAiPanelStatus?.(
+              targetMode === "edit"
+                ? "Editing in project…"
+                : `Creating ${data.filename || "model"} in project…`,
+            );
+          }
+        } catch (_) {}
         if (data.generation) {
           syncPendingPromptHistoryFromGeneration(data.generation, projectId);
           const proj = allProjects.find((p) => p.id === projectId);
@@ -29859,12 +30180,18 @@ document.getElementById("btn-prompt")?.addEventListener("click", async () => {
     if (submitProjectId) stopGenerationWatch(submitProjectId);
     setPromptPanelFailureStatus(document.getElementById("prompt-status"));
     showPromptGenerationFailure(err, lastPromptCopyContext || {});
+    if (promptSubmitOpts?.source === "xr") {
+      try { viewportXR?.setAiPanelStatus?.(err?.message || "Generate failed"); } catch (_) {}
+    }
+    return { ok: false, error: err?.message || "Generate failed" };
   } finally {
     // Always clear submit lock so another part can be queued while jobs run.
     promptSubmitInFlight = false;
     promptClickInFlight = false;
+    promptSubmitOpts = { source: "ui" };
   }
-});
+  return { ok: true };
+}
 
 // ── Parametric ribbon ─────────────────────────────────────────────────────────
 ribbon = createRibbon({

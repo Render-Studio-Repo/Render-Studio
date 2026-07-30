@@ -1,4 +1,7 @@
-/** Closable tabs for PDF / text / image reference files with notes, pen markup, and Send to AI. */
+/** Closable tabs for PDF / text / image / video reference files with notes, pen markup, and Send to AI. */
+
+import { mountViewportVideoEditor } from "./viewport-video-editor.js?v=20260730-ref-video";
+import { authHeaders, getToken } from "./auth.js?v=20260723-invite-claim";
 
 function escapeHtml(value) {
   return String(value || "")
@@ -197,6 +200,12 @@ export function createReferenceFilesViewer(options = {}) {
   let redoStack = [];
   let regionSelect = null; // { start, end, page }
   let regionDrag = null;
+  let videoEditorApi = null;
+
+  function destroyVideoEditor() {
+    try { videoEditorApi?.destroy?.(); } catch (_) {}
+    videoEditorApi = null;
+  }
 
   const MARKUP_COLORS = ["#f0883e", "#58a6ff", "#3fb950", "#f85149", "#d2a8ff", "#ffffff", "#0d1117"];
   const RENDER_EDIT_PREF_KEY = "render3d:renderEditSaveMode:v1";
@@ -375,9 +384,15 @@ export function createReferenceFilesViewer(options = {}) {
 
   function revokeBlob(tab) {
     if (tab?.blobUrl) {
-      URL.revokeObjectURL(tab.blobUrl);
+      try { URL.revokeObjectURL(tab.blobUrl); } catch (_) {}
       tab.blobUrl = null;
     }
+    if (tab?.previewUrl && tab.previewUrl !== tab.blobUrl) {
+      try { URL.revokeObjectURL(tab.previewUrl); } catch (_) {}
+      tab.previewUrl = null;
+    }
+    tab.blob = null;
+    tab.editedBlob = null;
   }
 
   function resetView() {
@@ -466,10 +481,11 @@ export function createReferenceFilesViewer(options = {}) {
         </div>`;
     } else if (kind === "video") {
       bodyHtml = `
-        <div class="ref-viewer-stage-wrap">
+        <div class="ref-viewer-stage-wrap ref-viewer-stage-wrap--video">
           <div class="ref-viewer-stage ref-viewer-stage--video">
-            <video class="ref-video" src="${escapeHtml(tab.blobUrl || "")}" controls playsinline preload="metadata"></video>
+            <video class="ref-video" src="${escapeHtml(tab.previewUrl || tab.blobUrl || "")}" controls playsinline preload="metadata"></video>
           </div>
+          <div class="ref-video-editor-host" data-ref-video-editor></div>
         </div>`;
     } else if (kind === "pdf") {
       bodyHtml = `
@@ -489,8 +505,11 @@ export function createReferenceFilesViewer(options = {}) {
 
     const strokeCount = (tab.strokes || []).length;
     const kindIsImage = kind === "image";
+    const kindIsVideo = kind === "video";
+    const canShare = kindIsImage || kindIsVideo || kind === "pdf" || kind === "file";
     const toolBtn = (id, label, title) =>
       `<button type="button" class="dxf-viewer-btn ${markupTool === id ? "active" : ""}" data-ref-tool="${id}" title="${title}">${label}</button>`;
+    destroyVideoEditor();
     viewerEl.innerHTML = `
       <header class="dxf-viewer-toolbar ref-viewer-toolbar">
         <div class="dxf-viewer-title">
@@ -537,12 +556,21 @@ export function createReferenceFilesViewer(options = {}) {
             </div>
           ` : ""}
           ${kindIsImage ? `<button type="button" class="dxf-viewer-btn" data-ref-action="texture-model" title="Use this render as a texture/material reference for the current model">Texture to model</button>` : ""}
-          ${kindIsImage ? `<button type="button" class="dxf-viewer-btn" data-ref-action="share-menu" title="Share or publish this render image">Share</button>` : ""}
+          ${canShare ? `<button type="button" class="dxf-viewer-btn" data-ref-action="share-menu" title="Share, copy link, or post to X">Share</button>` : ""}
           <button type="button" class="dxf-viewer-btn accent" data-ref-action="send-ai" title="Attach marked-up file and notes to the AI prompt">
             Send to AI${strokeCount ? ` (${strokeCount})` : ""}
           </button>
           ${
-            kindIsImage || tab.blobUrl
+            kindIsVideo
+              ? `<div class="ref-download-menu">
+                  <button type="button" class="dxf-viewer-btn" data-ref-action="download-toggle" aria-haspopup="true" aria-expanded="false" title="Download this video">Download ▾</button>
+                  <div class="ref-download-menu-panel hidden" data-ref-download-panel role="menu">
+                    <button type="button" role="menuitem" data-ref-download="original">Original file</button>
+                    <button type="button" role="menuitem" data-ref-download="mp4">MP4</button>
+                    <button type="button" role="menuitem" data-ref-download="webm">WebM</button>
+                  </div>
+                </div>`
+              : kindIsImage || tab.blobUrl
               ? `<div class="ref-download-menu">
                   <button type="button" class="dxf-viewer-btn" data-ref-action="download-toggle" aria-haspopup="true" aria-expanded="false" title="Download this image">Download ▾</button>
                   <div class="ref-download-menu-panel hidden" data-ref-download-panel role="menu">
@@ -555,6 +583,7 @@ export function createReferenceFilesViewer(options = {}) {
                 </div>`
               : ""
           }
+          ${kindIsVideo && tab.editedBlob ? `<button type="button" class="dxf-viewer-btn primary" data-ref-action="save-edited-video" title="Save the edited clip as a new recording">Save edit</button>` : ""}
           <button type="button" class="dxf-viewer-btn primary" data-ref-action="save" title="Save text and markup">Save</button>
           <button type="button" class="dxf-viewer-btn" data-ref-action="close" title="Close tab">Close</button>
         </div>
@@ -576,9 +605,51 @@ export function createReferenceFilesViewer(options = {}) {
     }
     viewerEl.classList.toggle("ref-draw-mode", !!drawMode && markupable);
     if (kind === "image") bindMarkupSurface(tab);
+    if (kind === "video" && !tab.loading && !tab.error) bindVideoEditor(tab);
     if (kind === "pdf" && !tab.loading && !tab.error) {
       void renderPdfPages(tab);
     }
+  }
+
+  function bindVideoEditor(tab) {
+    destroyVideoEditor();
+    const host = viewerEl?.querySelector("[data-ref-video-editor]");
+    const videoEl = viewerEl?.querySelector(".ref-video");
+    if (!host || !videoEl || !tab.blob) return;
+    videoEditorApi = mountViewportVideoEditor(host, {
+      getPreviewEl: () => viewerEl?.querySelector(".ref-video"),
+      getSourceBlob: () => tab.editedBlob || tab.blob,
+      onOutputBlob: (blob) => {
+        if (!blob) return;
+        tab.editedBlob = blob;
+        if (tab.previewUrl && tab.previewUrl !== tab.blobUrl) {
+          try { URL.revokeObjectURL(tab.previewUrl); } catch (_) {}
+        }
+        tab.previewUrl = URL.createObjectURL(blob);
+        const el = viewerEl?.querySelector(".ref-video");
+        if (el) el.src = tab.previewUrl;
+        markDirty(tab);
+        const actions = viewerEl?.querySelector(".ref-markup-toolbar");
+        if (actions && !actions.querySelector('[data-ref-action="save-edited-video"]')) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "dxf-viewer-btn primary";
+          btn.dataset.refAction = "save-edited-video";
+          btn.title = "Save the edited clip as a new recording";
+          btn.textContent = "Save edit";
+          const saveBtn = actions.querySelector('[data-ref-action="save"]');
+          if (saveBtn) actions.insertBefore(btn, saveBtn);
+          else actions.appendChild(btn);
+        }
+        onStatus?.("ok", "Edited clip ready — Save edit, Download, or Share.");
+      },
+      onStatus: (msg, isError) => {
+        onStatus?.(isError ? "error" : "ok", typeof msg === "string" ? msg : String(msg || ""));
+      },
+    });
+    try {
+      videoEditorApi.setSource?.(tab.editedBlob || tab.blob);
+    } catch (_) {}
   }
 
   function markDirty(tab) {
@@ -939,6 +1010,13 @@ export function createReferenceFilesViewer(options = {}) {
   }
 
   async function downloadOriginal(tab) {
+    const kind = tab.kind || kindFromName(tab.filename);
+    if (kind === "video") {
+      const blob = await resolveTabVideoBlob(tab);
+      const name = tab.filename || `${stemForDownload(tab)}.webm`;
+      triggerBlobDownload(blob, name);
+      return;
+    }
     if (!tab.blobUrl) throw new Error("Nothing to download");
     const a = document.createElement("a");
     a.href = tab.blobUrl;
@@ -1007,6 +1085,7 @@ export function createReferenceFilesViewer(options = {}) {
       kind: tab?.kind || kindFromName(tab?.filename),
       projectId: tab?.projectId || getProjectId?.(),
       blobUrl: tab?.blobUrl,
+      blob: extra.blob || tab?.editedBlob || tab?.blob || null,
       debugText: debugTagForTab(tab),
       includeModel: !!extra.includeModel,
       source: "reference-image",
@@ -1014,26 +1093,32 @@ export function createReferenceFilesViewer(options = {}) {
   }
 
   function showReferenceContextMenu(event, tab) {
-    if (!tab || (tab.kind || kindFromName(tab.filename)) !== "image") return;
+    const kind = tab?.kind || kindFromName(tab?.filename);
+    if (!tab || (kind !== "image" && kind !== "video" && kind !== "pdf" && kind !== "file")) return;
     event.preventDefault();
     event.stopPropagation();
     closeReferenceContextMenu();
     const menu = document.createElement("div");
     menu.id = "ref-image-context-menu";
     menu.className = "ref-image-context-menu";
-    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 260)}px`;
-    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 250)}px`;
+    menu.style.left = `${Math.min(event.clientX, window.innerWidth - 280)}px`;
+    menu.style.top = `${Math.min(event.clientY, window.innerHeight - 280)}px`;
+    const isVideo = kind === "video";
+    const isImage = kind === "image";
     menu.innerHTML = `
       <div class="ref-image-context-menu-title">
-        <strong>Share render</strong>
+        <strong>${isVideo ? "Share video" : isImage ? "Share render" : "Share file"}</strong>
         <button type="button" data-ref-context-close aria-label="Close share menu">×</button>
       </div>
-      <button type="button" data-ref-context="copy">Copy render image + debug tag</button>
-      <button type="button" data-ref-context="share-link">Share link...</button>
-      <button type="button" data-ref-context="share-chat">Share to project chat...</button>
-      <button type="button" data-ref-context="share-dm">Share to DM...</button>
-      <button type="button" data-ref-context="store">Add to public profile/store...</button>
-      <button type="button" data-ref-context="texture">Export texture back to model</button>
+      ${isImage ? `<button type="button" data-ref-context="copy">Copy render image + debug tag</button>` : ""}
+      <button type="button" data-ref-context="copy-link">Copy share link</button>
+      <button type="button" data-ref-context="share-x">Share to X…</button>
+      <button type="button" data-ref-context="download">Download</button>
+      <button type="button" data-ref-context="share-link">Export / share…</button>
+      ${isImage ? `<button type="button" data-ref-context="share-chat">Share to project chat...</button>` : ""}
+      ${isImage ? `<button type="button" data-ref-context="share-dm">Share to DM...</button>` : ""}
+      ${isImage ? `<button type="button" data-ref-context="store">Add to public profile/store...</button>` : ""}
+      ${isImage ? `<button type="button" data-ref-context="texture">Export texture back to model</button>` : ""}
       <hr />
       <button type="button" data-ref-context="delete" class="danger">Delete reference file</button>
     `;
@@ -1055,7 +1140,14 @@ export function createReferenceFilesViewer(options = {}) {
         emitReferenceAction("delete", tab);
         return;
       }
-      if (action === "share-link") emitReferenceAction("share-link", tab);
+      if (action === "download") {
+        closeReferenceContextMenu();
+        void handleDownload(isVideo ? "original" : "original");
+        return;
+      }
+      if (action === "copy-link") emitReferenceAction("copy-link", tab);
+      else if (action === "share-x") emitReferenceAction("share-x", tab);
+      else if (action === "share-link") emitReferenceAction("share-link", tab);
       else if (action === "share-chat") emitReferenceAction("share-chat", tab);
       else if (action === "share-dm") emitReferenceAction("share-dm", tab);
       else if (action === "store") emitReferenceAction("store", tab);
@@ -1068,13 +1160,59 @@ export function createReferenceFilesViewer(options = {}) {
     if (!tab) return;
     closeDownloadPanel();
     try {
-      if (format === "original") await downloadOriginal(tab);
-      else if (format === "svg") await downloadAsSvg(tab);
-      else await downloadAsRaster(tab, format);
+      const kind = tab.kind || kindFromName(tab.filename);
+      if (kind === "video" && (format === "mp4" || format === "webm")) {
+        await downloadVideoFormat(tab, format);
+      } else if (format === "original") {
+        await downloadOriginal(tab);
+      } else if (format === "svg") {
+        await downloadAsSvg(tab);
+      } else {
+        await downloadAsRaster(tab, format);
+      }
       onStatus?.("ok", `Downloaded ${format.toUpperCase()}`);
     } catch (err) {
       onStatus?.("error", err.message || "Download failed");
     }
+  }
+
+  async function resolveTabVideoBlob(tab) {
+    if (tab.editedBlob) return tab.editedBlob;
+    if (tab.blob) return tab.blob;
+    if (!tab.blobUrl) throw new Error("Nothing to download");
+    const res = await fetch(tab.blobUrl);
+    if (!res.ok) throw new Error("Could not read video");
+    return res.blob();
+  }
+
+  async function downloadVideoFormat(tab, format) {
+    let blob = await resolveTabVideoBlob(tab);
+    const type = String(blob.type || "").toLowerCase();
+    const already = format === "mp4"
+      ? type.includes("mp4") || type.includes("m4v")
+      : type.includes("webm");
+    if (!already) {
+      const token = typeof getToken === "function" ? getToken() : null;
+      if (!token) throw new Error(`Sign in to convert this clip to ${format.toUpperCase()}.`);
+      const form = new FormData();
+      const srcName = type.includes("mp4") ? "clip.mp4" : "clip.webm";
+      form.append("video", blob, tab.filename || srcName);
+      form.append("format", format);
+      const res = await fetch("/api/video/convert", {
+        method: "POST",
+        headers: { ...authHeaders() },
+        body: form,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || `Could not convert to ${format.toUpperCase()}`);
+      }
+      blob = new Blob([await res.arrayBuffer()], {
+        type: format === "mp4" ? "video/mp4" : "video/webm",
+      });
+    }
+    const stem = stemForDownload(tab);
+    triggerBlobDownload(blob, `${stem}.${format}`);
   }
 
   async function buildSendPayload(tab) {
@@ -1133,10 +1271,14 @@ export function createReferenceFilesViewer(options = {}) {
       if (tab.kind === "text") {
         tab.textContent = await fileRes.text();
         tab.blobUrl = null;
+        tab.blob = null;
       } else {
         const blob = await fileRes.blob();
         revokeBlob(tab);
+        tab.blob = blob;
         tab.blobUrl = URL.createObjectURL(blob);
+        tab.previewUrl = null;
+        tab.editedBlob = null;
       }
       let markup = { notes: "", strokes: [] };
       try {
@@ -1221,6 +1363,7 @@ export function createReferenceFilesViewer(options = {}) {
   function closeTab(filename) {
     const tab = tabs.get(filename);
     if (!tab) return;
+    if (activeFilename === filename) destroyVideoEditor();
     revokeBlob(tab);
     tabs.delete(filename);
     if (activeFilename === filename) activeFilename = null;
@@ -1242,6 +1385,7 @@ export function createReferenceFilesViewer(options = {}) {
   }
 
   function hideViewerOnly() {
+    destroyVideoEditor();
     activeFilename = null;
     setVisible(false);
     if (viewerEl) viewerEl.innerHTML = "";
@@ -1574,6 +1718,12 @@ export function createReferenceFilesViewer(options = {}) {
       const btn = e.target.closest("[data-ref-action]");
       const rect = btn?.getBoundingClientRect?.() || { left: e.clientX, bottom: e.clientY };
       showReferenceContextMenu({ ...e, clientX: rect.left, clientY: rect.bottom + 6, preventDefault() {}, stopPropagation() {} }, tab);
+      return;
+    }
+    if (action === "save-edited-video" && tab) {
+      emitReferenceAction("save-edited-video", tab, {
+        blob: tab.editedBlob || tab.blob,
+      });
     }
   });
 
@@ -1651,8 +1801,9 @@ export function createReferenceFilesViewer(options = {}) {
 
   viewerEl?.addEventListener("contextmenu", (e) => {
     const tab = activeFilename ? tabs.get(activeFilename) : null;
-    if (!tab || (tab.kind || kindFromName(tab.filename)) !== "image") return;
-    if (!e.target.closest?.("[data-ref-image-stack], .ref-viewer-stage-wrap")) return;
+    const kind = tab?.kind || kindFromName(tab?.filename);
+    if (!tab || (kind !== "image" && kind !== "video")) return;
+    if (!e.target.closest?.("[data-ref-image-stack], .ref-viewer-stage-wrap, .ref-video, .ref-video-editor-host")) return;
     showReferenceContextMenu(e, tab);
   });
 
@@ -1672,6 +1823,7 @@ export function createReferenceFilesViewer(options = {}) {
     },
     hideViewerOnly,
     closeAll({ localOnly = false } = {}) {
+      destroyVideoEditor();
       for (const name of [...tabs.keys()]) {
         const tab = tabs.get(name);
         revokeBlob(tab);

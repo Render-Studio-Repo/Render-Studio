@@ -174,6 +174,7 @@ export function createViewportVideoRecorder({
   isFreeTrialCredits,
   isXrPresenting = null,
   getXrModeLabel = null,
+  getXrSessionMode = null,
   getXrOverlayCanvas = null,
   onSaveClip = null,
   onRecordingChange = null,
@@ -1105,23 +1106,32 @@ export function createViewportVideoRecorder({
     usedXrPov = false;
   }
 
+  function isXrVrSession() {
+    const mode = String(getXrSessionMode?.() || "").toLowerCase();
+    if (mode.includes("immersive-vr")) return true;
+    if (mode.includes("immersive-ar")) return false;
+    return String(getXrModeLabel?.() || "").toUpperCase() === "VR";
+  }
+
   function paintPovCompositeFrame() {
     if (!povCompositeCtx || !povCompositeCanvas) return false;
     const outW = povCompositeCanvas.width || 1280;
     const outH = povCompositeCanvas.height || 720;
     const ctx = povCompositeCtx;
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, outW, outH);
 
-    // 1) Headset camera / passthrough
-    if (povVideoEl && povVideoEl.readyState >= 2) {
+    const vrOnly = usedXrPov && isXrVrSession() && !povVideoEl;
+
+    // 1) Headset camera / passthrough (AR only — VR uses spectator CAD view alone)
+    if (!vrOnly && povVideoEl && povVideoEl.readyState >= 2) {
       drawCoverImage(ctx, povVideoEl, outW, outH);
     }
 
-    // 2) Mono CAD + controllers from offscreen XR spectator (not the XR framebuffer)
+    // 2) Mono headset view from offscreen XR spectator (model + controllers + UI windows)
     let overlay = null;
     try {
-      overlay = getXrOverlayCanvas?.(outW, outH) || null;
+      overlay = getXrOverlayCanvas?.(outW, outH, { opaque: vrOnly || isXrVrSession() }) || null;
     } catch (err) {
       console.warn("[viewport-video] overlay canvas failed", err);
     }
@@ -1129,7 +1139,7 @@ export function createViewportVideoRecorder({
       try {
         ctx.drawImage(overlay, 0, 0, outW, outH);
       } catch (_) {}
-    } else {
+    } else if (!vrOnly) {
       // Fallback: try left-eye crop of the live GL canvas (often empty on Quest)
       const glCanvas = getCanvas?.();
       if (glCanvas) {
@@ -1151,6 +1161,40 @@ export function createViewportVideoRecorder({
   function onXrFrame() {
     if (!recording || !usedXrPov || paused) return;
     paintPovCompositeFrame();
+  }
+
+  async function startXrSpectatorOnlyStream(_fps) {
+    // VR: record the headset spectator view only (no passthrough camera).
+    // Passthrough FOV/pose never matches WebXR, which made controllers look wrong.
+    const outW = 1280;
+    const outH = 720;
+    const composite = document.createElement("canvas");
+    composite.width = outW;
+    composite.height = outH;
+    composite.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+    try { document.body.appendChild(composite); } catch (_) {}
+    povCompositeCanvas = composite;
+    povCompositeCtx = composite.getContext("2d", { alpha: false, desynchronized: true });
+    if (!povCompositeCtx) throw new Error("Could not create VR spectator canvas.");
+    povVideoEl = null;
+    povCameraStream = null;
+
+    const stream = typeof composite.captureStream === "function"
+      ? composite.captureStream(0)
+      : null;
+    if (!stream) throw new Error("Spectator canvas captureStream unavailable.");
+    povCaptureTrack = stream.getVideoTracks()?.[0] || null;
+    usedXrPov = true;
+    paintPovCompositeFrame();
+    stopPovCompositeLoop();
+    const pump = () => {
+      povRafId = 0;
+      if (!recording || !usedXrPov) return;
+      if (!paused) paintPovCompositeFrame();
+      povRafId = requestAnimationFrame(pump);
+    };
+    povRafId = requestAnimationFrame(pump);
+    return stream;
   }
 
   async function startXrPovCaptureStream(fps) {
@@ -1238,17 +1282,22 @@ export function createViewportVideoRecorder({
     let canvasStream;
     try {
       if (inXr) {
-        try {
-          canvasStream = await startXrPovCaptureStream(fps);
-          setStatus(true, "Recording headset POV (passthrough + CAD)…");
-        } catch (povErr) {
-          console.warn("[viewport-video] XR POV camera unavailable, canvas-only", povErr);
-          cleanupStreams();
-          canvasStream = canvas.captureStream(fps);
-          setStatus(
-            false,
-            "Headset camera blocked — recording CAD only (black background). Allow camera, then record again.",
-          );
+        if (isXrVrSession()) {
+          canvasStream = await startXrSpectatorOnlyStream(fps);
+          setStatus(true, "Recording VR view (model, controllers, explorer & prompt windows)…");
+        } else {
+          try {
+            canvasStream = await startXrPovCaptureStream(fps);
+            setStatus(true, "Recording headset POV (passthrough + CAD)…");
+          } catch (povErr) {
+            console.warn("[viewport-video] XR POV camera unavailable, spectator-only", povErr);
+            cleanupStreams();
+            canvasStream = await startXrSpectatorOnlyStream(fps);
+            setStatus(
+              true,
+              "Headset camera blocked — recording CAD/UI view only. Allow camera for passthrough next time.",
+            );
+          }
         }
       } else {
         canvasStream = canvas.captureStream(fps);

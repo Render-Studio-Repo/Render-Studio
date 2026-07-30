@@ -1,3 +1,12 @@
+## 2026-07-30 — VR recording: controllers + UI windows match headset
+
+- Controllers looked wrong because the recorder used a stereo-eye projection on a 16:9 canvas (squished) and composited over a mismatched passthrough camera.
+- VR clips now record a true headset spectator view (head-centered camera, correct FOV/aspect).
+- Explorer + AI prompt windows are included in the recording (only the Rec/Stop strip is hidden).
+- Cache-bust `?v=20260730-vr-rec-ui`.
+
+---
+
 ## 2026-07-30 — Right-click delete for reference files
 
 - Projects browser: Reference Files / Renders right-click menu now includes **Delete** (and Rename).

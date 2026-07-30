@@ -348,7 +348,7 @@ function showExportSuccess(menu, message, { autoDismissMs = 4200 } = {}) {
   }
 }
 
-async function createShareUrl(projectId, filename, shareContext = null) {
+export async function createShareUrl(projectId, filename, shareContext = null) {
   const body = await scopedShareContext(shareContext, filename);
   // Always mint a fresh share so we never reopen an old Arduino/ball token.
   body.force_new = true;
@@ -382,7 +382,7 @@ async function createShareUrl(projectId, filename, shareContext = null) {
   return shareUrl.startsWith("http") ? shareUrl : `${window.location.origin}${shareUrl}`;
 }
 
-async function downloadFile(url, filename, { retries = 3 } = {}) {
+export async function downloadFile(url, filename, { retries = 3 } = {}) {
   let lastErr = null;
   for (let attempt = 0; attempt < retries; attempt++) {
     if (attempt > 0) {
