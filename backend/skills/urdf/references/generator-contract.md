@@ -12,9 +12,10 @@ Keep the design ledger close to the source. At minimum, generator source should 
 
 `gen_urdf()` must be a top-level zero-argument function that returns one of:
 
-- the root `xml.etree.ElementTree.Element` for a complete URDF document;
+- the root `xml.etree.ElementTree.Element` for a complete URDF document (preferred: `return robot`);
+- an `xml.etree.ElementTree.ElementTree` wrapping that root (accepted — the launcher unwraps via `getroot()`);
 - a complete URDF XML string;
-- an envelope dict with exactly one field, `xml`, whose value is an `ElementTree.Element` or XML string.
+- an envelope dict with exactly one field, `xml`, whose value is an `Element`, `ElementTree`, or XML string.
 
 Default generator shape:
 

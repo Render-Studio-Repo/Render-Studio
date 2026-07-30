@@ -782,6 +782,7 @@ export function createViewportXR(opts) {
   let aiPanelRefreshAt = 0;
   let aiGenerating = false;
   let aiGeneratingMsg = "";
+  let aiDetailsOpen = false;
   let editModelPickActive = false;
   /** Folders tab drill-in: null = personal/shared roots; string = folder id (incl. __root__). */
   let folderBrowseId = null;
@@ -1948,28 +1949,49 @@ export function createViewportXR(opts) {
       speed: "fast",
       targetMode: "new",
       selectedLabel: "None",
+      generating: false,
+      pct: 0,
+      progressLabel: "",
+      thinking: "",
+      activity: [],
+      improvedPrompt: "",
+      detailsOpen: !!aiDetailsOpen,
+      now: performance.now(),
     };
     try {
       const s = typeof getAiPromptState === "function" ? getAiPromptState() : null;
       if (s && typeof s === "object") state = { ...state, ...s };
     } catch (_) {}
+    try {
+      const prog = typeof getAiGenerationProgress === "function" ? getAiGenerationProgress() : null;
+      if (prog && typeof prog === "object") {
+        if (prog.generating != null) state.generating = !!prog.generating;
+        if (prog.pct != null) state.pct = Number(prog.pct) || 0;
+        if (prog.label) state.progressLabel = String(prog.label);
+        if (prog.thinking) state.thinking = String(prog.thinking);
+        if (Array.isArray(prog.activity)) state.activity = prog.activity;
+        if (prog.improvedPrompt) state.improvedPrompt = String(prog.improvedPrompt);
+      }
+    } catch (_) {}
     if (aiGenerating) state.generating = true;
+    if (aiGeneratingMsg && !state.progressLabel) state.progressLabel = aiGeneratingMsg;
+    state.detailsOpen = !!aiDetailsOpen;
+    state.now = performance.now();
     try {
       if (!state.draft && typeof getPromptDraft === "function") state.draft = String(getPromptDraft() || "");
     } catch (_) {}
     try {
       if (typeof isTranscribing === "function") state.listening = !!isTranscribing();
     } catch (_) {}
-    if (aiPanel?.status) {
+    // Don't overwrite the spoken draft with status while generating — status lives in the progress card.
+    if (aiPanel?.status && !state.generating) {
       state.draft = state.draft
         ? `${state.draft}`
         : String(aiPanel.status);
       if (state.draft && aiPanel.status && !String(state.draft).includes(aiPanel.status) && state.listening) {
-        /* keep live transcript; status shown via listening chrome */
+        /* keep live transcript */
       } else if (!state.listening && aiPanel.status && !state.draft) {
         state.draft = aiPanel.status;
-      } else if (!state.listening && aiPanel.status && state.draft === aiPanel.status) {
-        /* ok */
       } else if (state.listening && !state.draft) {
         state.draft = aiPanel.status || "Listening…";
       }

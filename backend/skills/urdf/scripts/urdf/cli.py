@@ -184,6 +184,8 @@ def _load_generator_module(script_path: Path) -> object:
 
 
 def _normalize_urdf_payload(raw_payload: object, *, script_path: Path) -> dict[str, object]:
+    # Jake-style generators often return ElementTree; unwrap to the root Element.
+    raw_payload = _coerce_xml_root(raw_payload)
     if _is_xml_element(raw_payload):
         return {"xml": _serialize_xml_element(raw_payload)}
     if isinstance(raw_payload, str):
@@ -221,14 +223,15 @@ def _write_urdf_payload(payload: dict[str, object], *, output_path: Path, script
 
 
 def _normalize_xml_value(raw_xml: object, *, script_path: Path, label: str) -> str:
+    raw_xml = _coerce_xml_root(raw_xml)
     if _is_xml_element(raw_xml):
         xml = _serialize_xml_element(raw_xml)
     elif isinstance(raw_xml, str):
         xml = raw_xml
     else:
         raise TypeError(
-            f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element or string, "
-            f"got {type(raw_xml).__name__}"
+            f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element "
+            f"(or ElementTree), or string, got {type(raw_xml).__name__}"
         )
     return _coerce_primitive_geometry_attrs(xml)
 
@@ -285,6 +288,23 @@ def _coerce_primitive_geometry_attrs(xml_text: str) -> str:
 
 def _is_xml_element(value: object) -> bool:
     return isinstance(value, ET.Element)
+
+
+def _coerce_xml_root(value: object) -> object:
+    """Accept ElementTree the same way Jake-style scripts often return it."""
+    if isinstance(value, ET.ElementTree):
+        root = value.getroot()
+        return root if root is not None else value
+    # Duck-type other ElementTree-like objects (e.g. lxml) that expose getroot().
+    getroot = getattr(value, "getroot", None)
+    if callable(getroot) and not _is_xml_element(value) and not isinstance(value, (str, dict, bytes)):
+        try:
+            root = getroot()
+        except Exception:
+            return value
+        if _is_xml_element(root):
+            return root
+    return value
 
 
 def _serialize_xml_element(root: ET.Element) -> str:

@@ -1,3 +1,20 @@
+## 2026-07-30 — URDF launcher accepts Jake ElementTree returns
+
+- Robot artifact fail on `6f1f5739` Parallel Pinch Gripper: AI `gen_urdf()` returned `ET.ElementTree(robot)` and the launcher only accepted `Element`/string/dict.
+- URDF (and SRDF/SDF) now unwrap `ElementTree.getroot()` like Jake-style scripts; author prompt updated.
+- Fixed this gripper: `return robot`, prismatic jaw joints, proper SRDF group/open/closed; regenerated `.urdf`/`.srdf`.
+
+---
+
+## 2026-07-30 — Green AI VR icon while generating in headset
+
+- Left-hand dock adds an **AI VR** button; it turns bright green and pulses while a generation is running in VR/AR.
+- AI prompt panel header switches to **AI VR · GENERATING…** with a green rim during runs.
+- Wired via `viewportXR.setAiGenerating` from generation watch / stop visibility sync.
+- Cache-bust `?v=20260730-ai-vr-gen`.
+
+---
+
 ## 2026-07-30 — VR recording: controllers + UI windows match headset
 
 - Controllers looked wrong because the recorder used a stereo-eye projection on a 16:9 canvas (squished) and composited over a mismatched passthrough camera.

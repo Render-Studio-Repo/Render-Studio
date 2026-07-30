@@ -220,13 +220,14 @@ def _normalize_srdf_payload(raw_payload: object, *, script_path: Path) -> dict[s
 
 
 def _normalize_xml_value(raw_xml: object, *, script_path: Path, label: str) -> str:
+    raw_xml = _coerce_xml_root(raw_xml)
     if _is_xml_element(raw_xml):
         return _serialize_xml_element(raw_xml)
     if isinstance(raw_xml, str):
         return raw_xml
     raise TypeError(
-        f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element or string, "
-        f"got {type(raw_xml).__name__}"
+        f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element "
+        f"(or ElementTree), or string, got {type(raw_xml).__name__}"
     )
 
 
@@ -274,6 +275,22 @@ def _coerce_srdf_common_mistakes(xml_text: str, *, urdf_robot_name: str) -> str:
 
 def _is_xml_element(value: object) -> bool:
     return isinstance(value, ET.Element)
+
+
+def _coerce_xml_root(value: object) -> object:
+    """Accept ElementTree the same way Jake-style scripts often return it."""
+    if isinstance(value, ET.ElementTree):
+        root = value.getroot()
+        return root if root is not None else value
+    getroot = getattr(value, "getroot", None)
+    if callable(getroot) and not _is_xml_element(value) and not isinstance(value, (str, dict, bytes)):
+        try:
+            root = getroot()
+        except Exception:
+            return value
+        if _is_xml_element(root):
+            return root
+    return value
 
 
 def _serialize_xml_element(root: ET.Element) -> str:
