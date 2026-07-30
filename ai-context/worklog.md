@@ -1,3 +1,12 @@
+## 2026-07-30 — Right-click delete for reference files
+
+- Projects browser: Reference Files / Renders right-click menu now includes **Delete** (and Rename).
+- Open reference image viewer: right-click also offers Delete.
+- Confirms, then removes via existing `/files/{name}` DELETE (including `references/AR/`).
+- Cache-bust `?v=20260730-ref-delete`.
+
+---
+
 ## 2026-07-30 — Bambu export: “Preparing assembly…” spinner
 
 - Send to Bambu Studio / 3MF download now shows a spinning circle with **Preparing assembly…** while the plate pack runs (single-body still says Preparing 3MF…).

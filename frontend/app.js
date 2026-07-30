@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-ws2";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
 import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-ws2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
@@ -19103,18 +19103,29 @@ async function openHierarchyItem(project, entry, sectionId) {
   await refreshWiringPromptHistory();
 }
 
-async function deleteHierarchyComponent(project, entry) {
+async function deleteHierarchyComponent(project, entry, sectionId = "components") {
   if (!project?.id || !entry?.name) return;
-  if (!window.confirm(`Delete "${entry.name}" from this project?`)) return;
+  const kind =
+    sectionId === "references"
+      ? "reference file"
+      : sectionId === "renders"
+        ? "render"
+        : sectionId === "robots"
+          ? "robot file"
+          : "component";
+  if (!window.confirm(`Delete ${kind} "${entry.name}" from this project?`)) return;
   try {
     const data = await api(`/api/projects/${project.id}/files/${encodeURIComponent(entry.name)}`, { method: "DELETE" });
     if (project.id === projectId) {
+      dxfViewer?.closeIfOpen?.(entry.name);
+      referenceFilesViewer?.closeTab?.(entry.name);
       await syncAfterObjectDelete({ deletedFile: entry.name, ...data });
+      setEditStatus("ok", `Deleted ${kind} ${entry.name}.`);
     } else {
       await fetchAllProjects();
     }
   } catch (err) {
-    alert(err.message || "Failed to delete component");
+    alert(err.message || `Failed to delete ${kind}`);
   }
 }
 
@@ -19175,8 +19186,8 @@ const workspaceBrowser = createWorkspaceBrowser({
     })();
   },
   onOpenProfile: (project, entry) => componentProfileUI.open(entry, project?.id),
-  onRenameHierarchyItem: (project, entry) => renameHierarchyComponent(project, entry),
-  onDeleteHierarchyItem: (project, entry) => deleteHierarchyComponent(project, entry),
+  onRenameHierarchyItem: (project, entry, sectionId) => renameHierarchyComponent(project, entry, sectionId),
+  onDeleteHierarchyItem: (project, entry, sectionId) => deleteHierarchyComponent(project, entry, sectionId),
   onExportHierarchyItem: (project, entry) => {
     openFileExportMenu({
       api,
@@ -20044,6 +20055,13 @@ async function openRenderShareTargetPicker(payload = {}, pid = projectId) {
 async function handleReferenceImageAction(payload = {}) {
   if (!payload?.filename) return;
   const pid = payload.projectId || projectId;
+  if (payload.action === "delete") {
+    if (pid && pid !== projectId) {
+      await loadProject(pid);
+    }
+    await deleteProjectFile(payload.filename);
+    return;
+  }
   if (payload.action === "texture-model") {
     const baseFilename = currentModelFilenameForRenderTexture();
     if (!baseFilename) {

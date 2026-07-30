@@ -9448,6 +9448,17 @@ body.canvas-design-tab .main-column {
   background: rgba(56, 139, 253, 0.16);
 }
 
+.ref-image-context-menu button[data-ref-context="delete"],
+.ref-image-context-menu button.danger {
+  color: #f85149;
+}
+.ref-image-context-menu button[data-ref-context="delete"]:hover,
+.ref-image-context-menu button.danger:hover {
+  background: rgba(248, 81, 73, 0.15);
+  color: #ff7b72;
+}
+
+
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1024px) {
   .ref-image-context-menu {
     left: max(10px, env(safe-area-inset-left, 0px)) !important;

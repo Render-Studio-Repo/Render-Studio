@@ -1034,6 +1034,8 @@ export function createReferenceFilesViewer(options = {}) {
       <button type="button" data-ref-context="share-dm">Share to DM...</button>
       <button type="button" data-ref-context="store">Add to public profile/store...</button>
       <button type="button" data-ref-context="texture">Export texture back to model</button>
+      <hr />
+      <button type="button" data-ref-context="delete" class="danger">Delete reference file</button>
     `;
     document.body.appendChild(menu);
     menu.addEventListener("click", (e) => {
@@ -1046,6 +1048,11 @@ export function createReferenceFilesViewer(options = {}) {
       if (action === "copy") {
         void copyRenderImageWithDebug(tab).catch((err) => onStatus?.("error", err.message || "Could not copy render image."));
         closeReferenceContextMenu();
+        return;
+      }
+      if (action === "delete") {
+        closeReferenceContextMenu();
+        emitReferenceAction("delete", tab);
         return;
       }
       if (action === "share-link") emitReferenceAction("share-link", tab);

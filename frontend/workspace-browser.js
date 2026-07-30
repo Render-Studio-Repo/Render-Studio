@@ -1648,17 +1648,29 @@ export function createWorkspaceBrowser({
     if (e?.preventDefault) e.preventDefault();
     if (e?.stopPropagation) e.stopPropagation();
     closeContextMenu();
+    // Virtual folder rows (e.g. AR captures group) are not deletable files.
+    if (entry?.virtual_folder) return;
     const idToken = explorerIdToken(project, sectionId, entry);
     const kindLabel =
       sectionId === "components"
         ? "component"
         : sectionId === "references"
           ? "reference file"
-          : sectionId === "sketches"
-            ? "sketch"
-            : sectionId === "wiring"
-              ? "wiring"
-              : "item";
+          : sectionId === "renders"
+            ? "render"
+            : sectionId === "sketches"
+              ? "sketch"
+              : sectionId === "wiring"
+                ? "wiring"
+                : "item";
+    const canDelete =
+      (sectionId === "references" || sectionId === "renders" || sectionId === "robots")
+      && !!entry?.name
+      && typeof onDeleteHierarchyItem === "function";
+    const canRename =
+      (sectionId === "references" || sectionId === "renders" || sectionId === "robots")
+      && !!entry?.name
+      && typeof onRenameHierarchyItem === "function";
     const menu = document.createElement("div");
     menu.className = "folder-context-menu component-context-menu";
     menu.innerHTML = `
@@ -1674,6 +1686,8 @@ export function createWorkspaceBrowser({
           ? `<button type="button" data-action="send-ai">Send to AI prompt</button>`
           : ""
       }
+      ${canRename ? `<button type="button" data-action="rename">Rename</button>` : ""}
+      ${canDelete ? `<hr /><button type="button" data-action="delete" class="danger">Delete ${kindLabel}</button>` : ""}
     `;
     document.body.appendChild(menu);
     const rect = menu.getBoundingClientRect();
@@ -1693,6 +1707,10 @@ export function createWorkspaceBrowser({
         onOpenHierarchyItem?.(project, entry, sectionId);
       } else if (action === "send-ai") {
         onSendReferenceToPrompt?.(project, entry);
+      } else if (action === "rename") {
+        onRenameHierarchyItem?.(project, entry, sectionId);
+      } else if (action === "delete") {
+        onDeleteHierarchyItem?.(project, entry, sectionId);
       } else if (action === "attach" && payload) {
         onAttachWiringComponent?.(project, entry, payload);
       }
@@ -2009,7 +2027,10 @@ export function createWorkspaceBrowser({
               item.appendChild(btn);
               const payload = hierarchyPayload(project, section.id, entry);
               item.classList.add(isDxf ? "proj-hierarchy-item--drawing" : "proj-hierarchy-item--reference");
-              item.addEventListener("contextmenu", (e) => showHierarchyItemContextMenu(e, project, entry, section.id, payload));
+              const openRefMenu = (ev) => showHierarchyItemContextMenu(ev, project, entry, section.id, payload);
+              item.addEventListener("contextmenu", openRefMenu);
+              bindLongPress(item, openRefMenu);
+              bindLongPress(btn, openRefMenu);
             } else {
               item.appendChild(btn);
               const payload = hierarchyPayload(project, section.id, entry);
