@@ -14,6 +14,14 @@
 
 ---
 
+## 2026-07-30 — Golden snapshot: working production
+
+- Code-only golden: `backups/golden/golden-working-production-20260730T160854Z/` (~145 MB).
+- Drive folder `golden-working-production-20260730T160854Z` (ID `1ViZ6OgyUsv_RQdBAZgz7HfifxsKnDOD3`); protected via `golden-` prefix.
+- Git HEAD `07efc027bf2f79491f89fca5204b0b57488aabbc`.
+
+---
+
 ## 2026-07-30 — Brand: Render Studio on boot + toolbar
 
 - Loading screen title/logo word and projects spinner: **Render Studio** (was Render3D Studio).
