@@ -1,3 +1,11 @@
+## 2026-07-30 — Brand: Render Studio on boot + toolbar
+
+- Loading screen title/logo word and projects spinner: **Render Studio** (was Render3D Studio).
+- Top-left toolbar brand `<h1>`: **Render Studio**.
+- File: `frontend/index.html`.
+
+---
+
 ## 2026-07-29 — Mesh stop: restore draft + costs like Mode 2.0
 
 - Mesh cancel raised `RuntimeError` → HTTP 422; background skipped stopped-history usage refresh, so history often had the prompt with **no cost**.

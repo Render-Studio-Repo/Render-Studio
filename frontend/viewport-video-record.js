@@ -79,6 +79,7 @@ export function createViewportVideoRecorder({
   let startedAt = 0;
   let tickTimer = 0;
   let recording = false;
+  let startedInXr = false;
   let paused = false;
   let pauseStartedAt = 0;
   let pausedAccumMs = 0;
@@ -1030,38 +1031,48 @@ export function createViewportVideoRecorder({
       chunks = [];
       cleanupStreams();
       recorder = null;
-      if (blob.size > 0) {
-        lastBlob = blob;
-        sourceBlob = blob;
-        pendingDesktopClip = blob;
-        const xr = !!isXrPresenting?.();
-        if (xr) {
-          void saveClipToProject(blob, {
-            label: "XR viewport clip",
-            xr: true,
-            modeLabel: getXrModeLabel?.() || "AR",
-          });
+      const xr = startedInXr || !!isXrPresenting?.();
+      startedInXr = false;
+      void (async () => {
+        if (blob.size > 0) {
+          lastBlob = blob;
+          sourceBlob = blob;
+          pendingDesktopClip = blob;
+          // Always upload XR takes to AR references + notify PC (await so publish isn't skipped)
+          try {
+            await saveClipToProject(blob, {
+              label: "XR viewport clip",
+              xr: true,
+              forceArFolder: true,
+              modeLabel: getXrModeLabel?.() || "AR",
+            });
+          } catch (err) {
+            console.warn("[viewport-video] save XR clip failed", err);
+            setStatus(false, err?.message || "Could not save XR clip to references.");
+          }
+          try {
+            await openShareModal(blob);
+          } catch (err) {
+            console.warn("[viewport-video] open share modal", err);
+          }
+          try { onClipReady?.(blob, { xr: true, kind: "video" }); } catch (_) {}
+          setStatus(
+            true,
+            `${qualityLabel(prefs.quality)} clip saved — Share to X should open on your PC.`,
+          );
+        } else {
+          setStatus(false, "Recording was empty — nothing saved.");
         }
-        void openShareModal(blob);
-        try { onClipReady?.(blob, { xr, kind: "video" }); } catch (_) {}
-        setStatus(
-          true,
-          xr
-            ? `${qualityLabel(prefs.quality)} clip ready on PC — mark up & Share to X (also in AR captures).`
-            : `${qualityLabel(prefs.quality)} clip ready — download or share to X.`,
-        );
-      } else {
-        setStatus(false, "Recording was empty — nothing saved.");
-      }
-      recording = false;
-      paused = false;
-      pauseStartedAt = 0;
-      pausedAccumMs = 0;
-      clearInterval(tickTimer);
-      tickTimer = 0;
-      syncMainUi();
-      syncMenuUi();
-      emitRecordingChange();
+        recording = false;
+        paused = false;
+        pauseStartedAt = 0;
+        pausedAccumMs = 0;
+        clearInterval(tickTimer);
+        tickTimer = 0;
+        syncMainUi();
+        syncMenuUi();
+        emitRecordingChange();
+      })();
     };
 
     try {
@@ -1074,6 +1085,7 @@ export function createViewportVideoRecorder({
     }
 
     recording = true;
+    startedInXr = !!isXrPresenting?.();
     paused = false;
     pauseStartedAt = 0;
     pausedAccumMs = 0;

@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260729-xr-sync4";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-fix";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260729-xr-sync4";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-fix";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -27584,7 +27584,8 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   },
   onSaveClip: async (blob, meta = {}) => {
     if (!blob) return null;
-    if (meta?.xr || viewportXR?.isPresenting?.() || meta?.forceArFolder) {
+    // XR dock recordings always land in AR captures + PC Share popup
+    if (meta?.xr || meta?.forceArFolder || viewportXR?.isPresenting?.()) {
       return saveXrCaptureToReferences(blob, {
         kind: "video",
         modeLabel: meta?.modeLabel || currentXrCaptureModeLabel(),

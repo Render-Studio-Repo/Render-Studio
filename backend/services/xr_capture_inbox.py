@@ -18,7 +18,8 @@ _TTL_SEC = 60 * 60 * 6  # 6 hours
 
 
 def _inbox_path(user_id: str) -> Path:
-    root = Path(settings.data_root) / str(user_id)
+    # Settings exposes data_dir (not data_root)
+    root = Path(getattr(settings, "data_dir", None) or getattr(settings, "data_root", "data")) / str(user_id)
     root.mkdir(parents=True, exist_ok=True)
     return root / "xr_capture_inbox.json"
 
