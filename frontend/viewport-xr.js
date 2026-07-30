@@ -101,17 +101,18 @@ function menuCanvasSizeToLocal(pw, ph) {
 }
 
 
-const AI_CANVAS = { w: 1080, h: 1280 };
-const AI_PLANE = { w: 0.4, h: 0.475 };
+const AI_CANVAS = { w: 1080, h: 1420 };
+const AI_PLANE = { w: 0.4, h: 0.525 };
 const AI_LAYOUT = {
   headerEnd: 96,
-  mic: { cx: 540, cy: 270, r: 108 },
-  transcript: { x: 48, y: 410, w: 984, h: 260 },
-  modeY: 720,
-  speedY: 830,
-  targetY: 940,
-  run: { y: 1080, h: 100 },
-  hide: { y: 1200, h: 50 },
+  mic: { cx: 540, cy: 250, r: 96 },
+  transcript: { x: 48, y: 380, w: 984, h: 220 },
+  modeY: 650,
+  speedY: 760,
+  keyY: 870,
+  targetY: 980,
+  run: { y: 1140, h: 100 },
+  hide: { y: 1280, h: 50 },
 };
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -568,6 +569,26 @@ function drawAiPromptCanvas(state = {}, targetCanvas = null) {
     { id: "fast", label: "Speed" },
     { id: "quality", label: "Quality" },
   ], speed);
+
+  const keyOptions = Array.isArray(state.keyOptions) ? state.keyOptions : [];
+  const keyLabel = String(state.keyLabel || state.keyValue || "No key").slice(0, 22);
+  if (keyOptions.length) {
+    const keyCount = keyOptions.length;
+    pillRow(AI_LAYOUT.keyY, `AI KEY · ${keyCount} option${keyCount === 1 ? "" : "s"}`, [
+      { id: "prev", label: "‹" },
+      { id: "current", label: keyLabel },
+      { id: "next", label: "›" },
+    ], "current");
+  } else {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "bold 22px Arial,sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("AI KEY", 48, AI_LAYOUT.keyY - 18);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "26px Arial,sans-serif";
+    ctx.fillText("No keys available — add one on desktop", 48, AI_LAYOUT.keyY + 32);
+  }
+
   pillRow(AI_LAYOUT.targetY, "TARGET", [
     { id: "new", label: "New model" },
     { id: "edit", label: target === "edit" ? "Edit… pick" : "Edit model" },
@@ -1866,6 +1887,7 @@ export function createViewportXR(opts) {
     }
     addPillHits(AI_LAYOUT.modeY, ["mode:render", "mode:v2", "mode:mesh"]);
     addPillHits(AI_LAYOUT.speedY, ["speed:fast", "speed:quality"]);
+    addPillHits(AI_LAYOUT.keyY, ["key:prev", "key:current", "key:next"]);
     addPillHits(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
     hits.push(makeAiHitTarget("run", 48, AI_LAYOUT.run.y, AI_CANVAS.w - 96, AI_LAYOUT.run.h));
 
@@ -1978,6 +2000,8 @@ export function createViewportXR(opts) {
     if (id) return { kind: "ai-action", id };
     id = pillHit(AI_LAYOUT.speedY, ["speed:fast", "speed:quality"]);
     if (id) return { kind: "ai-action", id };
+    id = pillHit(AI_LAYOUT.keyY, ["key:prev", "key:current", "key:next"]);
+    if (id) return { kind: "ai-action", id };
     id = pillHit(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
     if (id) return { kind: "ai-action", id };
     const ry = AI_LAYOUT.run.y;
@@ -2044,6 +2068,26 @@ export function createViewportXR(opts) {
     }
     if (id.startsWith("speed:")) {
       try { setAiPromptSetting?.("speed", id.slice(6)); } catch (_) {}
+      refreshAiPromptPanel();
+      return;
+    }
+    if (id.startsWith("key:")) {
+      const action = id.slice(4);
+      const state = readAiState();
+      const options = Array.isArray(state.keyOptions) ? state.keyOptions : [];
+      if (!options.length) {
+        refreshAiPromptPanel();
+        return;
+      }
+      const cur = String(state.keyValue || "");
+      let idx = options.findIndex((k) => String(k.value) === cur);
+      if (idx < 0) idx = 0;
+      if (action === "prev") idx = (idx - 1 + options.length) % options.length;
+      else if (action === "next" || action === "current") idx = (idx + 1) % options.length;
+      const next = options[idx];
+      if (next?.value) {
+        try { setAiPromptSetting?.("key", next.value); } catch (_) {}
+      }
       refreshAiPromptPanel();
       return;
     }

@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-xr-folders";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-folders";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-ai-key";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3258,10 +3258,37 @@ const viewportXR = createViewportXR({
         ? getPromptTargetMode()
         : (document.getElementById("prompt-target-mode")?.value || "new");
       const selectedLabel = selectedFile || "None";
-      return { draft, listening, mode, speed, targetMode, selectedLabel };
+      const keyOptions = typeof listPromptAiKeyOptions === "function"
+        ? listPromptAiKeyOptions(aiStatus)
+        : [];
+      const keyValue = document.getElementById("prompt-ai-key-select")?.value || "";
+      const keyLabel = typeof getSelectedPromptAiKeyLabel === "function"
+        ? getSelectedPromptAiKeyLabel()
+        : (keyValue || "Default key");
+      return {
+        draft,
+        listening,
+        mode,
+        speed,
+        targetMode,
+        selectedLabel,
+        keyOptions,
+        keyValue,
+        keyLabel,
+      };
     } catch (err) {
       console.warn("[xr] getAiPromptState", err);
-      return { draft: "", listening: false, mode: "v2", speed: "fast", targetMode: "new", selectedLabel: "None" };
+      return {
+        draft: "",
+        listening: false,
+        mode: "v2",
+        speed: "fast",
+        targetMode: "new",
+        selectedLabel: "None",
+        keyOptions: [],
+        keyValue: "",
+        keyLabel: "Default key",
+      };
     }
   },
   setAiPromptSetting: (key, value) => {
@@ -3273,6 +3300,10 @@ const viewportXR = createViewportXR({
       }
       if (key === "speed") {
         setPromptGenerationSpeed?.(value);
+        return;
+      }
+      if (key === "key") {
+        selectPromptAiKeyValue?.(value);
         return;
       }
       if (key === "targetMode") {
@@ -17799,6 +17830,31 @@ function getSelectedPromptAiKeyLabel() {
   const allKeys = [...(aiStatus?.keys || []), ...(aiStatus?.team_keys || [])];
   const found = allKeys.find((k) => k.id === parsed.keyId);
   return found?.name || "Selected key";
+}
+
+/** Flat list of selectable prompt keys for XR / shared pickers. */
+function listPromptAiKeyOptions(status = aiStatus) {
+  const out = [];
+  const push = (source, key, fallbackName) => {
+    if (!key?.id) return;
+    const provider = key.provider_label || platformProviderLabel(key.provider) || "";
+    const name = String(key.name || fallbackName || "Key").trim();
+    const label = provider && !name.toLowerCase().includes(String(provider).toLowerCase())
+      ? `${name} · ${provider}`
+      : name;
+    out.push({
+      value: promptKeyOptionValue(source, key.id),
+      label,
+      source,
+      id: key.id,
+    });
+  };
+  getPlatformPromptKeys(status).forEach((key) => push("platform", key, "Render3D key"));
+  (status?.keys || []).forEach((key) => push("personal", key, "Personal key"));
+  (status?.team_keys || [])
+    .filter((k) => k.enabled !== false && aiKeyAllowedForCurrentProject(k))
+    .forEach((key) => push("team", key, "Shared key"));
+  return out;
 }
 
 function teamKeyDisplayModel(key) {
