@@ -1364,6 +1364,7 @@ export function createViewportXR(opts) {
     const changed = next !== aiGenerating || msg !== aiGeneratingMsg;
     aiGenerating = next;
     aiGeneratingMsg = msg;
+    if (!aiGenerating) aiDetailsOpen = false;
     syncAiDockIcon();
     if (aiPanel) {
       if (aiGenerating && aiGeneratingMsg) aiPanel.status = aiGeneratingMsg;
@@ -2031,9 +2032,7 @@ export function createViewportXR(opts) {
   function ensureAiPanel() {
     if (aiPanel) return aiPanel;
     const canvas = drawAiPromptCanvas(readAiState());
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.flipY = true;
+    const tex = configureAiTexture(new THREE.CanvasTexture(canvas));
     const plane = new THREE.Mesh(
       new THREE.PlaneGeometry(AI_PLANE.w, AI_PLANE.h),
       new THREE.MeshBasicMaterial({
@@ -2074,6 +2073,13 @@ export function createViewportXR(opts) {
     addPillHits(AI_LAYOUT.keyY, ["key:prev", "key:current", "key:next"]);
     addPillHits(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
     hits.push(makeAiHitTarget("run", 48, AI_LAYOUT.run.y, AI_CANVAS.w - 96, AI_LAYOUT.run.h));
+    // Progress card hit targets (active only while generating; canvas pick also handles these)
+    const prog = AI_LAYOUT.progress;
+    const detailsW = (AI_CANVAS.w - 96 - 24) * 0.55;
+    const stopW = (AI_CANVAS.w - 96 - 24) * 0.45;
+    const btnY = prog.y + 148;
+    hits.push(makeAiHitTarget("gen-details", 48, btnY, detailsW, 52));
+    hits.push(makeAiHitTarget("gen-stop", 48 + detailsW + 24, btnY, stopW, 52));
 
     const titleBar = new THREE.Mesh(
       new THREE.PlaneGeometry(AI_PLANE.w, 0.055),
@@ -2107,7 +2113,7 @@ export function createViewportXR(opts) {
     const canvas = drawAiPromptCanvas(readAiState(), aiPanel.canvas || null);
     aiPanel.canvas = canvas;
     if (aiPanel.tex.image !== canvas) aiPanel.tex.image = canvas;
-    aiPanel.tex.needsUpdate = true;
+    configureAiTexture(aiPanel.tex);
   }
 
   function setAiPanelStatus(msg = "") {
@@ -2194,9 +2200,26 @@ export function createViewportXR(opts) {
     if (id) return { kind: "ai-action", id };
     id = pillHit(AI_LAYOUT.targetY, ["target:new", "target:edit"]);
     if (id) return { kind: "ai-action", id };
-    const ry = AI_LAYOUT.run.y;
-    if (py >= ry && py <= ry + AI_LAYOUT.run.h && px >= 48 && px <= AI_CANVAS.w - 48) {
-      return { kind: "ai-action", id: "run" };
+    const generating = !!(aiGenerating || readAiState().generating);
+    if (generating) {
+      const prog = AI_LAYOUT.progress;
+      const detailsW = (AI_CANVAS.w - 96 - 24) * 0.55;
+      const stopW = (AI_CANVAS.w - 96 - 24) * 0.45;
+      const btnY = prog.y + 148;
+      const btnH = 52;
+      if (py >= btnY && py <= btnY + btnH) {
+        if (px >= 48 && px <= 48 + detailsW) return { kind: "ai-action", id: "gen-details" };
+        if (px >= 48 + detailsW + 24 && px <= 48 + detailsW + 24 + stopW) {
+          return { kind: "ai-action", id: "gen-stop" };
+        }
+      }
+      // Absorb taps on the progress card so we don't re-fire Run
+      if (py >= prog.y && py <= prog.y + prog.h) return { kind: "ai-action", id: "noop" };
+    } else {
+      const ry = AI_LAYOUT.run.y;
+      if (py >= ry && py <= ry + AI_LAYOUT.run.h && px >= 48 && px <= AI_CANVAS.w - 48) {
+        return { kind: "ai-action", id: "run" };
+      }
     }
     return null;
   }
@@ -2248,6 +2271,7 @@ export function createViewportXR(opts) {
       return;
     }
     if (id === "run") {
+      if (aiGenerating || readAiState().generating) return;
       if (aiPanel) aiPanel.status = "Starting generate…";
       refreshAiPromptPanel();
       try {
@@ -2258,6 +2282,7 @@ export function createViewportXR(opts) {
             aiPanel.status = String(res.error);
           } else if (res?.ok) {
             aiPanel.status = "Generating in project…";
+            setAiGenerating(true, "Generating in project…");
           }
           refreshAiPromptPanel();
         }).catch((err) => {
@@ -2269,6 +2294,21 @@ export function createViewportXR(opts) {
         console.warn("[viewport-xr] run", err);
         if (aiPanel) aiPanel.status = err?.message || "Generate failed";
         refreshAiPromptPanel();
+      }
+      return;
+    }
+    if (id === "gen-details") {
+      aiDetailsOpen = !aiDetailsOpen;
+      refreshAiPromptPanel();
+      return;
+    }
+    if (id === "gen-stop") {
+      try {
+        onStopGeneration?.();
+        if (aiPanel) aiPanel.status = "Stopping…";
+        refreshAiPromptPanel();
+      } catch (err) {
+        console.warn("[viewport-xr] stop", err);
       }
       return;
     }
@@ -2667,8 +2707,25 @@ export function createViewportXR(opts) {
       const hitMeshes = [aiPanel.titleBar, ...(aiPanel.hits || [])].filter(Boolean);
       const hh = raycaster.intersectObjects(hitMeshes, false);
       if (hh.length) {
-        const id = hh[0].object.userData.xrAiHit;
+        let id = hh[0].object.userData.xrAiHit;
         if (id === "drag") return { kind: "ai-drag", distance: hh[0].distance };
+        // While generating, the large Run mesh overlaps Details/Stop — prefer UV pick.
+        if (
+          (id === "run" || id === "gen-details" || id === "gen-stop")
+          && aiGenerating
+        ) {
+          const ph = raycaster.intersectObject(aiPanel.plane, false);
+          if (ph.length) {
+            const uv = ph[0].uv;
+            let mapped = null;
+            if (uv) mapped = pickAiFromCanvasPx(uv.x * AI_CANVAS.w, (1 - uv.y) * AI_CANVAS.h);
+            if (!mapped) {
+              const local = aiPanel.plane.worldToLocal(ph[0].point.clone());
+              mapped = pickAiFromLocalPoint(local);
+            }
+            if (mapped?.id) return { ...mapped, distance: hh[0].distance };
+          }
+        }
         if (id) return { kind: "ai-action", id, distance: hh[0].distance };
       }
       const ph = raycaster.intersectObject(aiPanel.plane, false);

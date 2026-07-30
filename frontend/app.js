@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-ai-vr-gen";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-progress2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3363,6 +3363,54 @@ const viewportXR = createViewportXR({
       }
     } catch (err) {
       console.warn("[xr] setAiPromptSetting", err, key, value);
+    }
+  },
+  getAiGenerationProgress: () => {
+    try {
+      const liveGen = projectId ? allProjects.find((p) => p.id === projectId)?.generation : null;
+      const runningJobs = generationRunningJobs(liveGen, generationWatchOverlay);
+      const watchProgress = generationWatchOverlay?.progress || null;
+      const liveProgress = liveGen?.progress || null;
+      const focused = runningJobs.find((j) => j.trace_id === generationWatchOverlay?.focusedJobId) || runningJobs[0];
+      const focusedProgress = focused?.progress || liveProgress || watchProgress || {};
+      const generating = !!(
+        (projectId && isGenerationUiActive(projectId) && isCadGenerationActive(projectId))
+        || (generationWatchPid === projectId && generationWatchOverlay)
+        || promptSubmitInFlight
+      );
+      const pct = Number(
+        focusedProgress.pct
+        ?? liveProgress?.pct
+        ?? watchProgress?.pct
+        ?? 0,
+      );
+      const activity = Array.isArray(focusedProgress.activity)
+        ? focusedProgress.activity
+        : (Array.isArray(watchProgress?.activity) ? watchProgress.activity : []);
+      return {
+        generating,
+        pct: Number.isFinite(pct) ? pct : 0,
+        label: focusedProgress.label
+          || generationWatchOverlay?.message
+          || liveGen?.message
+          || (generating ? "Generating…" : ""),
+        thinking: focusedProgress.thinking || watchProgress?.thinking || "",
+        activity,
+        improvedPrompt: focusedProgress.improved_prompt
+          || focusedProgress.prompt_preview
+          || watchProgress?.improved_prompt
+          || "",
+      };
+    } catch (err) {
+      console.warn("[xr] getAiGenerationProgress", err);
+      return { generating: false, pct: 0, label: "", thinking: "", activity: [] };
+    }
+  },
+  onStopGeneration: () => {
+    try {
+      void cancelActiveGeneration({});
+    } catch (err) {
+      console.warn("[xr] stop generation", err);
     }
   },
   hideSceneChrome: () => {
