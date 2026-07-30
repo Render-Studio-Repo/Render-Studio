@@ -1038,7 +1038,6 @@ export function createViewportVideoRecorder({
           lastBlob = blob;
           sourceBlob = blob;
           pendingDesktopClip = blob;
-          // Always upload XR takes to AR references + notify PC (await so publish isn't skipped)
           try {
             await saveClipToProject(blob, {
               label: "XR viewport clip",
@@ -1050,16 +1049,11 @@ export function createViewportVideoRecorder({
             console.warn("[viewport-video] save XR clip failed", err);
             setStatus(false, err?.message || "Could not save XR clip to references.");
           }
-          try {
-            await openShareModal(blob);
-          } catch (err) {
+          try { await openShareModal(blob); } catch (err) {
             console.warn("[viewport-video] open share modal", err);
           }
           try { onClipReady?.(blob, { xr: true, kind: "video" }); } catch (_) {}
-          setStatus(
-            true,
-            `${qualityLabel(prefs.quality)} clip saved — Share to X should open on your PC.`,
-          );
+          setStatus(true, `${qualityLabel(prefs.quality)} clip saved — Share to X should open on your PC.`);
         } else {
           setStatus(false, "Recording was empty — nothing saved.");
         }

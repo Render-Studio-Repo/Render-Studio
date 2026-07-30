@@ -5442,6 +5442,17 @@ function connectWorkspaceRealtime(teamId) {
   };
 }
 
+let xrCapturePollTimer = 0;
+function startXrCapturePolling() {
+  if (xrCapturePollTimer) return;
+  xrCapturePollTimer = window.setInterval(() => {
+    if (!getToken?.()) return;
+    if (viewportXR?.isPresenting?.()) return;
+    void flushPendingRemoteXrCaptures?.();
+  }, 4000);
+}
+startXrCapturePolling();
+
 function connectUserRealtime() {
   userRealtimeSocket?.close();
   if (!getToken()) return;
@@ -27584,8 +27595,7 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   },
   onSaveClip: async (blob, meta = {}) => {
     if (!blob) return null;
-    // XR dock recordings always land in AR captures + PC Share popup
-    if (meta?.xr || meta?.forceArFolder || viewportXR?.isPresenting?.()) {
+    if (meta?.xr || viewportXR?.isPresenting?.() || meta?.forceArFolder) {
       return saveXrCaptureToReferences(blob, {
         kind: "video",
         modeLabel: meta?.modeLabel || currentXrCaptureModeLabel(),
