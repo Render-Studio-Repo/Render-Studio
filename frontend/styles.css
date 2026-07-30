@@ -18053,9 +18053,21 @@ section h2 {
 .file-export-bambu.is-preparing,
 .file-export-onshape.is-preparing,
 .file-export-fusion-action.is-preparing {
-  opacity: 0.55;
+  opacity: 1;
   cursor: wait;
-  filter: grayscale(0.4);
+  filter: none;
+  pointer-events: none;
+}
+.file-export-bambu.is-preparing {
+  background: rgba(0, 174, 239, 0.18);
+  border-color: rgba(0, 174, 239, 0.65);
+  color: #b6ecff;
+}
+.file-export-bambu.is-preparing .file-export-spinner {
+  width: 13px;
+  height: 13px;
+  border-color: rgba(122, 215, 255, 0.3);
+  border-top-color: #7ad7ff;
 }
 .file-export-dl[data-current="true"] {
   border-color: #58a6ff;

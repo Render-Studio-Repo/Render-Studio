@@ -1,3 +1,10 @@
+## 2026-07-30 — Bambu export: “Preparing assembly…” spinner
+
+- Send to Bambu Studio / 3MF download now shows a spinning circle with **Preparing assembly…** while the plate pack runs (single-body still says Preparing 3MF…).
+- Cache-bust `?v=20260730-bambu-prep-spin`.
+
+---
+
 ## 2026-07-30 — XR capture: PC popup without refresh + AR references save
 
 - Restored missing `frontend/` + `backend/main.py` after a bad delete left `index.html` 500.

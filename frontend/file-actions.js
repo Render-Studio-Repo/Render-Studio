@@ -1015,20 +1015,36 @@ export async function openFileExportMenu({
           if (Array.isArray(visibleBodyIndices) && visibleBodyIndices.length === 0) {
             throw new Error("No visible parts to export. Unhide at least one body with the eye icon.");
           }
-          const refreshed = await ensureThreeMfExport({
-            projectId,
-            filename: shareFilename || filename,
-            exports: sorted,
-            forceRefresh: true,
-            visibleBodyIndices,
-          });
-          if (refreshed?.name) {
-            dlName = refreshed.name.replace(/\.3mf$/i, ".3MF");
-            await downloadFile(
-              `/api/projects/${projectId}/files/${encodeURIComponent(refreshed.name)}`,
-              dlName,
-            );
-            return;
+          const bodyCount = Array.isArray(visibleBodyIndices) ? visibleBodyIndices.length : null;
+          const preparing3mf = (bodyCount == null || bodyCount > 1)
+            ? "Preparing assembly…"
+            : "Preparing 3MF…";
+          const prevLabel = btn.innerHTML;
+          btn.disabled = true;
+          btn.classList.add("is-preparing");
+          btn.setAttribute("aria-busy", "true");
+          btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span>${preparing3mf}`;
+          try {
+            const refreshed = await ensureThreeMfExport({
+              projectId,
+              filename: shareFilename || filename,
+              exports: sorted,
+              forceRefresh: true,
+              visibleBodyIndices,
+            });
+            if (refreshed?.name) {
+              dlName = refreshed.name.replace(/\.3mf$/i, ".3MF");
+              await downloadFile(
+                `/api/projects/${projectId}/files/${encodeURIComponent(refreshed.name)}`,
+                dlName,
+              );
+              return;
+            }
+          } finally {
+            btn.disabled = false;
+            btn.classList.remove("is-preparing");
+            btn.removeAttribute("aria-busy");
+            btn.innerHTML = prevLabel;
           }
         }
         await downloadFile(url, dlName);
@@ -1472,8 +1488,13 @@ async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBod
   const original = btn.innerHTML;
   const mobile = isMobileClient();
   const target = bambuTargetLabel();
+  const bodyCount = Array.isArray(visibleBodyIndices) ? visibleBodyIndices.length : null;
+  const isAssembly = bodyCount == null || bodyCount > 1;
+  const preparingLabel = isAssembly ? "Preparing assembly…" : "Preparing 3MF…";
   btn.disabled = true;
-  btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Preparing 3MF…`;
+  btn.classList.add("is-preparing");
+  btn.setAttribute("aria-busy", "true");
+  btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span><span>${preparingLabel}</span>`;
   try {
     if (!getToken()) {
       throw new Error(`Not authenticated. Sign in to create the temporary 3MF share link ${target} needs.`);
@@ -1489,6 +1510,7 @@ async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBod
       visibleBodyIndices,
     });
     // Share the 3MF itself so Bambu can fetch a public absolute URL.
+    btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span><span>Creating share link…</span>`;
     const shareRes = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(threeMf.name)}/share`,
       { method: "POST", headers: authHeaders() },
@@ -1509,7 +1531,7 @@ async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBod
     const os = detectClientOs();
 
     if (mobile) {
-      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sending to Handy…`;
+      btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span><span>Sending to Handy…</span>`;
       // Best path on phones: system share sheet → pick Bambu Handy.
       const shared = await shareThreeMfToApps(fileUrl, safeName);
       if (!shared) {
@@ -1525,11 +1547,13 @@ async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBod
       } else {
         launchBambuProtocol(urls.handyIos || urls.handy);
       }
+      btn.classList.remove("is-preparing");
+      btn.removeAttribute("aria-busy");
       btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Handy ✓`;
       showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName, mobile: true });
     } else {
       const primary = urls[os] || urls.windows;
-      btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Opening Bambu Studio…`;
+      btn.innerHTML = `<span class="file-export-spinner" aria-hidden="true"></span><span>Opening Bambu Studio…</span>`;
 
       // Also download the 3MF so the user can open it from Downloads if the protocol
       // only focuses an already-running Studio window without importing.
@@ -1541,19 +1565,25 @@ async function sendToBambuStudio({ btn, projectId, filename, exports, visibleBod
 
       launchBambuProtocol(primary);
 
+      btn.classList.remove("is-preparing");
+      btn.removeAttribute("aria-busy");
       btn.innerHTML = `<span class="file-export-bambu-mark" aria-hidden="true">B</span> Sent to Bambu ✓`;
       showBambuFollowUp(btn, { urls, os, fileUrl, threeMfName: safeName, mobile: false });
     }
     setTimeout(() => {
       btn.disabled = false;
+      btn.classList.remove("is-preparing");
+      btn.removeAttribute("aria-busy");
       if (!btn.dataset.bambuFollowup) btn.innerHTML = original;
     }, 1600);
   } catch (err) {
     btn.disabled = false;
+    btn.classList.remove("is-preparing");
+    btn.removeAttribute("aria-busy");
     btn.innerHTML = original;
     showExportError(menu, err, {
       title: `Could not send to ${target}`,
-      onRetry: () => sendToBambuStudio({ btn, projectId, filename, exports }),
+      onRetry: () => sendToBambuStudio({ btn, projectId, filename, exports, visibleBodyIndices }),
     });
   }
 }
