@@ -73,10 +73,10 @@ import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, se
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
-import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec";
+import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-xr-folders";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-ws2";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-folders";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -109,7 +109,7 @@ import { createMeshCleanup } from "./mesh-cleanup.js?v=20260611-mesh-checkup";
 import { createObjectTools } from "./object-tools.js?v=20260724-select-whole";
 import { createFeatureEditor } from "./feature-editor.js?v=20260610-direct";
 import { fetchCadParams, cadParamControlsHtml, bindCadParamControls } from "./text-to-cad-params.js?v=20260720-param-bake";
-import { createProjectTree } from "./project-tree.js?v=20260729-ar-captures";
+import { createProjectTree } from "./project-tree.js?v=20260730-recordings-mic";
 import {
   saveSessionSnapshot,
   clearPendingRestore,
@@ -3077,6 +3077,106 @@ transformControls.addEventListener("objectChange", () => {
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
 
+/** XR Folders tab: personal + shared folder roots, then projects inside a folder. */
+function buildXrFolderBrowserItems(folderId = null) {
+  const projects = Array.isArray(allProjects) ? allProjects : [];
+  const folders = (typeof workspaceBrowser?.getFolders === "function"
+    ? workspaceBrowser.getFolders()
+    : []) || [];
+
+  const isCommunity = (f) => {
+    const id = String(f?.id || "");
+    return f?.public === true || id === "__public__" || id === "__other_user_renders__";
+  };
+  const isSharedWs = (f) => {
+    const id = String(f?.id || "");
+    return f?.shared_workspace === true || id.startsWith("__shared_ws_");
+  };
+  const isSharedFolder = (f) => {
+    if (!f) return false;
+    if (isSharedWs(f)) return true;
+    if (f.shared_with_me) return true;
+    if (f.visibility === "shared") return true;
+    return (Number(f.share_count) || 0) > 0;
+  };
+
+  const projectsInFolder = (fid) => {
+    if (fid === "__root__" || fid == null || fid === "") {
+      return projects.filter((p) => !p?.folder_id);
+    }
+    return projects.filter((p) => String(p?.folder_id || "") === String(fid));
+  };
+
+  // Drill into a folder → list its projects
+  if (folderId) {
+    const lines = [
+      { id: "__back__", label: "← All folders", kind: "back", icon: "undo" },
+    ];
+    const list = projectsInFolder(folderId);
+    if (!list.length) {
+      lines.push({ id: "", label: "No projects in this folder", kind: "hint", icon: "front" });
+      return lines;
+    }
+    for (const p of list.slice(0, 8)) {
+      lines.push({
+        id: p.id,
+        label: p.name || p.id,
+        kind: "project",
+        active: p.id === projectId,
+        icon: "front",
+      });
+    }
+    return lines;
+  }
+
+  // Root: Personal + Shared folders
+  const personal = [];
+  const shared = [];
+  const rootCount = projectsInFolder("__root__").length;
+  personal.push({
+    id: "__root__",
+    label: rootCount ? `Personal files · ${rootCount}` : "Personal files",
+    kind: "folder",
+    icon: "place",
+  });
+
+  for (const f of folders) {
+    if (!f?.id || isCommunity(f)) continue;
+    const count = projectsInFolder(f.id).length;
+    const row = {
+      id: f.id,
+      label: count ? `${f.name || "Folder"} · ${count}` : (f.name || "Folder"),
+      kind: "folder",
+      icon: "place",
+      shared: isSharedFolder(f),
+    };
+    if (isSharedFolder(f)) shared.push(row);
+    else personal.push(row);
+  }
+
+  const lines = [];
+  if (personal.length) {
+    lines.push({ id: "", label: "PERSONAL", kind: "section", icon: "place" });
+    for (const row of personal) {
+      lines.push(row);
+      if (lines.length >= 9) return lines.slice(0, 9);
+    }
+  }
+  if (shared.length) {
+    if (lines.length < 9) {
+      lines.push({ id: "", label: "SHARED", kind: "section", icon: "place" });
+    }
+    for (const row of shared) {
+      if (lines.length >= 9) break;
+      lines.push(row);
+    }
+  }
+  if (!lines.length) {
+    return [{ id: "", label: "No folders yet", kind: "hint", icon: "place" }];
+  }
+  return lines.slice(0, 9);
+}
+
 const viewportXR = createViewportXR({
   renderer,
   scene,
@@ -3127,6 +3227,21 @@ const viewportXR = createViewportXR({
       }
     } catch (err) {
       console.warn("[xr] open project failed", err);
+    }
+  },
+  getFolderBrowserItems: ({ folderId = null } = {}) => {
+    try {
+      return buildXrFolderBrowserItems(folderId);
+    } catch (err) {
+      console.warn("[xr] folder browser items", err);
+      return [];
+    }
+  },
+  onFolderBrowserRefresh: async () => {
+    try {
+      if (workspaceBrowser?.refreshFolders) await workspaceBrowser.refreshFolders();
+    } catch (err) {
+      console.warn("[xr] folder refresh", err);
     }
   },
   getAiPromptState: () => {
@@ -3564,18 +3679,21 @@ async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel 
     ext = "png";
     type = "image/png";
   }
+  // Videos → Recordings/; screenshots stay in AR/
+  const referenceFolder = kind === "video" ? "recordings" : "AR";
   const filename = `${mode}-${kind}-${stamp}.${ext}`;
   const file = new File([blob], filename, { type });
   try {
     const data = await uploadReferenceProjectFile(file, {
       destination: "current",
       projectId,
-      referenceFolder: "AR",
+      referenceFolder,
       silent: true,
     });
+    const folderLabel = referenceFolder === "recordings" ? "Recordings" : "AR captures";
     setEditStatus(
       "ok",
-      `Saved ${filename} under Reference Files → AR captures.`,
+      `Saved ${filename} under Reference Files → ${folderLabel}.`,
     );
     viewportXR?.setMenuFooterHint?.(
       kind === "video"
@@ -3583,13 +3701,14 @@ async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel 
         : `Screenshot saved — Share to X opening on your PC`,
     );
     try {
+      const savedName = data?.filename || filename;
+      const folderName = data?.folder || referenceFolder;
+      const fileUrl = data?.url
+        || `/api/projects/${projectId}/files/${encodeURIComponent(`${folderName}/${savedName}`)}`;
       await publishXrCaptureReady({
         kind,
-        filename: data?.filename || filename,
-        url: data?.url
-          || (data?.folder
-            ? `/api/projects/${projectId}/files/${encodeURIComponent(`${data.folder}/${data?.filename || filename}`)}`
-            : `/api/projects/${projectId}/files/${encodeURIComponent(data?.filename || filename)}`),
+        filename: savedName,
+        url: fileUrl,
         modeLabel: mode,
       });
     } catch (err) {
@@ -3607,12 +3726,13 @@ async function publishXrCaptureReady({ kind, filename, url, modeLabel } = {}) {
   if (!projectId || !filename || !getToken?.()) return null;
   const res = await api(`/api/projects/${projectId}/xr-capture-ready`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       kind: kind === "video" ? "video" : "screenshot",
       filename,
       url,
       mode_label: modeLabel || currentXrCaptureModeLabel(),
-      source_client_id: xrClientId(),
+      source_client_id: String(xrClientId() || "").slice(0, 64),
     }),
   });
   return res?.capture || null;
@@ -3632,7 +3752,9 @@ async function downloadXrCaptureBlob(msg = {}) {
   if (msg.url) candidates.push(msg.url);
   if (pid && name) {
     candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(name)}`);
+    candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`recordings/${name}`)}`);
     candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`AR/${name}`)}`);
+    candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`references/recordings/${name}`)}`);
     candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`references/AR/${name}`)}`);
   }
   let lastErr = null;
@@ -3672,12 +3794,13 @@ async function openRemoteXrCaptureShare(msg = {}) {
     return;
   }
 
+  // Toast immediately — don't wait on download / project switch
+  showXrCaptureReadyBanner({ kind, modeLabel: mode });
+
   try {
     if (msg.project_id && msg.project_id !== projectId) {
       try { await openProjectById?.(msg.project_id); } catch (_) {}
     }
-    // Show the toast immediately so the PC reacts without waiting on download.
-    showXrCaptureReadyBanner({ kind, modeLabel: mode });
     const blob = await downloadXrCaptureBlob(msg);
     if (kind === "video") {
       await viewportVideoRecorder?.openShareModal?.(blob);
@@ -3698,7 +3821,6 @@ async function openRemoteXrCaptureShare(msg = {}) {
   } catch (err) {
     console.warn("[xr] open remote capture failed", err);
     handledXrCaptureIds.delete(id);
-    showXrCaptureReadyBanner({ kind, modeLabel: mode });
     setEditStatus("error", err?.message || "Could not open XR capture on this PC.");
   }
 }
@@ -5495,7 +5617,7 @@ function startXrCapturePolling() {
     if (!getToken?.()) return;
     if (viewportXR?.isPresenting?.()) return;
     void flushPendingRemoteXrCaptures?.();
-  }, 2000);
+  }, 1500);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && getToken?.() && !viewportXR?.isPresenting?.()) {
       void flushPendingRemoteXrCaptures?.();
@@ -14407,6 +14529,10 @@ function animate() {
   // WebXR requires the default app camera — a sketch/ortho camera draws nothing in headset.
   const renderCam = xrOn ? camera : (sketchEditor.getRenderCamera?.() || camera);
   renderer.render(scene, renderCam);
+  // Drive POV video composite from the XR frame loop (window rAF is unreliable in immersive).
+  if (xrOn) {
+    try { viewportVideoRecorder?.onXrFrame?.(); } catch (_) {}
+  }
   if (!xrOn) {
     viewCube.update();
     collab?.renderLabels(renderCam);
@@ -17304,6 +17430,16 @@ async function rawFetch(path, options = {}, timeoutMs = 200000) {
   }
   const { signal: _ignored, ...rest } = options;
   const headers = authHeaders(rest.headers || {});
+  // JSON string bodies need an explicit Content-Type or FastAPI returns 422.
+  if (
+    typeof rest.body === "string"
+    && rest.body
+    && !headers["Content-Type"]
+    && !headers["content-type"]
+  ) {
+    const looksJson = /^\s*[\{\[]/.test(rest.body);
+    if (looksJson) headers["Content-Type"] = "application/json";
+  }
   try {
     return await fetch(`${API}${path}`, { ...rest, headers, signal: controller.signal });
   } finally {
@@ -27655,8 +27791,12 @@ const viewportVideoRecorder = createViewportVideoRecorder({
   isFreeTrialCredits: () => isOnFreeTrialCredits(aiStatus),
   isXrPresenting: () => !!viewportXR?.isPresenting?.(),
   getXrModeLabel: () => currentXrCaptureModeLabel(),
+  getXrOverlayCanvas: (w, h) => viewportXR?.paintRecordOverlayCanvas?.(w, h) || null,
   onRecordingChange: (state) => {
     try { viewportXR?.setCaptureState?.(state); } catch (_) {}
+    if (!state?.recording) {
+      try { viewportXR?.disposeRecordSpectator?.(); } catch (_) {}
+    }
   },
   onClipReady: (blob, meta = {}) => {
     pendingXrVideoOpen = true;

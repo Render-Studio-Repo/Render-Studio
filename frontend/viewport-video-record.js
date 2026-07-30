@@ -7,7 +7,7 @@ const LS_KEY = "render3d:viewportVideo:v1";
 const DEFAULTS = {
   quality: "high", // standard | high | ultra
   fps: 30,
-  mic: false,
+  mic: true, // include headset/browser mic by default (esp. XR POV clips)
 };
 
 const BITRATES = {
@@ -174,6 +174,7 @@ export function createViewportVideoRecorder({
   isFreeTrialCredits,
   isXrPresenting = null,
   getXrModeLabel = null,
+  getXrOverlayCanvas = null,
   onSaveClip = null,
   onRecordingChange = null,
   onClipReady = null,
@@ -187,6 +188,7 @@ export function createViewportVideoRecorder({
   let povVideoEl = null;
   let povCompositeCanvas = null;
   let povCompositeCtx = null;
+  let povCaptureTrack = null;
   let povRafId = 0;
   let startedAt = 0;
   let tickTimer = 0;
@@ -1099,43 +1101,59 @@ export function createViewportVideoRecorder({
     povVideoEl = null;
     povCompositeCanvas = null;
     povCompositeCtx = null;
+    povCaptureTrack = null;
     usedXrPov = false;
   }
 
-  function paintPovCompositeFrame(glCanvas) {
-    if (!povCompositeCtx || !povCompositeCanvas || !glCanvas) return;
-    const { sw, sh, sx, sy } = xrOverlaySourceRect(glCanvas);
-    const outW = Math.max(2, sw);
-    const outH = Math.max(2, sh);
-    if (povCompositeCanvas.width !== outW || povCompositeCanvas.height !== outH) {
-      povCompositeCanvas.width = outW;
-      povCompositeCanvas.height = outH;
-    }
+  function paintPovCompositeFrame() {
+    if (!povCompositeCtx || !povCompositeCanvas) return false;
+    const outW = povCompositeCanvas.width || 1280;
+    const outH = povCompositeCanvas.height || 720;
     const ctx = povCompositeCtx;
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, outW, outH);
+
+    // 1) Headset camera / passthrough
     if (povVideoEl && povVideoEl.readyState >= 2) {
       drawCoverImage(ctx, povVideoEl, outW, outH);
     }
+
+    // 2) Mono CAD + controllers from offscreen XR spectator (not the XR framebuffer)
+    let overlay = null;
     try {
-      ctx.drawImage(glCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
-    } catch (_) {
-      /* WebGL canvas may be lost briefly during XR resize */
+      overlay = getXrOverlayCanvas?.(outW, outH) || null;
+    } catch (err) {
+      console.warn("[viewport-video] overlay canvas failed", err);
     }
+    if (overlay) {
+      try {
+        ctx.drawImage(overlay, 0, 0, outW, outH);
+      } catch (_) {}
+    } else {
+      // Fallback: try left-eye crop of the live GL canvas (often empty on Quest)
+      const glCanvas = getCanvas?.();
+      if (glCanvas) {
+        const { sx, sy, sw, sh } = xrOverlaySourceRect(glCanvas);
+        try {
+          ctx.drawImage(glCanvas, sx, sy, sw, sh, 0, 0, outW, outH);
+        } catch (_) {}
+      }
+    }
+
+    // Push a frame into MediaRecorder (captureStream(0) needs this on Quest)
+    try {
+      povCaptureTrack?.requestFrame?.();
+    } catch (_) {}
+    return true;
   }
 
-  function startPovCompositeLoop(glCanvas) {
-    stopPovCompositeLoop();
-    const tick = () => {
-      povRafId = 0;
-      if (!recording) return;
-      if (!paused) paintPovCompositeFrame(glCanvas);
-      povRafId = requestAnimationFrame(tick);
-    };
-    povRafId = requestAnimationFrame(tick);
+  /** Called from the Three/XR animation loop — window rAF does not run reliably in immersive XR. */
+  function onXrFrame() {
+    if (!recording || !usedXrPov || paused) return;
+    paintPovCompositeFrame();
   }
 
-  async function startXrPovCaptureStream(glCanvas, fps) {
+  async function startXrPovCaptureStream(fps) {
     povCameraStream = await openXrPovCameraStream();
     const video = document.createElement("video");
     video.muted = true;
@@ -1150,7 +1168,6 @@ export function createViewportVideoRecorder({
     } catch (err) {
       console.warn("[viewport-video] POV video play failed", err);
     }
-    // Wait briefly for the first decoded frame when possible.
     if (video.readyState < 2) {
       await new Promise((resolve) => {
         let done = false;
@@ -1160,23 +1177,42 @@ export function createViewportVideoRecorder({
           resolve();
         };
         video.addEventListener("loadeddata", finish, { once: true });
-        setTimeout(finish, 800);
+        setTimeout(finish, 1000);
       });
     }
 
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 960;
+    // Target ~720p landscape for Share/X; keep camera aspect.
+    const outH = 720;
+    const outW = Math.max(640, Math.round(outH * (vw / Math.max(1, vh))));
+
     const composite = document.createElement("canvas");
-    const { sw, sh } = xrOverlaySourceRect(glCanvas);
-    composite.width = Math.max(2, sw);
-    composite.height = Math.max(2, sh);
+    composite.width = outW;
+    composite.height = outH;
     composite.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
     try { document.body.appendChild(composite); } catch (_) {}
     povCompositeCanvas = composite;
     povCompositeCtx = composite.getContext("2d", { alpha: false, desynchronized: true });
     if (!povCompositeCtx) throw new Error("Could not create POV composite canvas.");
-    paintPovCompositeFrame(glCanvas);
-    startPovCompositeLoop(glCanvas);
-    const stream = composite.captureStream(fps);
+
+    // captureStream(0) + requestFrame is reliable during XR; timed captureStream often yields 0s clips.
+    const stream = typeof composite.captureStream === "function"
+      ? composite.captureStream(0)
+      : null;
+    if (!stream) throw new Error("Composite canvas captureStream unavailable.");
+    povCaptureTrack = stream.getVideoTracks()?.[0] || null;
     usedXrPov = true;
+    paintPovCompositeFrame();
+    // Safety net if XR loop is slow to start
+    stopPovCompositeLoop();
+    const pump = () => {
+      povRafId = 0;
+      if (!recording || !usedXrPov) return;
+      if (!paused) paintPovCompositeFrame();
+      povRafId = requestAnimationFrame(pump);
+    };
+    povRafId = requestAnimationFrame(pump);
     return stream;
   }
 
@@ -1203,7 +1239,7 @@ export function createViewportVideoRecorder({
     try {
       if (inXr) {
         try {
-          canvasStream = await startXrPovCaptureStream(canvas, fps);
+          canvasStream = await startXrPovCaptureStream(fps);
           setStatus(true, "Recording headset POV (passthrough + CAD)…");
         } catch (povErr) {
           console.warn("[viewport-video] XR POV camera unavailable, canvas-only", povErr);
@@ -1224,7 +1260,9 @@ export function createViewportVideoRecorder({
     }
 
     const tracks = [...canvasStream.getVideoTracks()];
-    if (prefs.mic) {
+    // XR POV clips should always try for mic audio (prefs may have mic off from desktop).
+    const wantMic = prefs.mic || inXr;
+    if (wantMic) {
       try {
         micStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -1234,9 +1272,17 @@ export function createViewportVideoRecorder({
           },
         });
         tracks.push(...micStream.getAudioTracks());
+        if (inXr && !prefs.mic) {
+          prefs = writePrefs({ mic: true });
+        }
       } catch {
-        setStatus(false, "Microphone permission denied — recording video only.");
-        prefs = writePrefs({ mic: false });
+        if (prefs.mic) {
+          setStatus(false, "Microphone permission denied — recording video only.");
+          prefs = writePrefs({ mic: false });
+        } else {
+          console.warn("[viewport-video] XR mic unavailable — recording silent video");
+          setStatus(false, "Mic blocked — recording silent video. Allow microphone and try again.");
+        }
       }
     }
 
@@ -1264,12 +1310,15 @@ export function createViewportVideoRecorder({
       const blob = new Blob(chunks, { type });
       chunks = [];
       const hadPov = usedXrPov;
+      const elapsed = recordingElapsedMs();
       cleanupStreams();
       recorder = null;
       const xr = startedInXr || !!isXrPresenting?.();
       startedInXr = false;
       void (async () => {
-        if (blob.size > 0) {
+        // Tiny / empty encodes are useless — don't publish a 0s clip to the PC.
+        const tooSmall = !blob || blob.size < 12_000 || elapsed < 400;
+        if (blob.size > 0 && !tooSmall) {
           lastBlob = blob;
           sourceBlob = blob;
           pendingDesktopClip = blob;
@@ -1285,8 +1334,6 @@ export function createViewportVideoRecorder({
             console.warn("[viewport-video] save clip failed", err);
             setStatus(false, err?.message || "Could not save clip to references.");
           }
-          // Headset: save + publish only — Share/markup opens on the PC (WS + pending poll).
-          // Opening the studio inside XR steals the session and often blocks the PC popup.
           if (!xr || !isXrPresenting?.()) {
             try { await openShareModal(blob); } catch (err) {
               console.warn("[viewport-video] open share modal", err);
@@ -1302,7 +1349,12 @@ export function createViewportVideoRecorder({
               : `${qualityLabel(prefs.quality)} clip ready.`,
           );
         } else {
-          setStatus(false, "Recording was empty — nothing saved.");
+          setStatus(
+            false,
+            tooSmall
+              ? "Recording was too short / empty — hold Rec for a couple seconds, then Stop."
+              : "Recording was empty — nothing saved.",
+          );
         }
         recording = false;
         paused = false;
@@ -1317,7 +1369,8 @@ export function createViewportVideoRecorder({
     };
 
     try {
-      recorder.start(250);
+      // Smaller timeslice keeps Quest MediaRecorder flushing chunks.
+      recorder.start(100);
     } catch (err) {
       cleanupStreams();
       recorder = null;
@@ -1399,6 +1452,11 @@ export function createViewportVideoRecorder({
         try { recorder.resume(); } catch (_) {}
         paused = false;
       }
+      // Final composite frame + flush encoder before stop (Quest often drops the last GOP otherwise)
+      if (usedXrPov) {
+        try { paintPovCompositeFrame(); } catch (_) {}
+      }
+      try { recorder?.requestData?.(); } catch (_) {}
       if (recorder && recorder.state !== "inactive") recorder.stop();
       else {
         recording = false;
@@ -1505,6 +1563,7 @@ export function createViewportVideoRecorder({
     togglePause,
     reopenPendingClip,
     clearPendingClip,
+    onXrFrame,
     isRecording: () => recording,
     isPaused: () => paused,
     getElapsedMs: () => recordingElapsedMs(),

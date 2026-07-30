@@ -6594,9 +6594,9 @@ def get_my_email_preferences(user: dict[str, Any] = Depends(get_current_user)):
 class XrCaptureReadyBody(BaseModel):
     kind: str = Field("video", max_length=32)
     filename: str = Field(..., min_length=1, max_length=255)
-    url: str | None = Field(None, max_length=512)
-    mode_label: str | None = Field(None, max_length=32)
-    source_client_id: str | None = Field(None, max_length=64)
+    url: str | None = Field(None, max_length=1024)
+    mode_label: str | None = Field(None, max_length=64)
+    source_client_id: str | None = Field(None, max_length=128)
 
 
 @app.post("/api/projects/{project_id}/xr-capture-ready")

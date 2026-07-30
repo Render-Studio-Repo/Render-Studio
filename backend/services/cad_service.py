@@ -154,10 +154,11 @@ REFERENCE_DIRNAME = "references"
 RENDERS_DIRNAME = "renders"
 # Nested folder under references/ for Quest / WebXR POV screenshots + clips.
 REFERENCE_AR_DIRNAME = "AR"
+REFERENCE_RECORDINGS_DIRNAME = "recordings"
 MCMASTER_LIBRARY_DIRNAME = "mcmaster_library"
 MARKUP_FOLDER_NAMES = frozenset({REFERENCE_DIRNAME, RENDERS_DIRNAME})
 # Allowed one-level subfolders inside references/ (basename only).
-REFERENCE_SUBFOLDERS = frozenset({REFERENCE_AR_DIRNAME})
+REFERENCE_SUBFOLDERS = frozenset({REFERENCE_AR_DIRNAME, REFERENCE_RECORDINGS_DIRNAME})
 
 DEFAULT_APPEARANCE_PALETTE = np.array(
     [
@@ -246,6 +247,10 @@ def reference_subdir(project_path: Path, folder: str | None) -> Path:
 
 def ar_references_dir(project_path: Path) -> Path:
     return reference_subdir(project_path, REFERENCE_AR_DIRNAME)
+
+
+def recordings_references_dir(project_path: Path) -> Path:
+    return reference_subdir(project_path, REFERENCE_RECORDINGS_DIRNAME)
 
 
 def is_markup_path(project_path: Path, file_path: Path) -> bool:

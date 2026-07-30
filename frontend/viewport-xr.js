@@ -34,7 +34,7 @@ const DOCK_TOOLS = QUICK_DOCK;
 
 const MENU_TABS = [
   { id: "projects", label: "Projects" },
-  { id: "parts", label: "Models" },
+  { id: "folders", label: "Folders" },
   { id: "files", label: "Files" },
   { id: "ai", label: "AI" },
   { id: "tools", label: "Tools" },
@@ -328,6 +328,16 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
   lines.forEach((line, i) => {
     const y = listTop + i * MENU_CANVAS.rowH;
     if (y > MENU_CANVAS.footerTop - 20) return;
+    if (line.kind === "section") {
+      ctx.fillStyle = "rgba(15,23,42,0.2)";
+      roundRect(ctx, 36, y - 24, width - 72, 48, 12);
+      ctx.fill();
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "bold 26px Arial,sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(String(line.label || "").slice(0, 40), 52, y + 2);
+      return;
+    }
     const rowG = ctx.createLinearGradient(40, y - 30, width - 40, y + 30);
     if (line.active) {
       rowG.addColorStop(0, "rgba(56,189,248,0.28)");
@@ -347,7 +357,12 @@ function drawConsoleCanvas({ title, tabs = [], activeTab = "", lines = [], foote
     ctx.beginPath();
     ctx.arc(78, y, 24, 0, Math.PI * 2);
     ctx.fill();
-    drawGlyphIcon(ctx, line.icon || (line.kind === "project" ? "front" : line.kind === "part" ? "move" : "ai"), 78, y, 44, "#0f172a");
+    const glyph = line.icon
+      || (line.kind === "project" ? "front"
+        : line.kind === "folder" ? "place"
+          : line.kind === "back" ? "undo"
+            : line.kind === "part" ? "move" : "ai");
+    drawGlyphIcon(ctx, glyph, 78, y, 44, "#0f172a");
     ctx.fillStyle = line.active ? "#f0f9ff" : "#e2e8f0";
     ctx.font = line.active ? "bold 34px Arial,sans-serif" : "32px Arial,sans-serif";
     ctx.textAlign = "left";
@@ -612,6 +627,8 @@ export function createViewportXR(opts) {
     onExplorerSelect = null,
     getProjects = null,
     onOpenProject = null,
+    getFolderBrowserItems = null,
+    onFolderBrowserRefresh = null,
     getProjectFiles = null,
     getPromptDraft = null,
     onPromptSubmit = null,
@@ -646,6 +663,9 @@ export function createViewportXR(opts) {
   let aiPanel = null;
   let aiPanelRefreshAt = 0;
   let editModelPickActive = false;
+  /** Folders tab drill-in: null = personal/shared roots; string = folder id (incl. __root__). */
+  let folderBrowseId = null;
+  let folderBrowseName = "";
   const LS_PANEL_POSES = "render3d:xr-panel-layout:v2";
 
   function panelPoseStorageKey() {
@@ -760,7 +780,7 @@ export function createViewportXR(opts) {
     const all = loadAllPanelPoses();
     const wantAi = all.aiOpen !== false; // default open AI prompt
     const wantMenu = all.menuOpen === true;
-    if (all.menuTab) menuTab = all.menuTab;
+    if (all.menuTab) menuTab = all.menuTab === "parts" ? "folders" : all.menuTab;
     if (wantAi) {
       openAiPromptPanel({ keepPose: true, forcePlace: !all.ai });
     } else if (aiPanel) {
@@ -2048,13 +2068,15 @@ export function createViewportXR(opts) {
       if (aiPanel) aiPanel.status = "No models to edit — generate one first";
       menuFooterHint = "No models in this project to edit";
       refreshAiPromptPanel();
-      openMenuConsole({ tab: "parts", keepPose: true, footerHint: "No models yet — generate one first" });
+      openMenuConsole({ tab: "folders", keepPose: true, footerHint: "No models yet — generate one first" });
       return;
     }
     if (aiPanel) aiPanel.status = "Pick which model to edit";
     menuFooterHint = "Select the model you want to edit";
     editModelPickActive = true;
-    openMenuConsole({ tab: "parts", forcePlace: false, footerHint: "Select a model to edit" });
+    folderBrowseId = null;
+    folderBrowseName = "";
+    openMenuConsole({ tab: "folders", forcePlace: false, footerHint: "Select a model to edit" });
     refreshAiPromptPanel();
   }
 
@@ -2147,16 +2169,45 @@ export function createViewportXR(opts) {
         icon: "front",
       }));
     }
-    if (tab === "parts") {
+    if (tab === "folders") {
+      // Edit-model flow still needs in-project parts
+      if (editModelPickActive) {
+        let items = [];
+        try { items = (typeof getExplorerItems === "function" && getExplorerItems()) || []; } catch { items = []; }
+        if (!items.length) {
+          return [{ id: "", label: "No models in this project", active: false, kind: "hint", icon: "move" }];
+        }
+        return items.slice(0, 9).map((it) => ({
+          id: it.id || it.name || "",
+          label: it.label || it.name || it.id,
+          active: !!it.active,
+          kind: "part",
+          icon: "move",
+        }));
+      }
       let items = [];
-      try { items = (typeof getExplorerItems === "function" && getExplorerItems()) || []; } catch { items = []; }
-      if (!items.length) return [{ id: "", label: "No models in this project", active: false, kind: "hint", icon: "move" }];
+      try {
+        items = (typeof getFolderBrowserItems === "function"
+          && getFolderBrowserItems({ folderId: folderBrowseId, folderName: folderBrowseName }))
+          || [];
+      } catch {
+        items = [];
+      }
+      if (!items.length) {
+        return [{
+          id: "",
+          label: folderBrowseId ? "No projects in this folder" : "No folders yet",
+          active: false,
+          kind: "hint",
+          icon: "front",
+        }];
+      }
       return items.slice(0, 9).map((it) => ({
-        id: it.id || it.name || "",
-        label: it.label || it.name || it.id,
+        id: it.id || "",
+        label: it.label || it.name || it.id || "",
         active: !!it.active,
-        kind: "part",
-        icon: "move",
+        kind: it.kind || "folder",
+        icon: it.icon || (it.kind === "project" ? "front" : it.kind === "back" ? "undo" : "place"),
       }));
     }
     if (tab === "files") {
@@ -2194,7 +2245,11 @@ export function createViewportXR(opts) {
   function defaultMenuFooter() {
     if (menuFooterHint) return menuFooterHint;
     if (menuTab === "projects") return "Load any project · grab metal header to move panel";
-    if (menuTab === "parts") return "Switch models in this project";
+    if (menuTab === "folders") {
+      if (editModelPickActive) return "Select a model to edit";
+      if (folderBrowseId) return `${folderBrowseName || "Folder"} · tap a project to open`;
+      return "Personal & shared folders · tap to open";
+    }
     if (menuTab === "files") return "Open / link project files";
     if (menuTab === "ai") return "Open AI window · mic · model type · speed/quality · edit";
     if (menuTab === "view") return "Shot/Rec on left hand · Pause/Stop while recording · Opens on PC";
@@ -2587,23 +2642,40 @@ export function createViewportXR(opts) {
     }
     if (hit.kind === "menu-tab") {
       menuFooterHint = "";
+      if (hit.tab !== "folders") {
+        editModelPickActive = false;
+        folderBrowseId = null;
+        folderBrowseName = "";
+      } else if (!editModelPickActive) {
+        folderBrowseId = null;
+        folderBrowseName = "";
+        try {
+          const maybe = onFolderBrowserRefresh?.();
+          Promise.resolve(maybe).finally(() => {
+            if (presenting && menuTab === "folders") {
+              openMenuConsole({ tab: "folders", keepPose: true });
+            }
+          });
+        } catch (_) {}
+      }
       openMenuConsole({ tab: hit.tab, keepPose: true });
       return;
     }
     if (hit.kind === "menu-row") {
       const line = hit.line;
-      if (!line?.id && line?.kind === "hint") return;
+      if (!line?.id && (line?.kind === "hint" || line?.kind === "section")) return;
+      if (line?.kind === "section") return;
       if (line?.kind === "project" || menuTab === "projects") {
-        if (line?.id) {
+        if (line?.kind === "folder" || line?.kind === "back") {
+          /* fall through to folders handler below when on folders tab */
+        } else if (line?.id && (line?.kind === "project" || menuTab === "projects")) {
           try {
             const maybe = onOpenProject?.(line.id);
             Promise.resolve(maybe).finally(() => {
               if (!presenting) return;
-              // Fresh mesh: re-place in front, then show AI prompt on the right
               setTimeout(() => {
                 if (!presenting) return;
                 placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
-                // Keep AI / menu windows where the user put them
                 openAiPromptPanel({ keepPose: true });
                 if (explorerPanel?.group) explorerPanel.group.visible = true;
                 try { onProjectOpened?.(line.id); } catch (_) {}
@@ -2618,10 +2690,44 @@ export function createViewportXR(opts) {
           } catch (err) {
             console.warn("[viewport-xr] open project", err);
           }
+          return;
         }
-        return;
       }
-      if (line?.kind === "part" || menuTab === "parts") {
+      if (line?.kind === "back" || line?.kind === "folder" || (menuTab === "folders" && !editModelPickActive && line?.kind !== "part")) {
+        if (line?.kind === "back" || line?.id === "__back__") {
+          folderBrowseId = null;
+          folderBrowseName = "";
+          menuFooterHint = "";
+          openMenuConsole({ tab: "folders", keepPose: true });
+          return;
+        }
+        if (line?.kind === "folder" || (menuTab === "folders" && line?.kind !== "project" && line?.kind !== "part")) {
+          folderBrowseId = line.id;
+          folderBrowseName = String(line.label || line.name || "Folder").replace(/\s·\s*\d+\s*$/, "");
+          menuFooterHint = "";
+          openMenuConsole({ tab: "folders", keepPose: true });
+          return;
+        }
+        if (line?.kind === "project" && line?.id) {
+          try {
+            const maybe = onOpenProject?.(line.id);
+            Promise.resolve(maybe).finally(() => {
+              if (!presenting) return;
+              setTimeout(() => {
+                if (!presenting) return;
+                placeInFront({ spawnId: "eye", keepZoom: false, recaptureDesktop: true });
+                openAiPromptPanel({ keepPose: true });
+                if (explorerPanel?.group) explorerPanel.group.visible = true;
+                try { onProjectOpened?.(line.id); } catch (_) {}
+              }, 600);
+            });
+          } catch (err) {
+            console.warn("[viewport-xr] open folder project", err);
+          }
+          return;
+        }
+      }
+      if (line?.kind === "part" || (menuTab === "folders" && editModelPickActive)) {
         if (line?.id) {
           try {
             onExplorerSelect?.(line.id);
@@ -2639,7 +2745,7 @@ export function createViewportXR(opts) {
             else refreshAiPromptPanel();
             return;
           }
-          openMenuConsole({ tab: "parts", keepPose: true });
+          openMenuConsole({ tab: "folders", keepPose: true });
         }
         return;
       }
@@ -3363,6 +3469,7 @@ export function createViewportXR(opts) {
   function onSessionEnd() {
     try { saveOpenWindowsLayout(); } catch (_) {}
     saveRoomPose();
+    try { disposeRecordSpectator(); } catch (_) {}
     presenting = false;
     session = null;
     xrHud.visible = false;
@@ -3552,6 +3659,98 @@ export function createViewportXR(opts) {
     return null;
   }
 
+  /** Offscreen mono renderer — XR framebuffer can't be composited via drawImage on Quest. */
+  let recordSpectator = null;
+
+  function ensureRecordSpectator(width = 1280, height = 720) {
+    const w = Math.max(320, Math.floor(width));
+    const h = Math.max(240, Math.floor(height));
+    if (!recordSpectator) {
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const off = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+        preserveDrawingBuffer: true,
+        powerPreference: "default",
+      });
+      off.setPixelRatio(1);
+      off.setSize(w, h, false);
+      off.setClearColor(0x000000, 0);
+      off.outputColorSpace = renderer.outputColorSpace;
+      off.toneMapping = renderer.toneMapping;
+      off.toneMappingExposure = renderer.toneMappingExposure;
+      const cam = new THREE.PerspectiveCamera(70, w / h, 0.02, 200);
+      recordSpectator = { canvas, renderer: off, camera: cam };
+    } else if (recordSpectator.canvas.width !== w || recordSpectator.canvas.height !== h) {
+      recordSpectator.canvas.width = w;
+      recordSpectator.canvas.height = h;
+      recordSpectator.renderer.setSize(w, h, false);
+      recordSpectator.camera.aspect = w / h;
+      recordSpectator.camera.updateProjectionMatrix();
+    }
+    return recordSpectator;
+  }
+
+  function disposeRecordSpectator() {
+    if (!recordSpectator) return;
+    try { recordSpectator.renderer.dispose(); } catch (_) {}
+    recordSpectator = null;
+  }
+
+  /**
+   * Paint a mono headset-eye view (model + controllers, no floating UI) for POV video.
+   * Must be called from the XR animation loop.
+   */
+  function paintRecordOverlayCanvas(width = 1280, height = 720) {
+    if (!renderer?.xr?.isPresenting) return null;
+    const spec = ensureRecordSpectator(width, height);
+    const hidePairs = [];
+    const stash = (obj) => {
+      if (!obj) return;
+      hidePairs.push([obj, obj.visible]);
+      obj.visible = false;
+    };
+    // Hide 2D-style XR windows — keep controller models / rays / CAD.
+    stash(dock);
+    stash(captureDock);
+    stash(explorerPanel?.group);
+    stash(aiPanel?.group);
+    stash(placePanel?.group);
+    stash(measureGroup);
+    stash(faceProbe);
+    stash(beacon);
+    try {
+      const xrCam = renderer.xr.getCamera?.(camera);
+      const eye = xrCam?.cameras?.[0] || xrCam || camera;
+      const dst = spec.camera;
+      dst.position.copy(eye.position);
+      dst.quaternion.copy(eye.quaternion);
+      if (eye.projectionMatrix) {
+        dst.projectionMatrix.copy(eye.projectionMatrix);
+        dst.projectionMatrixInverse.copy(
+          eye.projectionMatrixInverse || dst.projectionMatrix.clone().invert(),
+        );
+      } else {
+        dst.near = camera.near;
+        dst.far = camera.far;
+        dst.aspect = spec.canvas.width / Math.max(1, spec.canvas.height);
+        dst.updateProjectionMatrix();
+      }
+      dst.matrixWorld.copy(eye.matrixWorld || dst.matrixWorld);
+      dst.matrixWorldInverse.copy(eye.matrixWorldInverse || dst.matrixWorld.clone().invert());
+      spec.renderer.render(scene, dst);
+      return spec.canvas;
+    } catch (err) {
+      console.warn("[viewport-xr] record overlay paint failed", err);
+      return null;
+    } finally {
+      for (const [obj, vis] of hidePairs) obj.visible = vis;
+    }
+  }
+
   setupControllers();
   void probeSupport();
 
@@ -3568,6 +3767,8 @@ export function createViewportXR(opts) {
     placeInFront,
     saveRoomPose,
     capturePovDataUrl,
+    paintRecordOverlayCanvas,
+    disposeRecordSpectator,
     setCaptureState,
     saveOpenWindowsLayout,
     restoreOpenWindowsLayout,

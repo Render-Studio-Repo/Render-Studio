@@ -1847,12 +1847,48 @@ export function createWorkspaceBrowser({
     });
   }
 
+  function nestReferenceFolderItems(items = []) {
+    const list = [...(items || [])];
+    const folderOf = (r) => String(r?.folder || "").trim();
+    const arKids = list.filter((r) => folderOf(r).toUpperCase() === "AR" && !r.virtual_folder);
+    const recordingKids = list.filter((r) => folderOf(r).toLowerCase() === "recordings" && !r.virtual_folder);
+    const rest = list.filter((r) => {
+      if (r?.virtual_folder) return true;
+      const f = folderOf(r).toLowerCase();
+      return f !== "ar" && f !== "recordings";
+    });
+    const out = [...rest];
+    const pushFolder = (id, label, kids) => {
+      if (!kids.length) return;
+      out.push({
+        id: `folder:${id}`,
+        name: id,
+        label,
+        children_label: label,
+        virtual_folder: true,
+        folder: id,
+        default_collapsed: true,
+        children: kids.map((child) => ({
+          ...child,
+          label: child.label || child.name,
+          parent_folder: id,
+        })),
+      });
+    };
+    pushFolder("recordings", "Recordings", recordingKids);
+    pushFolder("AR", "AR captures", arKids);
+    return out;
+  }
+
   function buildProjectHierarchy(project) {
     const browser = project.browser || { components: [], drawings: [], references: [], renders: [], sketches: [], wiring: [] };
     const wrap = document.createElement("div");
     wrap.className = "proj-hierarchy";
 
-    const referenceItems = [...(browser.drawings || []), ...(browser.references || [])];
+    const referenceItems = nestReferenceFolderItems([
+      ...(browser.drawings || []),
+      ...(browser.references || []),
+    ]);
     const sections = [
       { id: "components", label: "Components", items: browser.components || [] },
       { id: "references", label: "Reference Files", items: referenceItems },
@@ -1905,6 +1941,62 @@ export function createWorkspaceBrowser({
           const sectionShowAll = showAllHierarchySections.has(sectionKey);
           const visibleItems = visibleSlice(section.items, sectionKey, showAllHierarchySections);
           for (const entry of visibleItems) {
+            if (section.id === "references" && entry?.virtual_folder && entry.children?.length) {
+              const folderKey = `ref-folder:${project.id}:${entry.folder || entry.name || entry.id}`;
+              // Default collapsed for Recordings / AR captures
+              const folderOpen = expandedHierarchyBodies.has(folderKey);
+              const folderLi = document.createElement("li");
+              folderLi.className = "proj-hierarchy-item proj-hierarchy-item--virtual-folder";
+              const folderBtn = document.createElement("button");
+              folderBtn.type = "button";
+              folderBtn.className = "proj-hierarchy-item-btn proj-hierarchy-folder-toggle";
+              folderBtn.innerHTML = `
+                <span class="browser-chevron">${folderOpen ? "▾" : "▸"}</span>
+                <span class="proj-hierarchy-item-name">${escapeHtml(entry.label || entry.children_label || entry.name || "Folder")}</span>
+                <span class="proj-hierarchy-section-count">${entry.children.length}</span>
+              `;
+              folderBtn.title = `${entry.label || "Folder"} — ${entry.children.length} file(s)`;
+              folderBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (expandedHierarchyBodies.has(folderKey)) expandedHierarchyBodies.delete(folderKey);
+                else expandedHierarchyBodies.add(folderKey);
+                render();
+              });
+              folderLi.appendChild(folderBtn);
+              list.appendChild(folderLi);
+              if (folderOpen) {
+                for (const child of entry.children) {
+                  const childItem = document.createElement("li");
+                  childItem.className = "proj-hierarchy-item proj-hierarchy-item--child proj-hierarchy-item--reference";
+                  const childKey = hierarchySelectionKey(project, section.id, child);
+                  hierarchyEntryCache.set(childKey, { project, sectionId: section.id, entry: child });
+                  if (selectedHierarchyKeys.has(childKey)) {
+                    childItem.classList.add("proj-hierarchy-item--selected");
+                  }
+                  const childBtn = document.createElement("button");
+                  childBtn.type = "button";
+                  childBtn.className = "proj-hierarchy-item-btn";
+                  const childName = hierarchyDisplayName(child);
+                  childBtn.innerHTML = `<span class="proj-hierarchy-item-name">${escapeHtml(childName)}</span>`;
+                  childBtn.title = `${childName} — click to open`;
+                  childBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    selectedHierarchyKeys.clear();
+                    selectedHierarchyKeys.add(childKey);
+                    onOpenHierarchyItem?.(project, child, section.id);
+                    render();
+                  });
+                  childItem.appendChild(childBtn);
+                  const childPayload = hierarchyPayload(project, section.id, child);
+                  const openChildMenu = (ev) => showHierarchyItemContextMenu(ev, project, child, section.id, childPayload);
+                  childItem.addEventListener("contextmenu", openChildMenu);
+                  bindLongPress(childItem, openChildMenu);
+                  list.appendChild(childItem);
+                }
+              }
+              continue;
+            }
             const item = document.createElement("li");
             item.className = "proj-hierarchy-item";
             const isComponent = section.id === "components";
@@ -2892,6 +2984,7 @@ export function createWorkspaceBrowser({
     refresh,
     refreshFolders,
     render,
+    getFolders: () => folders.slice(),
     setFolders: (f) => {
       folders = f;
     },

@@ -19,24 +19,34 @@ function isDxfEntry(entry) {
 function referenceSectionItems(browser = {}) {
   const drawings = [...(browser.drawings || [])];
   const refs = [...(browser.references || [])];
-  const arKids = refs.filter((r) => String(r.folder || "").toUpperCase() === "AR");
-  const rest = refs.filter((r) => String(r.folder || "").toUpperCase() !== "AR");
+  const folderOf = (r) => String(r.folder || "").trim();
+  const arKids = refs.filter((r) => folderOf(r).toUpperCase() === "AR");
+  const recordingKids = refs.filter((r) => folderOf(r).toLowerCase() === "recordings");
+  const rest = refs.filter((r) => {
+    const f = folderOf(r).toLowerCase();
+    return f !== "ar" && f !== "recordings";
+  });
   const items = [...drawings, ...rest];
-  if (arKids.length) {
+  const pushFolder = (id, label, kids, { defaultCollapsed = true } = {}) => {
+    if (!kids.length) return;
     items.push({
-      id: "folder:AR",
-      name: "AR",
-      label: "AR captures",
-      children_label: "AR captures",
+      id: `folder:${id}`,
+      name: id,
+      label,
+      children_label: label,
       virtual_folder: true,
-      folder: "AR",
-      children: arKids.map((child) => ({
+      folder: id,
+      default_collapsed: !!defaultCollapsed,
+      children: kids.map((child) => ({
         ...child,
         label: child.label || child.name,
-        parent_folder: "AR",
+        parent_folder: id,
       })),
     });
-  }
+  };
+  // Recordings first (collapsed), then AR captures
+  pushFolder("recordings", "Recordings", recordingKids, { defaultCollapsed: true });
+  pushFolder("AR", "AR captures", arKids, { defaultCollapsed: true });
   return items;
 }
 
@@ -303,8 +313,14 @@ export function createProjectTree(options = {}) {
     const li = document.createElement("li");
     li.className = "browser-child-group";
     const groupKey = `${sectionId}:${parentEntry.name}:children`;
-    // Bodies stay collapsed until the user expands them.
-    childGroupsInitialized.add(groupKey);
+    // Bodies / nested folders stay collapsed until expanded.
+    // Recordings defaults collapsed; first visit seeds that preference.
+    if (!childGroupsInitialized.has(groupKey)) {
+      childGroupsInitialized.add(groupKey);
+      if (parentEntry.default_collapsed === false) {
+        childGroupsExpanded.add(groupKey);
+      }
+    }
     const isOpen = childGroupsExpanded.has(groupKey);
     const btn = document.createElement("button");
     btn.type = "button";
