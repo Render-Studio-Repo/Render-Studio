@@ -1,3 +1,11 @@
+## 2026-07-30 — Rigging moves real CAD parts (not white boxes)
+
+- Primitive-only URDF left CAD static while white boxes animated.
+- Gripper `gen_urdf()` now references `__part_*.glb` meshes (`scale=0.001`) with identity joint origins.
+- Pipeline post-step `_rewrite_urdf_visuals_to_part_meshes` swaps placeholders → part meshes when sidecars exist; author prompt updated.
+
+---
+
 ## 2026-07-30 — URDF launcher accepts Jake ElementTree returns
 
 - Robot artifact fail on `6f1f5739` Parallel Pinch Gripper: AI `gen_urdf()` returned `ET.ElementTree(robot)` and the launcher only accepted `Element`/string/dict.

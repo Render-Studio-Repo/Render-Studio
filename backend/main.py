@@ -16061,6 +16061,115 @@ def _repair_urdf_multi_root_xml(urdf_path: Path) -> list[tuple[str, str, str]]:
     return added
 
 
+def _urdf_part_mesh_map(project_path: Path, stem: str) -> dict[str, str]:
+    """Map link-ish labels → sibling ``{stem}__part_NN_label.glb`` filenames."""
+    import re as _re
+
+    mapping: dict[str, str] = {}
+    for part in sorted(Path(project_path).glob(f"{stem}__part_*.glb")):
+        m = _re.search(r"__part_\d+_(.+)$", part.stem, flags=_re.I)
+        if not m:
+            continue
+        label = str(m.group(1) or "").strip().lower()
+        if not label:
+            continue
+        mapping[label] = part.name
+        # Common Jake / URDF aliases
+        if label.endswith("_link"):
+            mapping[label[: -len("_link")]] = part.name
+        else:
+            mapping[f"{label}_link"] = part.name
+        if label.startswith("base"):
+            mapping.setdefault("base", part.name)
+            mapping.setdefault("base_link", part.name)
+            mapping.setdefault("base_plate", part.name)
+    return mapping
+
+
+def _match_urdf_part_mesh(link_name: str, part_map: dict[str, str]) -> str | None:
+    key = str(link_name or "").strip().lower()
+    if not key:
+        return None
+    if key in part_map:
+        return part_map[key]
+    # fuzzy: jaw_left ↔ left_jaw, etc.
+    compact = key.replace("_", "")
+    for label, filename in part_map.items():
+        if label.replace("_", "") == compact:
+            return filename
+        if key in label or label in key:
+            return filename
+    return None
+
+
+def _rewrite_urdf_visuals_to_part_meshes(urdf_path: Path, project_path: Path, stem: str) -> int:
+    """Replace box/cylinder placeholders with real ``__part_*.glb`` meshes.
+
+    Sibling part GLBs are assembled/world mm. When a link gets a part mesh, zero
+    its parent joint origin so Rigging moves the real CAD instead of white boxes.
+    """
+    import xml.etree.ElementTree as ET
+
+    urdf_path = Path(urdf_path)
+    if not urdf_path.is_file():
+        return 0
+    part_map = _urdf_part_mesh_map(project_path, stem)
+    if not part_map:
+        return 0
+
+    tree = ET.parse(urdf_path)
+    root = tree.getroot()
+    replaced = 0
+    meshed_links: set[str] = set()
+    mesh_scale = "0.001 0.001 0.001"
+
+    for link in root.findall("link"):
+        link_name = str(link.attrib.get("name") or "").strip()
+        filename = _match_urdf_part_mesh(link_name, part_map)
+        if not filename:
+            continue
+        # Skip if this link already has the matching mesh visual.
+        already = False
+        for visual in link.findall("visual"):
+            geom = visual.find("geometry")
+            mesh = geom.find("mesh") if geom is not None else None
+            if mesh is not None and Path(str(mesh.attrib.get("filename") or "")).name == filename:
+                already = True
+                break
+        if already:
+            meshed_links.add(link_name)
+            continue
+
+        for tag in ("visual", "collision"):
+            for old in list(link.findall(tag)):
+                link.remove(old)
+            node = ET.SubElement(link, tag)
+            geom = ET.SubElement(node, "geometry")
+            ET.SubElement(geom, "mesh", filename=filename, scale=mesh_scale)
+        meshed_links.add(link_name)
+        replaced += 1
+
+    if not meshed_links:
+        return 0
+
+    # World-frame part meshes already include assembled pose → identity joint origin.
+    for joint in root.findall("joint"):
+        child_el = joint.find("child")
+        child = str(child_el.attrib.get("link") or "").strip() if child_el is not None else ""
+        if child not in meshed_links:
+            continue
+        origin = joint.find("origin")
+        if origin is None:
+            ET.SubElement(joint, "origin", xyz="0 0 0", rpy="0 0 0")
+        else:
+            origin.set("xyz", "0 0 0")
+            if not str(origin.attrib.get("rpy") or "").strip():
+                origin.set("rpy", "0 0 0")
+
+    tree.write(urdf_path, encoding="utf-8", xml_declaration=True)
+    return replaced
+
+
 def _inject_fixed_joints_into_gen_urdf(source_text: str, joints: list[tuple[str, str, str]]) -> str | None:
     """Best-effort: append missing fixed joints into a gen_urdf() `joints = { ... }` dict."""
     import re as _re
@@ -16466,10 +16575,17 @@ def _run_rigging_artifact_pipeline(
             "  * pinion/motor shafts that actuate the mechanism → revolute about the shaft axis;\n"
             "  * covers, mounts, and housings stay fixed under the single root.\n"
             "- Only prefer all-fixed joints for true static fixtures with no actuated motion.\n"
-            "- Visual/collision mesh filenames may reference the sibling STL if present, else use "
-            "primitive geometry or omit meshes.\n"
+            "- CRITICAL visuals: when sibling `{stem}__part_NN_<label>.glb` files exist, each matching "
+            "link MUST use `<mesh filename=\"{stem}__part_NN_<label>.glb\" scale=\"0.001 0.001 0.001\"/>` "
+            "(CAD is millimeters; URDF is meters). Do NOT use white box/cylinder placeholders for those links "
+            "— Rigging only moves the real model when mesh visuals are present.\n"
+            "- Those `__part_*.glb` sidecars are assembled/world-frame: set that link's joint "
+            "`<origin xyz=\"0 0 0\" rpy=\"0 0 0\"/>` so motion is applied from the closed/assembled pose.\n"
+            "- If no matching `__part_*.glb` / `.stl` exists for a link, primitive geometry is OK for that link only.\n"
             "- Return ONLY the full updated Python source file contents.\n\n"
-            f"SOURCE FILE NAME: {source}\n\n"
+            f"SOURCE FILE NAME: {source}\n"
+            f"AVAILABLE PART MESHES (prefer these for visuals): "
+            f"{', '.join(p.name for p in sorted(path.glob(f'{Path(source).stem}__part_*.glb'))[:40]) or '(none)'}\n\n"
             f"CURRENT SOURCE:\n{text[:120000]}"
         )
         before_consts = _module_scope_numeric_constants(text)
@@ -16570,6 +16686,20 @@ def _run_rigging_artifact_pipeline(
                 errors[:] = [e for e in errors if e.get("tool") != "urdf"]
                 outputs[:] = [o for o in outputs if o.get("tool") != "urdf"]
                 run_one("urdf", f"{stem}.urdf", 62)
+        # Prefer real CAD part meshes over white box/cylinder placeholders.
+        if urdf_out.is_file() and not any(e.get("tool") == "urdf" for e in errors):
+            n_mesh = _rewrite_urdf_visuals_to_part_meshes(urdf_out, path, stem)
+            if n_mesh:
+                generation_service.update_progress(
+                    path,
+                    {
+                        "stage": "attach-part-meshes",
+                        "pct": 68,
+                        "label": "Attaching CAD part meshes to URDF…",
+                        "thinking": f"Replaced placeholder visuals with {n_mesh} __part_*.glb mesh(es).",
+                    },
+                    trace_id=trace_id,
+                )
     if kind in {"srdf", "both"}:
         run_one("srdf", f"{stem}.srdf", 74)
 
