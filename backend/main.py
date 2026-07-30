@@ -13905,6 +13905,10 @@ async def upload_file(
             shutil.copyfileobj(file.file, f)
         project_store.touch_project(path)
         folder_name = dest.parent.name if dest.parent.name in cad_service.REFERENCE_SUBFOLDERS else None
+        from urllib.parse import quote
+
+        file_key = f"{folder_name}/{dest.name}" if folder_name else dest.name
+        file_url = f"/api/projects/{project_id}/files/{quote(file_key, safe='')}"
         _notify_project(
             project_id,
             {
@@ -13912,7 +13916,7 @@ async def upload_file(
                 "filename": dest.name,
                 "kind": cad_service.reference_kind(dest.name),
                 "folder": folder_name,
-                "url": f"/api/projects/{project_id}/files/{dest.name}",
+                "url": file_url,
                 "uploaded_filename": dest.name,
                 "by": user["display_name"],
                 "by_user_id": user["id"],
@@ -13922,7 +13926,7 @@ async def upload_file(
         return {
             "filename": dest.name,
             "viewer_filename": dest.name,
-            "url": f"/api/projects/{project_id}/files/{dest.name}",
+            "url": file_url,
             "timeline_index": None,
             "reference": True,
             "folder": folder_name,

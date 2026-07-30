@@ -1038,22 +1038,34 @@ export function createViewportVideoRecorder({
           lastBlob = blob;
           sourceBlob = blob;
           pendingDesktopClip = blob;
+          let saved = null;
           try {
-            await saveClipToProject(blob, {
-              label: "XR viewport clip",
-              xr: true,
-              forceArFolder: true,
-              modeLabel: getXrModeLabel?.() || "AR",
+            saved = await saveClipToProject(blob, {
+              label: xr ? "XR viewport clip" : "Viewport clip",
+              xr,
+              forceArFolder: xr,
+              modeLabel: xr ? (getXrModeLabel?.() || "AR") : null,
             });
           } catch (err) {
-            console.warn("[viewport-video] save XR clip failed", err);
-            setStatus(false, err?.message || "Could not save XR clip to references.");
+            console.warn("[viewport-video] save clip failed", err);
+            setStatus(false, err?.message || "Could not save clip to references.");
           }
-          try { await openShareModal(blob); } catch (err) {
-            console.warn("[viewport-video] open share modal", err);
+          // Headset: save + publish only — Share/markup opens on the PC (WS + pending poll).
+          // Opening the studio inside XR steals the session and often blocks the PC popup.
+          if (!xr || !isXrPresenting?.()) {
+            try { await openShareModal(blob); } catch (err) {
+              console.warn("[viewport-video] open share modal", err);
+            }
           }
-          try { onClipReady?.(blob, { xr: true, kind: "video" }); } catch (_) {}
-          setStatus(true, `${qualityLabel(prefs.quality)} clip saved — Share to X should open on your PC.`);
+          try { onClipReady?.(blob, { xr, kind: "video", saved: !!saved }); } catch (_) {}
+          setStatus(
+            true,
+            xr
+              ? (saved
+                ? `${qualityLabel(prefs.quality)} clip saved — Share to X opening on your PC.`
+                : `${qualityLabel(prefs.quality)} clip ready locally — save to references failed.`)
+              : `${qualityLabel(prefs.quality)} clip ready.`,
+          );
         } else {
           setStatus(false, "Recording was empty — nothing saved.");
         }

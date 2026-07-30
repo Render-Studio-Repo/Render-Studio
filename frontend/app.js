@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-fix";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-live";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-fix";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-live";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3586,7 +3586,10 @@ async function saveXrCaptureToReferences(blob, { kind = "screenshot", modeLabel 
       await publishXrCaptureReady({
         kind,
         filename: data?.filename || filename,
-        url: data?.url || `/api/projects/${projectId}/files/${encodeURIComponent(data?.filename || filename)}`,
+        url: data?.url
+          || (data?.folder
+            ? `/api/projects/${projectId}/files/${encodeURIComponent(`${data.folder}/${data?.filename || filename}`)}`
+            : `/api/projects/${projectId}/files/${encodeURIComponent(data?.filename || filename)}`),
         modeLabel: mode,
       });
     } catch (err) {
@@ -3622,22 +3625,50 @@ async function ackXrCapture(captureId) {
   } catch (_) {}
 }
 
+async function downloadXrCaptureBlob(msg = {}) {
+  const pid = msg.project_id;
+  const name = String(msg.filename || "").replace(/^.*\//, "");
+  const candidates = [];
+  if (msg.url) candidates.push(msg.url);
+  if (pid && name) {
+    candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(name)}`);
+    candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`AR/${name}`)}`);
+    candidates.push(`/api/projects/${pid}/files/${encodeURIComponent(`references/AR/${name}`)}`);
+  }
+  let lastErr = null;
+  for (const url of candidates) {
+    try {
+      const res = await rawFetch(url);
+      if (!res.ok) {
+        lastErr = new Error(`Could not download capture (${res.status})`);
+        continue;
+      }
+      return await res.blob();
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("Could not download capture");
+}
+
 async function openRemoteXrCaptureShare(msg = {}) {
   const id = msg.id || `${msg.project_id}:${msg.filename}`;
   if (!id || handledXrCaptureIds.has(id)) return;
   handledXrCaptureIds.add(id);
   const kind = msg.kind === "video" ? "video" : "screenshot";
   const mode = msg.mode_label || msg.modeLabel || "AR";
-  const url = msg.url || (msg.project_id && msg.filename
-    ? `/api/projects/${msg.project_id}/files/${encodeURIComponent(msg.filename)}`
-    : null);
-  if (!url) return;
+  if (!msg.url && !(msg.project_id && msg.filename)) {
+    handledXrCaptureIds.delete(id);
+    return;
+  }
 
   // Headset session that created it: keep local banner only; PC gets the editor
   const fromSelf = msg.source_client_id && msg.source_client_id === xrClientId();
   if (fromSelf && viewportXR?.isPresenting?.()) {
     showXrCaptureReadyBanner({ kind, modeLabel: mode });
     viewportXR?.setMenuFooterHint?.("Opened on your PC — mark up & Share to X");
+    // Leave pending so the PC tab can still open + ack it.
+    handledXrCaptureIds.delete(id);
     return;
   }
 
@@ -3645,12 +3676,11 @@ async function openRemoteXrCaptureShare(msg = {}) {
     if (msg.project_id && msg.project_id !== projectId) {
       try { await openProjectById?.(msg.project_id); } catch (_) {}
     }
-    const res = await rawFetch(url);
-    if (!res.ok) throw new Error(`Could not download capture (${res.status})`);
-    const blob = await res.blob();
+    // Show the toast immediately so the PC reacts without waiting on download.
+    showXrCaptureReadyBanner({ kind, modeLabel: mode });
+    const blob = await downloadXrCaptureBlob(msg);
     if (kind === "video") {
       await viewportVideoRecorder?.openShareModal?.(blob);
-      showXrCaptureReadyBanner({ kind: "video", modeLabel: mode });
       setEditStatus("ok", `${mode} XR video ready — mark up or Share to X.`);
     } else {
       const dataUrl = await new Promise((resolve, reject) => {
@@ -3662,7 +3692,6 @@ async function openRemoteXrCaptureShare(msg = {}) {
       if (screenshotMarkup?.open) {
         await screenshotMarkup.open(dataUrl, { modeLabel: `${mode} POV screenshot` });
       }
-      showXrCaptureReadyBanner({ kind: "screenshot", modeLabel: mode });
       setEditStatus("ok", `${mode} XR screenshot ready — mark up or Share to X.`);
     }
     await ackXrCapture(msg.id);
@@ -3701,24 +3730,40 @@ async function captureXrScreenshotForShare({ openDesktopNow = true } = {}) {
     }
     pendingXrScreenshotUrl = dataUrl;
     pendingXrCaptureMode = currentXrCaptureModeLabel();
+    let saved = null;
     try {
       const blob = await dataUrlToBlob(dataUrl);
-      await saveXrCaptureToReferences(blob, { kind: "screenshot", modeLabel: pendingXrCaptureMode });
+      saved = await saveXrCaptureToReferences(blob, { kind: "screenshot", modeLabel: pendingXrCaptureMode });
     } catch (err) {
       console.warn("[xr] immediate reference save failed", err);
+    }
+    const inXr = !!viewportXR?.isPresenting?.();
+    // In XR: publish to PC only — don't open markup on the headset.
+    if (inXr) {
+      showXrCaptureReadyBanner({ kind: "screenshot", modeLabel: pendingXrCaptureMode });
+      viewportXR?.setMenuFooterHint?.(
+        saved
+          ? "Screenshot saved — markup opening on your PC"
+          : "Screenshot captured — save failed; try again",
+      );
+      setEditStatus(
+        saved ? "ok" : "error",
+        saved
+          ? `${pendingXrCaptureMode} screenshot saved — opening on your PC.`
+          : "Could not save screenshot to Reference Files → AR.",
+      );
+      return;
     }
     if (openDesktopNow && screenshotMarkup?.open) {
       try {
         await screenshotMarkup.open(dataUrl, { modeLabel: `${pendingXrCaptureMode} POV screenshot` });
         showXrCaptureReadyBanner({ kind: "screenshot", modeLabel: pendingXrCaptureMode });
-        viewportXR?.setMenuFooterHint?.("Screenshot open on PC — mark up & Share to X");
-        setEditStatus("ok", `${pendingXrCaptureMode} screenshot open on PC — mark up or Share to X.`);
+        setEditStatus("ok", `${pendingXrCaptureMode} screenshot open — mark up or Share to X.`);
         return;
       } catch (err) {
         console.warn("[xr] desktop screenshot open failed", err);
       }
     }
-    viewportXR?.setMenuFooterHint?.("POV saved — open on PC or exit XR to mark up & Share to X");
     setEditStatus("ok", `${pendingXrCaptureMode} screenshot saved to Reference Files → AR.`);
   } catch (err) {
     setEditStatus("error", err?.message || "Could not capture VR screenshot.");
@@ -5445,11 +5490,21 @@ function connectWorkspaceRealtime(teamId) {
 let xrCapturePollTimer = 0;
 function startXrCapturePolling() {
   if (xrCapturePollTimer) return;
+  // Poll often so PC gets Quest captures even when WS landed on the other uvicorn worker.
   xrCapturePollTimer = window.setInterval(() => {
     if (!getToken?.()) return;
     if (viewportXR?.isPresenting?.()) return;
+    if (document.visibilityState === "hidden") return;
     void flushPendingRemoteXrCaptures?.();
-  }, 4000);
+  }, 2000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && getToken?.() && !viewportXR?.isPresenting?.()) {
+      void flushPendingRemoteXrCaptures?.();
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (getToken?.() && !viewportXR?.isPresenting?.()) void flushPendingRemoteXrCaptures?.();
+  });
 }
 startXrCapturePolling();
 

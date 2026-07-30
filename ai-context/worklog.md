@@ -1,3 +1,12 @@
+## 2026-07-30 — XR capture: PC popup without refresh + AR references save
+
+- Restored missing `frontend/` + `backend/main.py` after a bad delete left `index.html` 500.
+- Quest stop no longer opens Share studio inside XR (that blocked the PC path); it saves to **Reference Files → AR** and publishes `xr.capture.ready`.
+- PC polls pending captures every 2s + on focus (covers 2-worker WS miss); banner shows immediately.
+- Cache-bust `?v=20260730-xr-popup-live`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-30 — Brand: Render Studio on boot + toolbar
 
 - Loading screen title/logo word and projects spinner: **Render Studio** (was Render3D Studio).
