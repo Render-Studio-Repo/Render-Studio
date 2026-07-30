@@ -74,9 +74,9 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260727-hold-noselect";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-live";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-popup-ws2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-live";
+import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-popup-ws2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -5494,7 +5494,6 @@ function startXrCapturePolling() {
   xrCapturePollTimer = window.setInterval(() => {
     if (!getToken?.()) return;
     if (viewportXR?.isPresenting?.()) return;
-    if (document.visibilityState === "hidden") return;
     void flushPendingRemoteXrCaptures?.();
   }, 2000);
   document.addEventListener("visibilitychange", () => {

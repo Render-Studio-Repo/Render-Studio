@@ -197,18 +197,37 @@ class CollabHub:
         await websocket.accept()
         async with self._lock:
             self._user_sockets.setdefault(user["id"], set()).add(websocket)
+        sent_capture_ids: set[str] = set()
         try:
             await websocket.send_json({"type": "user.sync"})
-            # Flush any XR captures waiting for a logged-in desktop session
+            # Flush any XR captures waiting for a logged-in desktop session.
+            # Keep re-checking the on-disk inbox: with multiple uvicorn workers,
+            # notify_user only reaches sockets on the worker that handled publish.
             try:
                 from backend.services import xr_capture_inbox
 
                 for item in xr_capture_inbox.list_pending(user["id"]):
+                    cid = str(item.get("id") or "")
                     await websocket.send_json(item)
+                    if cid:
+                        sent_capture_ids.add(cid)
             except Exception as exc:
                 logger.debug("xr capture inbox flush failed: %s", exc)
             while True:
-                await websocket.receive_text()
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    try:
+                        from backend.services import xr_capture_inbox
+
+                        for item in xr_capture_inbox.list_pending(user["id"]):
+                            cid = str(item.get("id") or "")
+                            if not cid or cid in sent_capture_ids:
+                                continue
+                            await websocket.send_json(item)
+                            sent_capture_ids.add(cid)
+                    except Exception as exc:
+                        logger.debug("xr capture inbox poll failed: %s", exc)
         finally:
             async with self._lock:
                 sockets = self._user_sockets.get(user["id"])
