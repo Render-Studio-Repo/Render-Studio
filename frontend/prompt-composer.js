@@ -2,6 +2,38 @@
 
 import { removeReferenceMarker } from "./picking.js?v=20260715-sharp-labels";
 
+const PROMPT_URL_RE = /https?:\/\/[^\s<>\]\)\"']+/gi;
+
+function displayUrlLabel(url = "") {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.length > 28 ? `${u.pathname.slice(0, 25)}…` : u.pathname;
+    return `${u.hostname}${path === "/" ? "" : path}`;
+  } catch {
+    return String(url || "").slice(0, 48);
+  }
+}
+
+function splitTextWithUrls(text = "") {
+  const raw = String(text || "");
+  if (!raw) return [{ type: "text", value: "" }];
+  const parts = [];
+  let last = 0;
+  PROMPT_URL_RE.lastIndex = 0;
+  for (const match of raw.matchAll(PROMPT_URL_RE)) {
+    const full = match[0];
+    const trailing = full.match(/[),.;:!?]+$/)?.[0] || "";
+    const url = trailing ? full.slice(0, -trailing.length) : full;
+    const index = match.index || 0;
+    if (index > last) parts.push({ type: "text", value: raw.slice(last, index) });
+    if (url) parts.push({ type: "url", value: url });
+    if (trailing) parts.push({ type: "text", value: trailing });
+    last = index + full.length;
+  }
+  if (last < raw.length) parts.push({ type: "text", value: raw.slice(last) });
+  return parts.length ? parts : [{ type: "text", value: raw }];
+}
+
 export function createPromptComposer({
   textarea,
   chipsEl,
@@ -298,10 +330,31 @@ export function createPromptComposer({
     return parts.length ? parts : [{ type: "text", value: text }];
   }
 
+  function createUrlNode(url) {
+    const a = document.createElement("a");
+    a.className = "prompt-url-link";
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.contentEditable = "false";
+    a.dataset.url = url;
+    a.title = url;
+    a.textContent = displayUrlLabel(url);
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { window.open(url, "_blank", "noopener,noreferrer"); } catch (_) {}
+    });
+    return a;
+  }
+
   function appendTextWithBreaks(parent, text) {
     const lines = String(text || "").split("\n");
     lines.forEach((line, index) => {
-      if (line) parent.appendChild(document.createTextNode(line));
+      for (const part of splitTextWithUrls(line)) {
+        if (part.type === "url") parent.appendChild(createUrlNode(part.value));
+        else if (part.value) parent.appendChild(document.createTextNode(part.value));
+      }
       if (index < lines.length - 1) parent.appendChild(document.createElement("br"));
     });
   }
@@ -375,6 +428,16 @@ export function createPromptComposer({
           remaining -= token.length;
           continue;
         }
+        if (child.classList?.contains("prompt-url-link")) {
+          const url = child.dataset.url || child.getAttribute("href") || child.textContent || "";
+          if (remaining <= url.length) {
+            placeAfter(child);
+            remaining = -1;
+            return true;
+          }
+          remaining -= url.length;
+          continue;
+        }
         if (child.tagName === "BR") {
           if (remaining <= 1) {
             placeAfter(child);
@@ -409,6 +472,10 @@ export function createPromptComposer({
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       if (node.classList?.contains("prompt-mention")) {
         out += node.dataset.token || "";
+        return;
+      }
+      if (node.classList?.contains("prompt-url-link")) {
+        out += node.dataset.url || node.getAttribute("href") || node.textContent || "";
         return;
       }
       if (node.tagName === "BR") {
@@ -844,8 +911,15 @@ export function createPromptComposer({
       if (textarea) textarea.value = current.slice(0, caret) + text + current.slice(caret);
       syncEditorFromTextarea();
       setCaretPlainOffset(caret + text.length);
+      syncTextareaFromEditor();
+      updateMentionMenuFromCaret();
+      return;
     }
     syncTextareaFromEditor();
+    // Re-render so pasted http(s) URLs become clickable chips.
+    if (/https?:\/\//i.test(text)) {
+      syncEditorFromTextarea({ preserveCaret: true });
+    }
     updateMentionMenuFromCaret();
   });
 

@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260730-ref-share" />
+  <link rel="stylesheet" href="/styles.css?v=20260731-url-links" />
   <link rel="stylesheet" href="/mobile-app-chrome.css?v=20260727-mobile-chrome" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/fusion-unlink-howto.css?v=20260725-break" />
@@ -1910,7 +1910,8 @@
               <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
             </button>
           </div>
-          <textarea id="wiring-prompt-input" rows="6" placeholder="e.g. Wire Raspberry Pi GPIO17 to a push button; when pressed, GPIO27 runs a DC motor through a driver module…"></textarea>
+          <textarea id="wiring-prompt-input" rows="6" placeholder="e.g. Wire Raspberry Pi GPIO17 to a push button; when pressed, GPIO27 runs a DC motor through a driver module… Paste a datasheet URL for pinouts."></textarea>
+          <div id="wiring-prompt-link-chips" class="prompt-url-chips hidden" aria-label="Linked datasheets and product pages"></div>
           <div id="wiring-prompt-image-drop" class="wiring-prompt-image-drop" role="button" tabindex="0">
             <input id="wiring-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
             <span>Add reference photo (optional)</span>
@@ -2048,7 +2049,8 @@
               <span class="prompt-mic-icon" aria-hidden="true">🎙</span>
             </button>
           </div>
-            <textarea id="rigging-prompt-input" rows="5" placeholder="e.g. 4-DOF arm: base_link fixed, shoulder/elbow/wrist revolute joints, ee_link gripper, joint limits, and a pick-and-place motion plan."></textarea>
+            <textarea id="rigging-prompt-input" rows="5" placeholder="e.g. 4-DOF arm: base_link fixed, shoulder/elbow/wrist revolute joints, ee_link gripper, joint limits, and a pick-and-place motion plan. Paste datasheet links for joint specs."></textarea>
+            <div id="rigging-prompt-link-chips" class="prompt-url-chips hidden" aria-label="Linked datasheets and product pages"></div>
           <div id="rigging-prompt-image-drop" class="rigging-prompt-image-drop" role="button" tabindex="0">
             <input id="rigging-prompt-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
             <span>Add reference photo (optional)</span>
@@ -2914,6 +2916,38 @@
   </script>
   <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
+  <div id="model-pick-recommend-modal" class="auth-modal model-pick-recommend-modal hidden" role="dialog" aria-modal="true" aria-labelledby="model-pick-recommend-title" aria-hidden="true">
+    <div class="auth-backdrop" data-model-pick-close></div>
+    <div class="auth-card app-dialog-card model-pick-recommend-card">
+      <button type="button" class="auth-close" data-model-pick-close aria-label="Close">&times;</button>
+      <p class="model-pick-recommend-eyebrow">First key pick</p>
+      <h2 id="model-pick-recommend-title" class="app-dialog-title">Start with a strong CAD model</h2>
+      <p class="muted small model-pick-recommend-lead">
+        When you choose a key, pick one of these for modeling. They handle dimensions, parts, and assemblies much more reliably.
+      </p>
+      <ul class="model-pick-recommend-list" aria-label="Recommended models">
+        <li class="model-pick-recommend-item">
+          <strong>GPT-5.6 Sol</strong>
+          <span>Solid OpenAI pick for CAD generation</span>
+        </li>
+        <li class="model-pick-recommend-item">
+          <strong>Fable 5</strong>
+          <span>Strong Claude option for parametric builds</span>
+        </li>
+        <li class="model-pick-recommend-item">
+          <strong>Opus</strong>
+          <span>Opus 5 or Opus 4.8 when you want deeper reasoning</span>
+        </li>
+      </ul>
+      <div class="model-pick-recommend-warn" role="note">
+        <strong>Skip GPT-5.5 for modeling</strong>
+        <p>GPT-5.5 is not very good for CAD modeling. Prefer Sol 5.6, Fable 5, or Opus instead.</p>
+      </div>
+      <div class="app-dialog-actions model-pick-recommend-actions">
+        <button type="button" class="btn accent" data-model-pick-got-it>Got it — pick a key</button>
+      </div>
+    </div>
+  </div>
   <div id="prompt-target-popup" class="prompt-target-popup hidden" role="dialog" aria-modal="false" aria-label="Select object to edit"></div>
   <div id="fusion-capability-modal" class="fusion-capability-modal hidden" hidden role="dialog" aria-modal="true" aria-labelledby="fusion-capability-title" aria-hidden="true">
     <div class="fusion-capability-card">
@@ -3101,7 +3135,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260731-xr-robots2"></script>
+  <script type="module" src="/app.js?v=20260731-url-links"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260707-sidebar-scroll-top"></script>
   <!-- ribbon.js is imported inside app.js -->

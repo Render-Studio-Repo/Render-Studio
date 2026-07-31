@@ -1,3 +1,11 @@
+## 2026-07-31 — Posted updates since July 16
+
+- Added 11 milestones to Recent Updates (XR/AR captures, AI VR icon, URDF real meshes, Bambu plates, Mesh Stop/Improve, share speed, etc.).
+- Live on https://render3d.app/updates.html (`?v=20260731-post-jul16`).
+- Discord/LinkedIn not configured in `.env` — drafts written to `frontend/docs/updates/social/posts.json`; fixed `scan-milestones.py` missing `import sys`.
+
+---
+
 ## 2026-07-31 — Updates page blank: frontend wipe + missing auth.js
 
 - https://render3d.app/updates.html showed Hello World only — milestone cards never mounted.

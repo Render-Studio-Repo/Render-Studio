@@ -15965,6 +15965,64 @@ button.onshape-doc-name.fusion-folder-select:hover,
 
 .prompt-inline-ref-chips:not(.hidden) + #prompt-input,
 .prompt-inline-ref-chips:not(.hidden) + .prompt-editor-wrap,
+.prompt-url-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.prompt-url-chips.hidden {
+  display: none;
+}
+
+.prompt-url-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 139, 253, 0.45);
+  background: rgba(56, 139, 253, 0.12);
+  color: #93c5fd;
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.prompt-url-chip:hover {
+  border-color: rgba(96, 165, 250, 0.8);
+  background: rgba(56, 139, 253, 0.2);
+  color: #bfdbfe;
+}
+
+.prompt-url-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
+}
+
+.prompt-url-chip-hint {
+  flex: 0 0 auto;
+  opacity: 0.75;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.prompt-url-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.prompt-url-link:hover {
+  color: #93c5fd;
+}
+
 .prompt-inline-ref-chips:not(.hidden) + #wiring-prompt-input {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
@@ -41990,3 +42048,90 @@ body.xr-presenting .viewport-video-share-modal,
 body.xr-presenting .xr-capture-ready-banner {
   z-index: 21000 !important;
 }
+
+/* ── Model pick recommend (first key open) ── */
+.model-pick-recommend-modal {
+  z-index: 10050;
+}
+
+.model-pick-recommend-card {
+  width: min(420px, calc(100vw - 28px));
+  max-width: min(420px, calc(100vw - 28px));
+  padding: 22px 22px 18px;
+}
+
+.model-pick-recommend-eyebrow {
+  margin: 0 0 4px;
+  color: #79c0ff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.model-pick-recommend-lead {
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+
+.model-pick-recommend-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.model-pick-recommend-item {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(88, 166, 255, 0.22);
+  background:
+    linear-gradient(145deg, rgba(22, 27, 34, 0.95), rgba(13, 17, 23, 0.98)),
+    radial-gradient(120% 80% at 0% 0%, rgba(88, 166, 255, 0.1), transparent 55%);
+}
+
+.model-pick-recommend-item strong {
+  color: #e6f1ff;
+  font-size: 0.9rem;
+}
+
+.model-pick-recommend-item span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.model-pick-recommend-warn {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(210, 153, 34, 0.4);
+  background:
+    linear-gradient(145deg, rgba(48, 36, 12, 0.55), rgba(22, 27, 34, 0.92));
+}
+
+.model-pick-recommend-warn strong {
+  display: block;
+  color: #f0c040;
+  font-size: 0.84rem;
+  margin-bottom: 4px;
+}
+
+.model-pick-recommend-warn p {
+  margin: 0;
+  color: #d7c59a;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.model-pick-recommend-actions {
+  margin-top: 0;
+}
+
+.model-pick-recommend-actions .btn {
+  width: 100%;
+}
+

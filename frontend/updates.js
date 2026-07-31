@@ -1,6 +1,6 @@
 /** Recent Updates page — milestone features & tools. */
 
-import { listMilestones } from "./docs/updates/milestones.js?v=20260731-auth-restore";
+import { listMilestones } from "./docs/updates/milestones.js?v=20260731-post-jul16";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
 // Auth is optional here — docs-agent.js mounts the sign-in UI. Don't let a

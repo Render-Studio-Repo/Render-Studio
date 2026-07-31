@@ -66,7 +66,7 @@ import {
 } from "./scene-style.js?v=20260726-worm-mesh-lit";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
 import { createTimelineUI } from "./timeline.js?v=20260726-texture-tl";
-import { createPromptComposer } from "./prompt-composer.js?v=20260721-prompt-link-copy";
+import { createPromptComposer } from "./prompt-composer.js?v=20260731-url-links";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
@@ -18316,6 +18316,14 @@ function openPromptKeyPopup(anchor) {
   popup.classList.remove("hidden");
   promptKeyPopupAnchor?.setAttribute("aria-expanded", "true");
   positionPromptKeyPopup();
+  void import("./model-pick-recommend.js?v=20260731-model-pick-tip").then((mod) => {
+    mod.bindModelPickRecommend?.({
+      getUserId: () => currentUser?.id || null,
+    });
+    mod.maybeShowModelPickRecommend?.({
+      getUserId: () => currentUser?.id || null,
+    });
+  });
 }
 
 function closePromptKeyPopup() {
@@ -21641,6 +21649,67 @@ const wiringPromptInput = document.getElementById("wiring-prompt-input");
 const wiringInlineRefs = document.getElementById("wiring-inline-ref-chips");
 let wiringPromptRefs = [];
 
+const PROMPT_URL_CHIP_RE = /https?:\/\/[^\s<>\]\)\"']+/gi;
+
+function extractPromptUrls(text = "", limit = 4) {
+  const seen = new Set();
+  const urls = [];
+  PROMPT_URL_CHIP_RE.lastIndex = 0;
+  for (const match of String(text || "").matchAll(PROMPT_URL_CHIP_RE)) {
+    let url = match[0].replace(/[),.;:!?]+$/g, "");
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+    if (urls.length >= limit) break;
+  }
+  return urls;
+}
+
+function promptUrlChipLabel(url = "") {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.length > 36 ? `${u.pathname.slice(0, 33)}…` : u.pathname;
+    return `${u.hostname}${path === "/" ? "" : path}`;
+  } catch {
+    return String(url || "").slice(0, 64);
+  }
+}
+
+function renderPromptUrlChips(chipsEl, text) {
+  if (!chipsEl) return;
+  const urls = extractPromptUrls(text);
+  chipsEl.innerHTML = "";
+  chipsEl.classList.toggle("hidden", !urls.length);
+  for (const url of urls) {
+    const a = document.createElement("a");
+    a.className = "prompt-url-chip";
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.title = url;
+    a.innerHTML = `<span class="prompt-url-chip-label">${appEscapeHtml(promptUrlChipLabel(url))}</span><span class="prompt-url-chip-hint">${/\.pdf(\?|$)/i.test(url) ? "PDF" : "Link"}</span>`;
+    chipsEl.appendChild(a);
+  }
+}
+
+function bindPromptUrlChips(textarea, chipsEl) {
+  if (!textarea || !chipsEl) return;
+  const refresh = () => renderPromptUrlChips(chipsEl, textarea.value || "");
+  textarea.addEventListener("input", refresh);
+  textarea.addEventListener("change", refresh);
+  textarea.addEventListener("paste", () => setTimeout(refresh, 0));
+  refresh();
+}
+
+bindPromptUrlChips(
+  document.getElementById("wiring-prompt-input"),
+  document.getElementById("wiring-prompt-link-chips"),
+);
+bindPromptUrlChips(
+  document.getElementById("rigging-prompt-input"),
+  document.getElementById("rigging-prompt-link-chips"),
+);
+
 function normalizeWiringPromptRef(ref = {}) {
   if (!ref?.id) return null;
   const type = ref.type || (ref.filename ? "component" : "wire");
@@ -21768,6 +21837,8 @@ async function runWiringPrompt() {
   const status = document.getElementById("wiring-prompt-status");
   const prompt = input?.value?.trim();
   const driverLink = driverLinkInput?.value?.trim();
+  const pastedLinks = extractPromptUrls(prompt, 3);
+  const driverLinks = [...new Set([driverLink, ...pastedLinks].filter(Boolean))].slice(0, 3);
   if (wiringPromptSubmitInFlight) {
     if (status) {
       status.className = "status loading";
@@ -21807,7 +21878,7 @@ async function runWiringPrompt() {
           media_type,
           data_url,
         })),
-        driver_links: driverLink ? [driverLink] : [],
+        driver_links: driverLinks,
         references: wiringPromptRefs,
         speed: getWiringGenerationSpeed(),
         ...getPromptAiKeyBodyFields(),

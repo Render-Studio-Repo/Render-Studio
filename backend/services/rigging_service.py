@@ -309,7 +309,20 @@ def generate_rigging(
     trace_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     """Return (rig_data, ai_trace, assistant_message)."""
-    parts = [prompt.strip()]
+    enriched = prompt.strip()
+    try:
+        from backend.services.url_document_service import (
+            documents_as_prompt_appendix,
+            fetch_documents_from_text,
+        )
+
+        docs = fetch_documents_from_text(prompt, limit=2)
+        appendix = documents_as_prompt_appendix(docs, per_doc_chars=8_000)
+        if appendix:
+            enriched = f"{enriched}{appendix}"
+    except Exception:
+        pass
+    parts = [enriched]
     if current and (current.get("bones") or current.get("animations")):
         slim = {
             "name": current.get("name"),

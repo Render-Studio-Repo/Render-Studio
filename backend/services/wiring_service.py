@@ -285,53 +285,35 @@ def _clean_url(url: str | None) -> str | None:
 
 
 def _urls_from_prompt(prompt: str) -> list[str]:
-    urls = re.findall(r"https?://[^\s<>\]\)\"']+", prompt or "")
-    cleaned: list[str] = []
-    for url in urls:
-        url = url.rstrip(".,;")
-        clean = _clean_url(url)
-        if clean and clean not in cleaned:
-            cleaned.append(clean)
-    return cleaned[:3]
+    try:
+        from backend.services.url_document_service import urls_from_text
+
+        return urls_from_text(prompt, limit=3)
+    except Exception:
+        urls = re.findall(r"https?://[^\s<>\]\)\"']+", prompt or "")
+        cleaned: list[str] = []
+        for url in urls:
+            url = url.rstrip(".,;")
+            clean = _clean_url(url)
+            if clean and clean not in cleaned:
+                cleaned.append(clean)
+        return cleaned[:3]
 
 
 def _fetch_product_page_text(url: str) -> tuple[str, str | None]:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-    )
+    """Return (text, error). Supports HTML product pages and datasheet PDFs."""
     try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            raw = resp.read(64_000)
-            ctype = resp.headers.get_content_charset() or "utf-8"
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        from backend.services.url_document_service import fetch_url_document
+
+        doc = fetch_url_document(url)
+        text = (doc.get("text") or "").strip()
+        if doc.get("ok") and text:
+            title = (doc.get("title") or "").strip()
+            combined = f"{title}\n{text}".strip() if title else text
+            return combined[:18_000], doc.get("error")
+        return text[:2000], doc.get("error") or "Could not read product page."
+    except Exception as exc:
         return "", str(exc)
-    try:
-        html = raw.decode(ctype, errors="ignore")
-    except LookupError:
-        html = raw.decode("utf-8", errors="ignore")
-    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
-    meta = re.findall(
-        r"<meta[^>]+(?:name|property)=[\"'](?:description|og:title|og:description)[\"'][^>]+content=[\"'](.*?)[\"'][^>]*>",
-        html,
-        re.I | re.S,
-    )
-    chunks = []
-    if title_match:
-        chunks.append(title_match.group(1))
-    chunks.extend(meta[:4])
-    text = " ".join(chunks) or html[:1200]
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", unescape(text)).strip()
-    if re.search(r"continue shopping|captcha|robot check", text, re.I):
-        return text[:240], "Page appears blocked by anti-bot protection."
-    return text[:600], None
 
 
 def _infer_driver_profile(text: str) -> dict[str, Any] | None:
@@ -362,16 +344,31 @@ def analyze_driver_link(url: str | None) -> dict[str, Any] | None:
             "url": clean,
             "fetch_error": fetch_error or "Could not read product page.",
             "summary": "Product link could not be identified. Ask the user for the driver chip name or datasheet.",
+            "page_excerpt": "",
+            "page_text": "",
+            "title": "",
+            "kind": "unknown",
         }
+    title = ""
+    first_line = (page_text or "").split("\n", 1)[0].strip()
+    if first_line and len(first_line) < 160:
+        title = first_line
     return {
         "url": clean,
-        "page_excerpt": page_text[:240] if page_text else "",
+        "title": title,
+        "page_excerpt": page_text[:500] if page_text else "",
+        "page_text": page_text[:12_000] if page_text else "",
         "fetch_error": fetch_error,
         "driver": profile or None,
+        "kind": "pdf" if clean.lower().endswith(".pdf") else "html",
         "summary": (
             f"Identified {profile['name']} from product link."
             if profile
-            else "Read product page, but no known driver chip was identified."
+            else (
+                f"Fetched datasheet/product page ({title or 'untitled'}) for wiring context."
+                if page_text
+                else "Read product page, but no known driver chip was identified."
+            )
         ),
     }
 
@@ -385,14 +382,16 @@ def _driver_link_context(driver_links: list[str] | None, prompt: str) -> tuple[s
     for url in _urls_from_prompt(prompt):
         if url not in urls:
             urls.append(url)
-    analyses = [a for u in urls[:2] if (a := analyze_driver_link(u))]
+    analyses = [a for u in urls[:3] if (a := analyze_driver_link(u))]
     if not analyses:
         return None, []
-    lines = ["\nRelevant product-link facts:"]
+    lines = ["\nRelevant product-link / datasheet facts:"]
     for idx, analysis in enumerate(analyses, 1):
         parsed = urllib.parse.urlparse(analysis["url"])
         compact_url = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
         lines.append(f"{idx}. URL: {compact_url}")
+        if analysis.get("title"):
+            lines.append(f"   Title: {analysis['title']}")
         if analysis.get("fetch_error"):
             lines.append(f"   Fetch note: {analysis['fetch_error']}")
         driver = analysis.get("driver")
@@ -404,10 +403,15 @@ def _driver_link_context(driver_links: list[str] | None, prompt: str) -> tuple[s
             if guidance:
                 lines.append("   Key wiring guidance:")
                 lines.extend(f"   - {note}" for note in guidance)
-        elif analysis.get("page_excerpt"):
-            lines.append(f"   Page clue: {analysis['page_excerpt'][:180]}")
+        page_text = analysis.get("page_text") or analysis.get("page_excerpt") or ""
+        if page_text:
+            lines.append("   Extracted datasheet / page content (use for pinouts, voltages, connectors):")
+            lines.append(page_text[:10_000])
+            if len(page_text) > 10_000:
+                lines.append("   …(truncated)")
     lines.append(
-        "Use only these facts from the link. Do not infer unrelated product details from page boilerplate."
+        "Prefer explicit facts from these linked documents for wiring. "
+        "Do not invent pinouts that contradict the datasheet."
     )
     return "\n".join(lines), analyses
 

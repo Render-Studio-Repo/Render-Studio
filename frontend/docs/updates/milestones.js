@@ -9,12 +9,111 @@
 
 export const MILESTONE_UPDATES = [
   {
+    id: "gpt55-pro-default-speed",
+    date: "2026-07-28",
+    kind: "feature",
+    title: "GPT-5.5 Pro defaults to Speed",
+    summary:
+      "Selecting GPT-5.5 Pro auto-sets Mode to Speed so expensive Quality pricing is not left on by accident; you can still switch to Quality manually.",
+    href: "/",
+  },
+  {
+    id: "mesh-improve-realistic",
+    date: "2026-07-29",
+    kind: "feature",
+    title: "Mesh Improve for realistic materials",
+    summary:
+      "Mesh Improve follows img2threejs look-dev rules: independent PBR, finish recipes, wear and locality, and named mesh parts instead of flat toy colors.",
+    href: "/",
+  },
+  {
+    id: "faster-share-links",
+    date: "2026-07-29",
+    kind: "feature",
+    title: "Faster Create share link",
+    summary:
+      "Creating a share link is much snappier — it bakes the viewer GLB only (companions stay on Export) and Copy share link stays pinned at the top of Export.",
+    href: "/",
+  },
+  {
+    id: "mobile-vr-capture-share-x",
+    date: "2026-07-29",
+    kind: "feature",
+    title: "POV Screenshot & Record → Share to X",
+    summary:
+      "Mobile and VR expose POV Screenshot and Record controls, with markup and Share to X after capture so headset and phone clips are easy to post.",
+    href: "/",
+  },
+  {
+    id: "mesh-stop-draft-costs",
+    date: "2026-07-29",
+    kind: "feature",
+    title: "Mesh Stop restores draft and costs",
+    summary:
+      "Stopping a Mesh generation restores your compose draft like Mode 2.0 and refreshes history so canceled runs still show usage and cost.",
+    href: "/",
+  },
+  {
+    id: "bambu-3mf-real-plates",
+    date: "2026-07-29",
+    kind: "feature",
+    title: "Bambu 3MF: real parts on real plates",
+    summary:
+      "Send to Bambu Studio now packs printable plates correctly — unique mesh IDs per body, one assembled plate by default, Preparing assembly… while multi-body packs, and only unhidden parts export.",
+    href: "/",
+  },
+  {
+    id: "xr-ar-capture-inbox",
+    date: "2026-07-30",
+    kind: "feature",
+    title: "XR captures land in AR references",
+    summary:
+      "Quest screenshots and videos save under Reference Files → AR, and the PC shows a capture-ready popup without needing a refresh.",
+    href: "/",
+  },
+  {
+    id: "reference-files-delete",
+    date: "2026-07-30",
+    kind: "feature",
+    title: "Right-click delete for reference files",
+    summary:
+      "Reference Files and Renders now support right-click Delete (and Rename) in the project browser, including AR captures and open image viewers.",
+    href: "/",
+  },
+  {
+    id: "vr-recording-spectator-ui",
+    date: "2026-07-30",
+    kind: "feature",
+    title: "VR recording matches the headset view",
+    summary:
+      "VR clips record a true head-centered spectator view with correct FOV, and include Explorer + AI windows so recordings look like what you see in the headset.",
+    href: "/",
+  },
+  {
+    id: "ai-vr-generating-icon",
+    date: "2026-07-30",
+    kind: "feature",
+    title: "Green AI VR icon while generating",
+    summary:
+      "In headset, the left-hand dock AI VR control turns green and pulses while a generation is running, and the AI panel header shows AI VR · GENERATING…",
+    href: "/",
+  },
+  {
+    id: "urdf-real-cad-meshes",
+    date: "2026-07-30",
+    kind: "feature",
+    title: "Rigging moves real CAD parts",
+    summary:
+      "URDF/SRDF motion now drives the real __part_*.glb meshes instead of white box placeholders, so jaws and links animate like Jake text-to-CAD.",
+    href: "/getting-started.html#urdf",
+  },
+  {
     id: "source-parts",
     date: "2026-07-16",
     kind: "feature",
-    title: "Source parts with \ⓘ and drag into Wiring AI",
+    title: "Source parts with ⓘ and drag into Wiring AI",
     summary:
-      "Click \ⓘ on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
+      "Click ⓘ on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
     visual: "/docs/media/source-parts.gif?v=20260716-source",
     href: "/getting-started.html#source-parts",
   },

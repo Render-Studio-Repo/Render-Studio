@@ -1,5 +1,93 @@
 [
   {
+    "id": "urdf-real-cad-meshes",
+    "kind": "feature",
+    "title": "Rigging moves real CAD parts",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Rigging moves real CAD parts**\nURDF motion drives the real CAD meshes \u2014 not white boxes \u2014 so grippers and links animate like Jake text-to-CAD.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nRigging moves real CAD parts\nURDF/SRDF now drives real __part_*.glb meshes instead of placeholder boxes \u2014 so jaws and links animate the way Jake text-to-CAD expects.\n\nUpdates: https://render3d.app/updates.html\n\n#CAD #Robotics #URDF #AI #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "ai-vr-generating-icon",
+    "kind": "feature",
+    "title": "Green AI VR icon while generating",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Green AI VR generating icon**\nIn VR/AR, the left-hand AI VR control turns green and pulses while a generation runs.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio VR:\n\nGreen AI VR icon while generating\nThe headset dock AI VR control lights green and pulses so you always know a model is building.\n\nUpdates: https://render3d.app/updates.html\n\n#VR #AR #CAD #AI #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "vr-recording-spectator-ui",
+    "kind": "feature",
+    "title": "VR recording matches the headset view",
+    "discord": "**Feature**\n**New in Render Studio \u2014 VR recording matches the headset**\nRecordings use a true head-centered spectator view with Explorer + AI windows included.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nVR recording matches the headset view\nSpectator FOV/aspect is correct, and Explorer + AI windows are in the clip \u2014 not just white boxes and a squished stereo eye.\n\nUpdates: https://render3d.app/updates.html\n\n#VR #CAD #AI #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "xr-ar-capture-inbox",
+    "kind": "feature",
+    "title": "XR captures land in AR references",
+    "discord": "**Feature**\n**New in Render Studio \u2014 XR captures \u2192 AR references**\nQuest screenshots/videos save under Reference Files \u2192 AR, and the PC gets a capture popup without refresh.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nXR captures land in AR references\nHeadset screenshots and videos save to Reference Files \u2192 AR, and the desktop shows a ready popup immediately.\n\nUpdates: https://render3d.app/updates.html\n\n#VR #AR #CAD #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "bambu-3mf-real-plates",
+    "kind": "feature",
+    "title": "Bambu 3MF: real parts on real plates",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Bambu 3MF real plates**\nUnique mesh IDs, one assembled plate by default, Preparing assembly\u2026 for multi-body, and only unhidden parts export.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nBambu 3MF \u2014 real parts on real plates\nSend to Bambu Studio now packs correctly: unique mesh IDs, one assembled plate by default, and a Preparing assembly\u2026 state while multi-body packs.\n\nUpdates: https://render3d.app/updates.html\n\n#3DPrinting #BambuLab #CAD #AI #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "mesh-improve-realistic",
+    "kind": "feature",
+    "title": "Mesh Improve for realistic materials",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Mesh Improve realistic materials**\nIndependent PBR, finish recipes, wear/locality, and named mesh parts \u2014 not flat toy colors.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nMesh Improve for realistic materials\nFollows img2threejs look-dev: real PBR finishes, wear, and named parts instead of flat CAD colors.\n\nUpdates: https://render3d.app/updates.html\n\n#3D #AI #LookDev #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "mobile-vr-capture-share-x",
+    "kind": "feature",
+    "title": "POV Screenshot & Record \u2192 Share to X",
+    "discord": "**Feature**\n**New in Render Studio \u2014 POV Screenshot & Record \u2192 X**\nMobile and VR expose POV Screenshot/Record with markup and Share to X after capture.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nPOV Screenshot & Record \u2192 Share to X\nCapture from mobile or headset, mark up, then share straight to X.\n\nUpdates: https://render3d.app/updates.html\n\n#VR #Mobile #CAD #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "reference-files-delete",
+    "kind": "feature",
+    "title": "Right-click delete for reference files",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Right-click delete references**\nReference Files / Renders (including AR captures) support right-click Delete and Rename.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nRight-click delete for reference files\nClean up Reference Files, Renders, and AR captures from the project browser context menu.\n\nUpdates: https://render3d.app/updates.html\n\n#CAD #UX #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "mesh-stop-draft-costs",
+    "kind": "feature",
+    "title": "Mesh Stop restores draft and costs",
+    "discord": "**Feature**\n**New in Render Studio \u2014 Mesh Stop like Mode 2.0**\nStop restores your compose draft and refreshes history so canceled Mesh runs still show cost.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Feature**\n\nNew in Render Studio:\n\nMesh Stop restores draft and costs\nCanceling Mesh now restores the prompt draft like Mode 2.0 and keeps usage/cost in history.\n\nUpdates: https://render3d.app/updates.html\n\n#CAD #AI #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "faster-share-links",
+    "kind": "improve",
+    "title": "Faster Create share link",
+    "discord": "**Improve**\n**New in Render Studio \u2014 Faster Create share link**\nShare prep bakes the viewer GLB only, and Copy share link stays pinned at the top of Export.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Improve**\n\nRender Studio share links are faster:\n\nCreate share now bakes the viewer GLB only (companions stay on Export), and Copy share link stays pinned at the top on mobile.\n\nUpdates: https://render3d.app/updates.html\n\n#CAD #Collaboration #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
+    "id": "gpt55-pro-default-speed",
+    "kind": "improve",
+    "title": "GPT-5.5 Pro defaults to Speed",
+    "discord": "**Improve**\n**New in Render Studio \u2014 GPT-5.5 Pro defaults to Speed**\nSelecting Pro auto-sets Mode to Speed so Quality pricing is not left on by accident.\n\n\ud83d\udc49 [See updates](https://render3d.app/updates.html)",
+    "linkedin": "**Improve**\n\nRender Studio cost safeguard:\n\nGPT-5.5 Pro now defaults Mode to Speed. You can still switch to Quality manually.\n\nUpdates: https://render3d.app/updates.html\n\n#AI #CAD #RenderStudio",
+    "href": "https://render3d.app/updates.html"
+  },
+  {
     "id": "render-agent-do-it-for-me",
     "kind": "feature",
     "title": "Render Agent: Do it for me",

@@ -3498,6 +3498,35 @@ def _build_dxf_context_entries(project_path: Path, prompt: str, refs: list[dict[
     return entries
 
 
+def _hydrate_prompt_url_documents(prompt: str, refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fetch pasted http(s) datasheet / product URLs and attach as document refs for AI."""
+    try:
+        from backend.services import url_document_service
+    except Exception:
+        return refs
+    existing_ids = {str(r.get("id") or "") for r in refs}
+    existing_urls = {
+        str(r.get("url") or "").strip()
+        for r in refs
+        if str(r.get("url") or "").strip()
+    }
+    docs = url_document_service.fetch_documents_from_text(prompt or "", limit=3)
+    if not docs:
+        return refs
+    out = list(refs)
+    for doc_ref in url_document_service.documents_as_reference_dicts(docs):
+        rid = str(doc_ref.get("id") or "")
+        url = str(doc_ref.get("url") or "").strip()
+        if rid in existing_ids or (url and url in existing_urls):
+            continue
+        out.append(doc_ref)
+        if rid:
+            existing_ids.add(rid)
+        if url:
+            existing_urls.add(url)
+    return out
+
+
 def _hydrate_mcmaster_spec_refs(
     project_path: Path,
     body: PromptRequest,
@@ -3632,6 +3661,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
             ref["label"] = r.label
         refs.append(ref)
     refs = _hydrate_mcmaster_spec_refs(project_path, body, refs)
+    refs = _hydrate_prompt_url_documents(body.prompt, refs)
     is_plain_v2 = (body.mode or "standard").lower() == "v2"
     referenced_components = []
     for r in body.references:
