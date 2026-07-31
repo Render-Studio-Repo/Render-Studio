@@ -1,3 +1,12 @@
+## 2026-07-31 — Updates page blank: frontend wipe + missing auth.js
+
+- https://render3d.app/updates.html showed Hello World only — milestone cards never mounted.
+- Cause: large frontend (+ ship scripts) deletion; `updates.js` hard-imported missing `auth.js`, so the ES module failed and `#updates-list` stayed empty.
+- Restored frontend + scripts from `20260731T160001Z-cron`; made auth import optional so the list still loads if auth is missing.
+- Note: newest milestone entry is still 2026-07-16 — newer product work was not appended to `milestones.js` / ship-update.
+
+---
+
 ## 2026-07-30 — Rigging moves real CAD parts (not white boxes)
 
 - Primitive-only URDF left CAD static while white boxes animated.

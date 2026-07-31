@@ -12,9 +12,9 @@ export const MILESTONE_UPDATES = [
     id: "source-parts",
     date: "2026-07-16",
     kind: "feature",
-    title: "Source parts with \\u24d8 and drag into Wiring AI",
+    title: "Source parts with \ⓘ and drag into Wiring AI",
     summary:
-      "Click \\u24d8 on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
+      "Click \ⓘ on a component to identify and source it online, then drag the sourced part into the Wiring Simulator AI prompt for pin-aware circuits.",
     visual: "/docs/media/source-parts.gif?v=20260716-source",
     href: "/getting-started.html#source-parts",
   },

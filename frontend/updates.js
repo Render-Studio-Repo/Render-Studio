@@ -1,9 +1,17 @@
 /** Recent Updates page — milestone features & tools. */
 
-import { listMilestones } from "./docs/updates/milestones.js?v=20260716-source-parts";
-import { authHeaders, createAuthUI } from "./auth.js?v=20260715-auth-connect-social";
+import { listMilestones } from "./docs/updates/milestones.js?v=20260731-auth-restore";
 import { enhanceDocsGifs } from "./docs-gif-expand.js?v=20260715-gif-expand";
 
+// Auth is optional here — docs-agent.js mounts the sign-in UI. Don't let a
+// missing auth.js blank the entire milestone list.
+let authHeaders = (headers = {}) => ({ ...headers });
+try {
+  const auth = await import("./auth.js?v=20260731-auth-restore");
+  if (typeof auth.authHeaders === "function") authHeaders = auth.authHeaders;
+} catch (err) {
+  console.warn("[updates] auth.js unavailable; milestone list still loads", err);
+}
 function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")

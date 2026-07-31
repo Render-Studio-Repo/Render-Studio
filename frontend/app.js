@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260730-xr-progress2";
+import { createViewportXR } from "./viewport-xr.js?v=20260731-xr-robots2";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -3502,6 +3502,8 @@ const viewportXR = createViewportXR({
       return [];
     }
   },
+  getRobotRiggingState: () => getXrRobotRiggingState(),
+  onRobotRiggingAction: (action) => handleXrRobotRiggingAction(action),
   onUndo: () => {
     try {
       if (!undoViewportAction?.()) undoTimeline?.();
@@ -22216,6 +22218,170 @@ async function generateRobotArtifacts(kind = "both") {
       status.className = "status error";
       status.textContent = msg;
     }
+  }
+}
+
+function getXrRobotRiggingState() {
+  try {
+    const { urdfFile, srdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
+    const fileNames = (lastProjectFiles || [])
+      .map((f) => (typeof f === "string" ? f : (f?.name || f?.filename || "")))
+      .filter(Boolean);
+    const hasUrdf = !!(urdfFile || fileNames.some((name) => /\.urdf$/i.test(name)));
+    const hasSrdf = !!(srdfFile || fileNames.some((name) => /\.srdf$/i.test(name)));
+    const source = pickSimMotionPythonSource({ filename: selectedFile }, robotArtifactData)
+      || document.getElementById("rigging-artifact-source")?.value
+      || "";
+    const generating = !!(
+      projectId
+      && generationWatchPid === projectId
+      && String(generationWatchOverlay?.kind || "").toLowerCase() === "rigging"
+    );
+    const liveGen = allProjects.find((p) => p.id === projectId)?.generation;
+    const genRunning = !!(
+      generating
+      || (
+        String(liveGen?.kind || "").toLowerCase() === "rigging"
+        && String(liveGen?.status || "").toLowerCase() === "running"
+      )
+    );
+    let status = "";
+    if (genRunning) status = generationWatchOverlay?.message || "Generating URDF / SRDF…";
+    else if (urdfRobotRuntime?.isLoaded?.()) status = `Robot loaded${urdfFile ? `: ${urdfFile}` : ""}`;
+    else if (hasUrdf) status = `${urdfFile || "URDF"} available`;
+    else if (source) status = `Ready to generate from ${source}`;
+    else status = "Build a CAD model with gen_urdf / gen_srdf first";
+    return {
+      hasUrdf,
+      hasSrdf,
+      urdfFile: urdfFile || null,
+      srdfFile: srdfFile || null,
+      source: source || null,
+      loaded: !!urdfRobotRuntime?.isLoaded?.(),
+      playing: !!urdfRobotRuntime?.isPlaying?.(),
+      generating: !!genRunning,
+      status,
+    };
+  } catch (err) {
+    console.warn("[xr] robot state", err);
+    return {
+      hasUrdf: false,
+      hasSrdf: false,
+      loaded: false,
+      playing: false,
+      generating: false,
+      status: err?.message || "Robot state unavailable",
+    };
+  }
+}
+
+async function handleXrRobotRiggingAction(action) {
+  try {
+    if (!projectId) {
+      return { ok: false, error: "Open a project first" };
+    }
+    if (action === "robot_refresh") {
+      await refreshRobotArtifacts({ quiet: false });
+      await refreshFiles?.();
+      const state = getXrRobotRiggingState();
+      return {
+        ok: true,
+        message: state.hasUrdf
+          ? `${state.urdfFile || "URDF"}${state.hasSrdf ? " + SRDF" : ""} found`
+          : (state.source ? `Source ready: ${state.source}` : "No URDF/SRDF yet"),
+      };
+    }
+    if (action === "robot_generate") {
+      await refreshRobotArtifacts({ quiet: true });
+      let source = pickSimMotionPythonSource({ filename: selectedFile }, robotArtifactData);
+      if (!source) {
+        const sources = (robotArtifactData?.sources || []).map(String).filter((name) => /\.py$/i.test(name));
+        source = sources[0] || "";
+      }
+      if (!source) {
+        return {
+          ok: false,
+          error: "No Python CAD source — generate a model with AI first",
+        };
+      }
+      const sourceSelect = document.getElementById("rigging-artifact-source");
+      if (sourceSelect) {
+        if (![...sourceSelect.options].some((opt) => opt.value === source)) {
+          const opt = document.createElement("option");
+          opt.value = source;
+          opt.textContent = source;
+          sourceSelect.appendChild(opt);
+        }
+        sourceSelect.value = source;
+      }
+      const vpSource = document.getElementById("rigging-vp-artifact-source");
+      if (vpSource) {
+        if (![...vpSource.options].some((opt) => opt.value === source)) {
+          const opt = document.createElement("option");
+          opt.value = source;
+          opt.textContent = source;
+          vpSource.appendChild(opt);
+        }
+        vpSource.value = source;
+      }
+      await generateRobotArtifacts("both");
+      await refreshRobotArtifacts({ quiet: true });
+      const after = getXrRobotRiggingState();
+      return {
+        ok: true,
+        message: after.generating
+          ? "Generating URDF + SRDF…"
+          : (after.hasUrdf ? `Generated ${after.urdfFile || "URDF"}` : "Generate started"),
+      };
+    }
+    if (action === "robot_load") {
+      await refreshRobotArtifacts({ quiet: true });
+      const { urdfFile } = pickPreferredRobotFiles(robotArtifactData || {});
+      if (!urdfFile) {
+        return { ok: false, error: "No URDF yet — Generate first" };
+      }
+      await ensureUrdfRobotScene({ quiet: false, force: true });
+      if (!urdfRobotRuntime?.isLoaded?.()) {
+        return { ok: false, error: "Could not load robot scene" };
+      }
+      try {
+        viewportXR?.placeInFront?.({ keepZoom: true });
+      } catch (_) { /* optional */ }
+      return {
+        ok: true,
+        message: `Loaded ${urdfFile}`,
+      };
+    }
+    if (action === "robot_play") {
+      if (!urdfRobotRuntime?.isLoaded?.()) {
+        await refreshRobotArtifacts({ quiet: true });
+        await ensureUrdfRobotScene({ quiet: false, force: true });
+      }
+      if (!urdfRobotRuntime?.isLoaded?.()) {
+        return { ok: false, error: "Load the robot first" };
+      }
+      await toggleRiggingPlayback();
+      return {
+        ok: true,
+        message: urdfRobotRuntime?.isPlaying?.() ? "Motion running" : "Motion paused",
+      };
+    }
+    if (action === "robot_stop") {
+      try {
+        if (urdfRobotRuntime?.isPlaying?.()) urdfRobotRuntime.stopTrajectory?.();
+        stepModuleRuntime?.stop?.({ reset: false });
+        planetaryGearRuntime?.stop?.({ reset: false });
+        riggingEditor?.setPlaying?.(false);
+        syncRiggingViewportPlaybackUi?.();
+      } catch (err) {
+        console.warn("[xr] stop robot", err);
+      }
+      return { ok: true, message: "Motion stopped" };
+    }
+    return { ok: false, error: `Unknown action: ${action}` };
+  } catch (err) {
+    console.warn("[xr] robot action", err);
+    return { ok: false, error: err?.message || "Robot action failed" };
   }
 }
 

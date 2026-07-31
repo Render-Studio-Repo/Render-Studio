@@ -37,6 +37,7 @@ const MENU_TABS = [
   { id: "projects", label: "Projects" },
   { id: "folders", label: "Folders" },
   { id: "files", label: "Files" },
+  { id: "robots", label: "Robots" },
   { id: "ai", label: "AI" },
   { id: "tools", label: "Tools" },
   { id: "view", label: "View" },
@@ -746,6 +747,8 @@ export function createViewportXR(opts) {
     getFolderBrowserItems = null,
     onFolderBrowserRefresh = null,
     getProjectFiles = null,
+    getRobotRiggingState = null,
+    onRobotRiggingAction = null,
     getPromptDraft = null,
     onPromptSubmit = null,
     onToolAction = null,
@@ -2517,6 +2520,94 @@ export function createViewportXR(opts) {
         icon: "export",
       }));
     }
+    if (tab === "robots") {
+      let state = {};
+      try {
+        state = (typeof getRobotRiggingState === "function" && getRobotRiggingState()) || {};
+      } catch {
+        state = {};
+      }
+      const hasUrdf = !!state.hasUrdf;
+      const hasSrdf = !!state.hasSrdf;
+      const loaded = !!state.loaded;
+      const playing = !!state.playing;
+      const generating = !!state.generating;
+      const source = state.source || "";
+      const urdfName = state.urdfFile || (hasUrdf ? "URDF" : "");
+      const lines = [];
+      if (generating) {
+        lines.push({
+          id: "robot_status",
+          label: state.status || "Generating URDF / SRDF…",
+          active: true,
+          kind: "hint",
+          icon: "rec",
+        });
+      } else if (loaded) {
+        lines.push({
+          id: "robot_status",
+          label: `Loaded ${urdfName}${hasSrdf ? " + SRDF" : ""}`,
+          active: true,
+          kind: "hint",
+          icon: "front",
+        });
+      } else if (hasUrdf) {
+        lines.push({
+          id: "robot_status",
+          label: `${urdfName} ready · tap Load`,
+          active: false,
+          kind: "hint",
+          icon: "front",
+        });
+      } else if (source) {
+        lines.push({
+          id: "robot_status",
+          label: `Source: ${String(source).slice(0, 28)}`,
+          active: false,
+          kind: "hint",
+          icon: "export",
+        });
+      } else {
+        lines.push({
+          id: "robot_status",
+          label: "No robot yet — generate from CAD",
+          active: false,
+          kind: "hint",
+          icon: "place",
+        });
+      }
+      lines.push({
+        id: "robot_generate",
+        label: generating ? "Generating…" : (hasUrdf ? "Regenerate URDF + SRDF" : "Generate URDF + SRDF"),
+        active: generating,
+        kind: "action",
+        icon: "ai",
+      });
+      if (hasUrdf || loaded) {
+        lines.push({
+          id: "robot_load",
+          label: loaded ? "Reload robot in AR" : "Load robot in AR",
+          active: loaded,
+          kind: "action",
+          icon: "front",
+        });
+        lines.push({
+          id: playing ? "robot_stop" : "robot_play",
+          label: playing ? "Stop motion" : "Start motion",
+          active: playing,
+          kind: "action",
+          icon: playing ? "exit" : "rec",
+        });
+      }
+      lines.push({
+        id: "robot_refresh",
+        label: "Refresh robot files",
+        active: false,
+        kind: "action",
+        icon: "restore",
+      });
+      return lines.slice(0, 9);
+    }
     if (tab === "ai") {
       const listening = !!(typeof isTranscribing === "function" && isTranscribing());
       return [
@@ -2546,6 +2637,7 @@ export function createViewportXR(opts) {
       return "Personal & shared folders · tap to open";
     }
     if (menuTab === "files") return "Open / link project files";
+    if (menuTab === "robots") return "URDF / SRDF · Generate · Load · Start / Stop motion";
     if (menuTab === "ai") return "Open AI window · mic · model type · speed/quality · edit";
     if (menuTab === "view") return "Shot/Rec on left hand · Pause/Stop while recording · Opens on PC";
     return "Tools · grip moves/rotates (GS) · both grips resize";
@@ -2970,6 +3062,15 @@ export function createViewportXR(opts) {
           });
         } catch (_) {}
       }
+      if (hit.tab === "robots") {
+        try {
+          Promise.resolve(onRobotRiggingAction?.("robot_refresh")).finally(() => {
+            if (presenting && menuTab === "robots") {
+              openMenuConsole({ tab: "robots", keepPose: true });
+            }
+          });
+        } catch (_) {}
+      }
       openMenuConsole({ tab: hit.tab, keepPose: true });
       return;
     }
@@ -3070,6 +3171,45 @@ export function createViewportXR(opts) {
             console.warn("[viewport-xr] file select", err);
           }
           openMenuConsole({ tab: "files", keepPose: true });
+        }
+        return;
+      }
+      if (menuTab === "robots") {
+        const action = line?.id;
+        if (!action || action === "robot_status" || line?.kind === "hint") {
+          openMenuConsole({ tab: "robots", keepPose: true });
+          return;
+        }
+        menuFooterHint = action === "robot_generate"
+          ? "Generating URDF / SRDF…"
+          : action === "robot_play"
+            ? "Starting robot motion…"
+            : action === "robot_stop"
+              ? "Stopping…"
+              : action === "robot_load"
+                ? "Loading robot…"
+                : "";
+        openMenuConsole({ tab: "robots", keepPose: true });
+        try {
+          const result = onRobotRiggingAction?.(action);
+          Promise.resolve(result).then((res) => {
+            if (res?.ok === false && res?.error) menuFooterHint = String(res.error);
+            else if (res?.message) menuFooterHint = String(res.message);
+            else menuFooterHint = "";
+            if (presenting && menuTab === "robots") {
+              openMenuConsole({ tab: "robots", keepPose: true });
+            }
+          }).catch((err) => {
+            console.warn("[viewport-xr] robots", err);
+            menuFooterHint = err?.message || "Robot action failed";
+            if (presenting && menuTab === "robots") {
+              openMenuConsole({ tab: "robots", keepPose: true });
+            }
+          });
+        } catch (err) {
+          console.warn("[viewport-xr] robots", err);
+          menuFooterHint = err?.message || "Robot action failed";
+          openMenuConsole({ tab: "robots", keepPose: true });
         }
         return;
       }
