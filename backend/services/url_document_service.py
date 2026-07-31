@@ -15,9 +15,9 @@ from typing import Any
 
 URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.I)
 MAX_URLS = 3
-MAX_DOWNLOAD_BYTES = 2_500_000
+MAX_DOWNLOAD_BYTES = 8_000_000
 MAX_TEXT_CHARS = 24_000
-FETCH_TIMEOUT_SEC = 12
+FETCH_TIMEOUT_SEC = 20
 
 
 def _is_blocked_host(hostname: str | None) -> bool:
