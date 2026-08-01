@@ -412,7 +412,7 @@ class PromptRequest(BaseModel):
     images: list[PromptImage] = Field(default_factory=list, max_length=8)
     speed: str = Field(default="fast", description="fast (~30s) or quality (slower, gpt-5.5-pro)")
     skills: list[str] = Field(default_factory=list, max_length=20)
-    mode: str = Field(default="standard", description="standard (Render), v2, mesh, fusion, or architect")
+    mode: str = Field(default="standard", description="standard (Render), v2, vibecad, mesh, fusion, or architect")
     fusion_target: str | None = Field(default=None, description="in_app or fusion360")
     convert_images_to_drawing: bool = Field(
         default=False,
@@ -3073,6 +3073,14 @@ def _source_for_base_model(project_path: Path, base_filename: str | None) -> tup
     for path in mesh_candidates:
         if path and path.is_file():
             return path.read_text(encoding="utf-8", errors="ignore"), path.name
+    # VibeCAD stores generators as `{stem}.vibecad.py`.
+    vibecad_candidates = [
+        project_path / f"{stem}.vibecad.py",
+        project_path / f"{stem.replace('.vibecad', '')}.vibecad.py" if ".vibecad" in stem else None,
+    ]
+    for path in vibecad_candidates:
+        if path and path.is_file():
+            return path.read_text(encoding="utf-8", errors="ignore"), path.name
     candidates = [project_path / f"{stem}.py"]
     for suffix in ("_edited", "_pulled", "_mirrored", "_extruded", "_body"):
         if stem.endswith(suffix):
@@ -3108,7 +3116,7 @@ def _infer_implicit_edit_base(project_path: Path, body: PromptRequest) -> str | 
 
 def _should_use_kernel_pipeline(body: PromptRequest, project_path: Path | None = None) -> bool:
     """Route to the parametric kernel instead of legacy mesh-edit actions."""
-    if (body.mode or "standard").lower() in {"v2", "fusion", "architect", "mesh"}:
+    if (body.mode or "standard").lower() in {"v2", "fusion", "architect", "mesh", "vibecad", "vibe", "vibecade"}:
         return True
     if _is_reference_anchored_addition(body) and (body.base_filename or _reference_base_filename(body)):
         return False
@@ -3731,6 +3739,11 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         # Keep BYOK tool-agent as primary (or soft fallback when Codex is on).
         context["jake_tool_agent"] = True
         context["model_electronics"] = bool(getattr(body, "model_electronics", True))
+    if (body.mode or "standard").lower() in {"vibecad", "vibe", "vibecade"}:
+        context["vibecad_runtime"] = True
+        context["pipeline"] = "vibecad_build123d"
+        context["strict_upstream_text_to_cad"] = False
+        context["jake_tool_agent"] = False
     if (body.mode or "standard").lower() == "mesh":
         context["mesh_img2threejs"] = True
         context["pipeline"] = "img2threejs"
@@ -19108,6 +19121,10 @@ def improve_cad_prompt(body: ImprovePromptRequest, request: Request, user: dict[
     use_mesh_improve = mode in {"mesh", "img2threejs", "threejs"}
     mode_hint = {
         "v2": "Parametric CAD 2.0 (build123d / STEP). Prefer precise dimensions and named features.",
+        "vibecad": (
+            "VibeCAD engine (10-X-eng build123d sidecar): principal mechanical design, named single-solid "
+            "outputs in a result dict, millimetres, defensible engineering defaults."
+        ),
         "mesh": (
             "Mesh mode (img2threejs GitHub look-dev): rewrite so EVERY surface looks realistic in the viewport — "
             "named mesh parts, independent PBR (albedo/roughness/metalness/clearcoat), wear/dirt locality, "

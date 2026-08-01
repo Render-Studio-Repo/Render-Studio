@@ -5245,6 +5245,7 @@ def run_design(
     is_fusion = normalized_mode == "fusion"
     is_architect = normalized_mode == "architect"
     is_mesh = normalized_mode == "mesh"
+    is_vibecad = normalized_mode in {"vibecad", "vibe", "vibecade"}
     is_v2 = normalized_mode in {"v2", "fusion", "architect"}
     # Jake-style means mirrored prompts + CAD skill CLIs + repair loop.
     # It does NOT mean zero repairs — upstream agents iterate on source errors.
@@ -5253,13 +5254,46 @@ def run_design(
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
     if max_repairs is None:
-        max_repairs = _max_repairs_for_speed(speed, jake_identical=is_v2 or is_mesh)
+        max_repairs = _max_repairs_for_speed(speed, jake_identical=is_v2 or is_mesh or is_vibecad)
         if is_v2:
             # Jake authoring agent needs enough turns for step/inspect/snapshot/revise.
             max_repairs = max(max_repairs, 12)
         if is_mesh:
             # Match Mode 2.0 repair budget so Mesh can write → export → review → revise.
             max_repairs = max(max_repairs, 12)
+        if is_vibecad:
+            max_repairs = max(max_repairs, 8)
+
+    if is_vibecad:
+        trace_add(
+            "info",
+            f"[VibeCAD] build123d worker pipeline active, max_repairs={max_repairs}",
+            trace_id=trace_id,
+            data={"max_repairs": max_repairs},
+        )
+        if progress_callback:
+            progress_callback({"stage": "analyze", "pct": 6, "label": "VibeCAD · starting build123d…"})
+        from backend.services.vibecad_service import run_vibecad
+
+        try:
+            return run_vibecad(
+                prompt,
+                project_path,
+                context or {},
+                ai,
+                trace_id=trace_id,
+                images=images,
+                previous_source=previous_source,
+                previous_source_name=previous_source_name,
+                cancel_check=cancel_check,
+                progress_callback=progress_callback,
+                usage_callback=usage_callback,
+                max_repairs=max_repairs,
+            )
+        except RuntimeError as exc:
+            if "canceled" in str(exc).lower() or "cancelled" in str(exc).lower():
+                raise DesignCanceled(str(exc) or "Generation canceled.") from exc
+            raise
 
     if is_mesh:
         trace_add(

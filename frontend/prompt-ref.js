@@ -26,6 +26,7 @@ export function formatPromptModeLabel(mode) {
   const m = String(mode || "").trim().toLowerCase();
   if (!m) return null;
   if (m === "v2" || m === "2.0" || m === "2") return "2.0";
+  if (m === "vibecad" || m === "vibe" || m === "vibecade") return "VibeCAD";
   if (m === "draw") return "draw";
   if (m === "standard" || m === "render") return "render";
   return m;

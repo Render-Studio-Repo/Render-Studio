@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260801-viewbar-top" />
+  <link rel="stylesheet" href="/styles.css?v=20260801-vibecad" />
   <link rel="stylesheet" href="/mobile-app-chrome.css?v=20260727-mobile-chrome" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/fusion-unlink-howto.css?v=20260725-break" />
@@ -1686,8 +1686,15 @@
                 <span class="prompt-mode-wrap" data-prompt-mode-tip="render">
                   <button type="button" class="prompt-mode-btn" data-prompt-mode="render" aria-describedby="prompt-mode-render-tip">Render</button>
                 </span>
-                <span class="prompt-mode-wrap" data-prompt-mode-tip="v2">
+                <span class="prompt-mode-wrap prompt-mode-wrap--v2" data-prompt-mode-tip="v2">
                   <button type="button" class="prompt-mode-btn prompt-mode-btn--v2 active" data-prompt-mode="v2" aria-describedby="prompt-mode-v2-tip">2.0</button>
+                  <label class="prompt-cad-engine" title="CAD engine for Mode 2.0">
+                    <span class="visually-hidden">CAD engine</span>
+                    <select id="prompt-cad-engine" aria-label="CAD engine for Mode 2.0">
+                      <option value="jake" selected>Jake</option>
+                      <option value="vibecad">VibeCAD</option>
+                    </select>
+                  </label>
                 </span>
                 <span class="prompt-mode-wrap" data-prompt-mode-tip="mesh">
                   <button type="button" class="prompt-mode-btn prompt-mode-btn--mesh" data-prompt-mode="mesh" aria-describedby="prompt-mode-mesh-tip">
@@ -1721,6 +1728,8 @@
                 </div>
                 <p class="prompt-spice-tip-body">
                   Builds CAD geometry by default: parametric parts, assemblies, dimensions, and named features.
+                  Use the engine dropdown to keep <b>Jake</b> (default text-to-cad) or switch to <b>VibeCAD</b>
+                  (10-X-eng build123d sidecar → STEP/GLB in this viewport).
                 </p>
               </div>
               <div id="prompt-mode-mesh-tip" class="prompt-spice-tip prompt-mode-tip" role="tooltip" hidden>
@@ -3135,7 +3144,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260801-viewbar-top"></script>
+  <script type="module" src="/app.js?v=20260801-vibecad"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260801-dock-tl"></script>
   <!-- ribbon.js is imported inside app.js -->

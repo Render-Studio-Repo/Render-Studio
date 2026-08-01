@@ -20126,6 +20126,60 @@ label input { margin-top: 4px; }
   display: inline-flex;
 }
 
+.prompt-mode-wrap--v2 {
+  align-items: center;
+  gap: 4px;
+  padding-right: 2px;
+  border-radius: 999px;
+}
+
+.prompt-cad-engine {
+  display: none;
+  align-items: center;
+  margin: 0;
+}
+
+.prompt-mode-wrap--v2:has(.prompt-mode-btn--v2.active) .prompt-cad-engine,
+body:has([data-prompt-mode="v2"].active) .prompt-cad-engine {
+  display: inline-flex;
+}
+
+.prompt-cad-engine select {
+  appearance: none;
+  border: 1px solid rgba(212, 160, 23, 0.45);
+  border-radius: 999px;
+  background: rgba(13, 17, 23, 0.92);
+  color: #f0c040;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 4px 22px 4px 8px;
+  max-width: 92px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, #f0c040 50%),
+    linear-gradient(135deg, #f0c040 50%, transparent 50%);
+  background-position: calc(100% - 12px) calc(50% - 2px), calc(100% - 8px) calc(50% - 2px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.prompt-cad-engine select:hover,
+.prompt-cad-engine select:focus-visible {
+  border-color: #f0c040;
+  outline: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Mode tips are portaled to body as .prompt-spice-tip; keep legacy class inert if leftover. */
 .prompt-mode-tip:not(.prompt-spice-tip) {
   display: none !important;

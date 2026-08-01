@@ -1,3 +1,12 @@
+## 2026-08-01 — VibeCAD engine under Mode 2.0
+
+- Added Jake | VibeCAD dropdown on the 2.0 prompt control; Jake/`mode=v2` path untouched.
+- Gutted 10-X-eng/vibecad isolated `build123d_worker` into `backend/skills/vibecad` + `vibecad_service.py`.
+- Prompting with VibeCAD selected posts `mode=vibecad`, authors build123d `result` dict programs, runs the worker, tessellates STEP→GLB for the viewport.
+- Cache-bust `?v=20260801-vibecad`; restarted `render3d.service`.
+
+---
+
 ## 2026-08-01 — Timeline slimmed to macOS-style icon dock
 
 - Project history timeline is now a compact frosted icon dock (~56px) instead of tall labeled cards.

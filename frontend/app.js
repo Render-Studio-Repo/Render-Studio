@@ -68,7 +68,7 @@ import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard
 import { createTimelineUI } from "./timeline.js?v=20260801-tl-scroll";
 import { createPromptComposer } from "./prompt-composer.js?v=20260731-url-links";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260801-vibecad";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
@@ -1555,6 +1555,7 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   if (text === "mesh" || text === "img2threejs" || text === "threejs") return "mesh";
   if (text === "fusion" || text === "fusion360" || text === "fusion-360") return "mesh";
   if (text === "architect" || text === "architecture") return "architect";
+  if (text === "vibecad" || text === "vibe" || text === "vibecade") return "vibecad";
   if (text === "v2" || text === "2.0" || text === "2") return "v2";
   if (text === "render") return "render";
   if (text === "draw") return "draw";
@@ -1567,11 +1568,13 @@ function generationPromptMode(generation = {}, fallback = "standard") {
   ].filter(Boolean).join(" "));
   if (searchable.match(/\bmesh\b|img2threejs|three\.?js/i)) return "mesh";
   if (searchable.match(/\bfusion\b/i)) return "mesh";
+  if (searchable.match(/\bvibecad\b/i)) return "vibecad";
   if (searchable.match(/\barchitect(?:ure)?\b/i)) return "architect";
   if (searchable.match(/\b(v2|2\.0)\b/i)) return "v2";
   const fallbackText = String(fallback || "standard").toLowerCase();
   if (fallbackText === "mesh" || fallbackText === "img2threejs") return "mesh";
   if (fallbackText === "fusion" || fallbackText === "fusion360" || fallbackText === "fusion-360") return "mesh";
+  if (fallbackText === "vibecad" || fallbackText === "vibe" || fallbackText === "vibecade") return "vibecad";
   if (fallbackText === "architect" || fallbackText === "architecture") return "architect";
   if (fallbackText === "v2" || fallbackText === "2.0" || fallbackText === "2") return "v2";
   if (fallbackText === "render") return "render";
@@ -1584,6 +1587,11 @@ function applyPromptModeUI(mode = promptMode) {
   if (promptMode === "fusion") {
     // Fusion prompt tab removed — map legacy sessions to Mesh.
     promptMode = "mesh";
+  }
+  // VibeCAD is an engine under 2.0 — keep the 2.0 tab selected in the UI.
+  if (promptMode === "vibecad" || promptMode === "vibe" || promptMode === "vibecade") {
+    setPromptCadEngine("vibecad");
+    promptMode = "v2";
   }
   const modeBtn = document.querySelector(`[data-prompt-mode="${promptMode}"]`);
   if (!modeBtn || modeBtn.disabled) {
@@ -1598,10 +1606,13 @@ function applyPromptModeUI(mode = promptMode) {
   }
   const input = document.getElementById("prompt-input");
   if (input) {
+    const engine = getPromptCadEngine();
     const placeholder = promptMode === "render"
       ? "Describe the real-life environment to render. Example: put this model on a kitchen counter in morning light..."
       : promptMode === "mesh"
       ? "Attach a reference image or describe an object to rebuild as a procedural Three.js mesh…"
+      : promptMode === "v2" && engine === "vibecad"
+      ? "Describe a part for VibeCAD (build123d) — principal mechanical design, named solids…"
       : "Describe what to make or edit. Type @ to link uploaded files…";
     input.placeholder = placeholder;
     if (composer?.editor) composer.editor.dataset.placeholder = placeholder;
@@ -6682,10 +6693,43 @@ function promptModeForRef(mode = promptMode) {
   if (normalized === "mesh") return "mesh";
   if (normalized === "fusion") return "mesh";
   if (normalized === "architect") return "architect";
+  if (normalized === "vibecad" || normalized === "vibe" || normalized === "vibecade") return "vibecad";
   if (normalized === "v2") return "v2";
   if (normalized === "draw") return "draw";
   if (normalized === "render") return "render";
   return "standard";
+}
+
+const CAD_ENGINE_KEY = "render3d:promptCadEngine";
+
+function getPromptCadEngine() {
+  const sel = document.getElementById("prompt-cad-engine");
+  const fromUi = String(sel?.value || "").toLowerCase();
+  if (fromUi === "vibecad" || fromUi === "jake") return fromUi;
+  try {
+    const saved = String(localStorage.getItem(CAD_ENGINE_KEY) || "jake").toLowerCase();
+    return saved === "vibecad" ? "vibecad" : "jake";
+  } catch {
+    return "jake";
+  }
+}
+
+function setPromptCadEngine(engine) {
+  const next = String(engine || "jake").toLowerCase() === "vibecad" ? "vibecad" : "jake";
+  const sel = document.getElementById("prompt-cad-engine");
+  if (sel) sel.value = next;
+  try {
+    localStorage.setItem(CAD_ENGINE_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+function resolveCadPromptMode(uiMode = promptMode) {
+  const mode = String(uiMode || DEFAULT_PROMPT_MODE).toLowerCase();
+  if (mode === "v2" && getPromptCadEngine() === "vibecad") return "vibecad";
+  return mode;
 }
 
 function promptCopyContextBase(promptText, extra = {}) {
@@ -6717,6 +6761,16 @@ document.querySelectorAll("[data-prompt-mode]").forEach((btn) => {
     applyPromptModeUI(btn.dataset.promptMode || DEFAULT_PROMPT_MODE);
   });
 });
+
+document.getElementById("prompt-cad-engine")?.addEventListener("change", (e) => {
+  setPromptCadEngine(e.target?.value || "jake");
+  if (promptMode === "v2") applyPromptModeUI("v2");
+});
+try {
+  setPromptCadEngine(localStorage.getItem(CAD_ENGINE_KEY) || "jake");
+} catch {
+  setPromptCadEngine("jake");
+}
 
 applyPromptModeUI(
   document.querySelector("[data-prompt-mode].active")?.dataset?.promptMode || DEFAULT_PROMPT_MODE,
@@ -30133,7 +30187,7 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
       : lockedPromptMode === "architect"
         ? "architect"
         : lockedPromptMode === "v2"
-          ? "v2"
+          ? resolveCadPromptMode("v2")
           : "standard";
     const promptHistoryId = newPromptHistoryId();
     const selectedModelInfo = getSelectedPromptModelInfo();
@@ -30266,6 +30320,8 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
         ? `${targetMode === "edit" ? "Editing selected mesh" : "Building procedural mesh"} with Mesh mode... (img2threejs → GLB)`
         : lockedPromptMode === "architect"
         ? `${targetMode === "edit" ? "Editing selected module" : "Adding modular house part"} with Architect mode... (runs in background - safe to refresh)`
+        : lockedPromptMode === "v2" && genMode === "vibecad"
+        ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with VibeCAD... (runs in background - safe to refresh)`
         : lockedPromptMode === "v2"
         ? `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with 2.0... (runs in background - safe to refresh)`
         : `${targetMode === "edit" ? "Editing selected object" : "Adding new object"} with ${getSelectedPromptAiKeyLabel()}… (runs in background — safe to refresh)`;
@@ -30290,11 +30346,12 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
         ...getPromptAiKeyBodyFields(),
         ...(lockedPromptMode === "mesh" || lockedPromptMode === "fusion" ? { mode: "mesh" } : {}),
         ...(lockedPromptMode === "architect" ? { mode: "architect", skills: [...new Set([...getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }), "cad", "architect"])] } : {}),
-        ...(lockedPromptMode === "v2" ? { mode: "v2" } : {}),
-        ...(["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled()
+        ...(lockedPromptMode === "v2" && genMode === "vibecad" ? { mode: "vibecad" } : {}),
+        ...(lockedPromptMode === "v2" && genMode !== "vibecad" ? { mode: "v2" } : {}),
+        ...(["v2", "architect"].includes(lockedPromptMode) && genMode !== "vibecad" && isCodexEnabled()
           ? { codex_agent: true }
           : {}),
-        ...(selectedPromptSupportsElectronics(lockedPromptMode)
+        ...(selectedPromptSupportsElectronics(lockedPromptMode) && genMode !== "vibecad"
           ? { model_electronics: isModelElectronicsEnabled() }
           : {}),
         ...getKnowledgePromptFields(),
