@@ -1,3 +1,12 @@
+## 2026-08-01 — Timeline slimmed to macOS-style icon dock
+
+- Project history timeline is now a compact frosted icon dock (~56px) instead of tall labeled cards.
+- Steps are icon-only with hover magnification; labels live in tooltips + the slim header strip.
+- Migrates saved tall timeline heights (≥110px) down to the dock default; wiring mode still expands for its bottom panel.
+- Cache-bust `?v=20260801-dock-tl`; restarted `render3d.service`.
+
+---
+
 ## 2026-07-31 — Posted updates since July 16
 
 - Added 11 milestones to Recent Updates (XR/AR captures, AI VR icon, URDF real meshes, Bambu plates, Mesh Stop/Improve, share speed, etc.).
