@@ -4,11 +4,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
   const wrap = document.createElement("div");
   wrap.className = "timeline-wrap timeline-wrap--dock";
   wrap.innerHTML = `
-    <div class="timeline-header">
-      <div class="timeline-header-main">
-        <h2>Timeline</h2>
-        <span id="timeline-label" class="muted small">No history yet</span>
-      </div>
+    <div class="timeline-header timeline-header--dock">
       <button type="button" id="btn-timeline-collapse" class="btn-collapse timeline-collapse-btn" title="Collapse timeline" aria-label="Collapse timeline" aria-pressed="false"><span class="timeline-collapse-icon">▼</span></button>
     </div>
     <div class="timeline-body">
@@ -20,11 +16,24 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
 
   const slider = wrap.querySelector("#timeline-slider");
   const stepsEl = wrap.querySelector("#timeline-steps");
-  const labelEl = wrap.querySelector("#timeline-label");
+  // Kept for scrub/preview status; not shown in the dock chrome.
+  const labelEl = { textContent: "" };
 
   let entries = [];
   let scrubbing = false;
   let contextMenu = null;
+
+  // Vertical wheel → horizontal scroll once the dock overflows.
+  stepsEl.addEventListener(
+    "wheel",
+    (e) => {
+      if (stepsEl.scrollWidth <= stepsEl.clientWidth + 1) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      stepsEl.scrollLeft += e.deltaY;
+    },
+    { passive: false },
+  );
 
   function escapeHtml(s) {
     return String(s ?? "")
@@ -118,6 +127,81 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     return entry?.label || kind || "Change";
   }
 
+  function formatWhen(iso) {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+    } catch {
+      return "";
+    }
+  }
+
+  function entryWho(entry = {}) {
+    return String(entry.user_name || "").trim()
+      || (entry.user_id ? "Teammate" : "")
+      || "You";
+  }
+
+  let hoverPopup = null;
+  let hoverPopupStep = null;
+
+  function hideStepHoverPopup() {
+    hoverPopup?.remove();
+    hoverPopup = null;
+    hoverPopupStep = null;
+  }
+
+  function positionStepHoverPopup(btn) {
+    if (!hoverPopup || !btn) return;
+    const rect = btn.getBoundingClientRect();
+    const pad = 8;
+    const popupRect = hoverPopup.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - popupRect.width / 2;
+    left = Math.max(pad, Math.min(left, window.innerWidth - popupRect.width - pad));
+    let top = rect.top - popupRect.height - 10;
+    if (top < pad) top = rect.bottom + 10;
+    hoverPopup.style.left = `${Math.round(left)}px`;
+    hoverPopup.style.top = `${Math.round(top)}px`;
+  }
+
+  function showStepHoverPopup(btn, entry, index) {
+    if (!btn || !entry) return;
+    if (hoverPopupStep === btn && hoverPopup) {
+      positionStepHoverPopup(btn);
+      return;
+    }
+    hideStepHoverPopup();
+    const label = entryLabel(entry);
+    const who = entryWho(entry);
+    const when = formatWhen(entry.created_at || entry.meta?.created_at || entry.updated_at);
+    const detail = entryMetaLabel(entry);
+    const kind = String(entry.kind || "change").replace(/_/g, " ");
+    const popup = document.createElement("div");
+    popup.className = "timeline-step-popup";
+    popup.setAttribute("role", "tooltip");
+    popup.innerHTML = `
+      <div class="timeline-step-popup-head">
+        <span class="timeline-step-popup-icon" aria-hidden="true">${escapeHtml(iconForKind(entry.kind))}</span>
+        <div class="timeline-step-popup-copy">
+          <strong class="timeline-step-popup-title">${escapeHtml(label)}</strong>
+          <span class="timeline-step-popup-kind">${escapeHtml(kind)}${Number.isFinite(index) ? ` · step ${index + 1}` : ""}</span>
+        </div>
+      </div>
+      <div class="timeline-step-popup-who">
+        ${userAvatar({ ...entry, user_name: who })}
+        <div class="timeline-step-popup-who-text">
+          <span class="timeline-step-popup-who-name">${escapeHtml(who)}</span>
+          ${when ? `<span class="timeline-step-popup-when">${escapeHtml(when)}</span>` : ""}
+        </div>
+      </div>
+      ${detail ? `<p class="timeline-step-popup-detail">${escapeHtml(detail)}</p>` : ""}
+    `;
+    document.body.appendChild(popup);
+    hoverPopup = popup;
+    hoverPopupStep = btn;
+    positionStepHoverPopup(btn);
+  }
+
   function closeContextMenu() {
     contextMenu?.remove();
     contextMenu = null;
@@ -132,8 +216,14 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
     },
     true,
   );
-  document.addEventListener("scroll", closeContextMenu, true);
-  window.addEventListener("resize", closeContextMenu);
+  document.addEventListener("scroll", () => {
+    closeContextMenu();
+    hideStepHoverPopup();
+  }, true);
+  window.addEventListener("resize", () => {
+    closeContextMenu();
+    hideStepHoverPopup();
+  });
 
   slider.addEventListener("input", () => {
     scrubbing = true;
@@ -258,7 +348,8 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         const who = e.user_name || "";
         const detail = entryMetaLabel(e);
         const tip = [label, detail, who].filter(Boolean).join(" · ");
-        btn.title = tip;
+        // Custom hover popup replaces native title (avoids delayed OS tooltip).
+        btn.removeAttribute("title");
         btn.setAttribute("aria-label", tip || label || "Timeline step");
         btn.setAttribute("role", "option");
         const showAvatar = !!(e.user_name || e.user_id || e.user_avatar_url);
@@ -270,7 +361,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
               ? "generating"
               : (e.kind || "change");
         btn.disabled = pending;
-        // Icon-dock tile: labels live in title/aria; text kept for screen readers only.
+        // Icon-dock tile: labels live in hover popup; text kept for screen readers only.
         btn.innerHTML = `
           <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
           ${showAvatar ? userAvatar(e) : ""}
@@ -281,15 +372,27 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
             ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
           </span>
         `;
+        btn.addEventListener("mouseenter", () => {
+          const whoLabel = who ? ` · ${who}` : "";
+          labelEl.textContent = `${label}${whoLabel}`;
+          showStepHoverPopup(btn, e, i);
+        });
+        btn.addEventListener("mouseleave", hideStepHoverPopup);
+        btn.addEventListener("focus", () => showStepHoverPopup(btn, e, i));
+        btn.addEventListener("blur", hideStepHoverPopup);
         if (!pending) {
           btn.addEventListener("click", () => {
             slider.value = String(i);
             const whoLabel = who ? ` · ${who}` : "";
             labelEl.textContent = `${label}${whoLabel}`;
             highlightStep(stepsEl, i);
+            hideStepHoverPopup();
             onSelect?.(i, e);
           });
-          btn.addEventListener("contextmenu", (event) => showStepContextMenu(event, i, e));
+          btn.addEventListener("contextmenu", (event) => {
+            hideStepHoverPopup();
+            showStepContextMenu(event, i, e);
+          });
         }
         stepsEl.appendChild(btn);
       });
@@ -306,6 +409,7 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         }
       } else {
         labelEl.textContent = "No history yet";
+        hideStepHoverPopup();
       }
     },
     get isScrubbing() {

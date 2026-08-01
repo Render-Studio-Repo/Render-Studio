@@ -574,7 +574,7 @@ body.theme-light .edit-panel {
 }
 
 body.theme-light .timeline-panel {
-  background: transparent;
+  background: transparent !important;
   color: var(--text);
   border-color: transparent;
   box-shadow: none;
@@ -14142,22 +14142,50 @@ body.mobile-sheet-open {
 
 .timeline-panel {
   flex-shrink: 0;
-  height: var(--timeline-height);
-  min-height: 48px;
+  height: auto;
+  min-height: 0;
   border-top: 0;
-  background: transparent;
-  padding: 0 10px 6px;
+  background: transparent !important;
+  padding: 10px 12px;
   overflow: visible;
   display: flex;
   flex-direction: column;
-  transition: height 0.22s cubic-bezier(0.4, 0, 0.2, 1), padding 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.22s;
+  /* Float over the viewport — top-left dock of history snapshots */
+  position: absolute;
+  left: 10px;
+  right: auto;
+  top: 10px;
+  bottom: auto;
+  width: auto;
+  /* Cap length so the row scrolls instead of spanning the viewport */
+  max-width: min(560px, calc(100% - 160px));
+  z-index: 28;
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.timeline-panel .timeline-wrap,
+.timeline-panel .timeline-steps,
+.timeline-panel .timeline-step,
+.timeline-panel .timeline-collapse-btn,
+.timeline-panel .wiring-bottom-wrap {
+  pointer-events: auto;
 }
 
 /* Wiring history needs taller chrome than the icon dock */
 #app.wiring-mode .timeline-panel:not(.timeline-panel--collapsed) {
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  width: auto;
+  max-width: none;
+  z-index: auto;
+  pointer-events: auto;
   min-height: 148px;
   height: max(148px, var(--timeline-height));
-  background: var(--panel);
+  background: var(--panel) !important;
   padding: 10px 14px 12px;
   overflow: hidden;
 }
@@ -14169,6 +14197,7 @@ body.mobile-sheet-open {
   border-top-color: transparent;
   overflow: visible;
   pointer-events: none;
+  opacity: 0;
 }
 
 .timeline-panel.timeline-panel--collapsed .timeline-wrap {
@@ -14179,12 +14208,13 @@ body.mobile-sheet-open {
   display: none;
 }
 
-/* Collapsed — small tab at bottom center to restore timeline */
+/* Collapsed — small tab at top-left to restore timeline */
 .timeline-expand-tab {
   position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 10px;
+  left: 10px;
+  bottom: auto;
+  transform: none;
   z-index: 45;
   display: none;
   align-items: center;
@@ -14193,14 +14223,13 @@ body.mobile-sheet-open {
   height: 22px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  background: var(--panel);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.82);
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
   transition: color 0.12s, background 0.12s, border-color 0.12s;
 }
 
@@ -14212,9 +14241,13 @@ body.mobile-sheet-open {
 
 .timeline-panel .timeline-wrap {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
 .wiring-bottom-wrap {
@@ -14482,6 +14515,36 @@ body.panel-resizing-row * {
   min-height: 18px;
 }
 
+/* Dock: no "TIMELINE · Delete …" status strip — details live in hover popups */
+.timeline-wrap--dock .timeline-header--dock {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.timeline-wrap--dock .timeline-header--dock .timeline-collapse-btn {
+  pointer-events: auto;
+  opacity: 0.55;
+}
+
+.timeline-wrap--dock .timeline-header--dock .timeline-collapse-btn:hover,
+.timeline-wrap--dock .timeline-header--dock .timeline-collapse-btn:focus-visible {
+  opacity: 1;
+}
+
+.timeline-wrap--dock {
+  position: relative;
+  overflow: visible;
+}
+
 .timeline-header-main {
   display: flex;
   align-items: center;
@@ -14501,11 +14564,7 @@ body.panel-resizing-row * {
 }
 
 #timeline-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.72rem;
-  opacity: 0.9;
+  display: none;
 }
 
 .timeline-collapse-btn {
@@ -14519,10 +14578,14 @@ body.panel-resizing-row * {
 
 .timeline-body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  overflow: visible;
 }
 
 /* Scrubber kept for JS; dock icons are the primary control */
@@ -14537,32 +14600,54 @@ body.panel-resizing-row * {
 
 .timeline-wrap--dock .timeline-steps {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: flex-start;
   gap: 5px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  /* ~12–13 tiles before horizontal scroll */
   overflow-x: auto;
   overflow-y: visible;
-  padding: 10px 10px 6px;
-  margin: 0 auto;
-  max-width: 100%;
-  min-height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  /* Extra bottom pad so hover lift clears the row without clipping */
+  padding: 8px 10px 20px;
+  margin: 0;
+  min-height: 52px;
+  border: 1px solid transparent;
   border-radius: 18px;
-  background: rgba(22, 27, 34, 0.72);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
   scrollbar-width: thin;
+  scrollbar-color: rgba(88, 166, 255, 0.55) transparent;
+}
+
+.timeline-wrap--dock .timeline-steps::-webkit-scrollbar {
+  height: 6px;
+}
+
+.timeline-wrap--dock .timeline-steps::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.45);
+}
+
+.timeline-wrap--dock .timeline-steps::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.timeline-wrap--dock .timeline-step {
+  scroll-snap-align: start;
 }
 
 body.theme-light .timeline-wrap--dock .timeline-steps {
-  border-color: rgba(0, 0, 0, 0.08);
-  background: rgba(245, 245, 245, 0.82);
-  box-shadow:
-    0 6px 18px rgba(40, 40, 40, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  border-color: transparent;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .timeline-step {
@@ -14582,7 +14667,7 @@ body.theme-light .timeline-wrap--dock .timeline-steps {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform-origin: 50% 100%;
+  transform-origin: 50% 0%;
   transition:
     transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 0.12s,
@@ -14593,10 +14678,10 @@ body.theme-light .timeline-wrap--dock .timeline-steps {
 
 .timeline-step:hover,
 .timeline-step:focus-visible {
-  z-index: 2;
+  z-index: 6;
   border-color: var(--accent);
-  transform: translateY(-7px) scale(1.28);
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35);
+  transform: translateY(8px) scale(1.28);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.4);
 }
 
 .timeline-step.active {
@@ -14770,6 +14855,112 @@ body.theme-light .timeline-wrap--dock .timeline-steps {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.82rem;
+}
+
+.timeline-step-popup {
+  position: fixed;
+  z-index: 12000;
+  min-width: 200px;
+  max-width: min(340px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.96);
+  color: var(--text);
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.timeline-step-popup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.timeline-step-popup-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(33, 38, 45, 0.95);
+  font-size: 0.85rem;
+}
+
+.timeline-step-popup-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-step-popup-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.timeline-step-popup-kind {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+
+.timeline-step-popup-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline-step-popup-who .timeline-user-avatar {
+  position: static;
+  width: 22px;
+  height: 22px;
+  font-size: 0.7rem;
+}
+
+.timeline-step-popup-who-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.timeline-step-popup-who-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.timeline-step-popup-when {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.timeline-step-popup-detail {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+body.theme-light .timeline-step-popup {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(31, 111, 235, 0.28);
+  box-shadow:
+    0 12px 28px rgba(40, 40, 40, 0.16),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 
 .folder-context-menu button[data-action="remove"]:hover {

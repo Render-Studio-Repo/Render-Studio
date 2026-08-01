@@ -65,7 +65,7 @@ import {
   setObjectTransparent,
 } from "./scene-style.js?v=20260726-worm-mesh-lit";
 import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard";
-import { createTimelineUI } from "./timeline.js?v=20260801-dock-tl";
+import { createTimelineUI } from "./timeline.js?v=20260801-tl-scroll";
 import { createPromptComposer } from "./prompt-composer.js?v=20260731-url-links";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
 import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260724-opus5-kimi-grok";
