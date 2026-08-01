@@ -8759,9 +8759,12 @@ function enterRiggingMode() {
       if (urdfFile) {
         await ensureUrdfRobotScene({ quiet: false, force: true });
         if (urdfRobotRuntime.isLoaded?.()) {
-          setEditStatus("ok", `URDF robot ready (${urdfFile}). Use the viewport playground to pose joints and test motion.`);
+          setEditStatus("ok", `URDF robot ready (${urdfFile}). Pose joints in Adjustments, then press Play.`);
+          syncRiggingViewportOverlay({ status: "Robot scene loaded — pose joints in Adjustments." });
+          await syncRiggingAdjustSliders({ autoExpand: true });
           syncRiggingToolbelt();
           syncRiggingViewportPlaybackUi();
+          setRiggingViewportPlaybackVisible(true);
           return;
         }
       }
@@ -8787,6 +8790,8 @@ function enterRiggingMode() {
       );
     }
     syncRiggingToolbelt();
+    syncRiggingViewportOverlay();
+    await syncRiggingAdjustSliders({ autoExpand: false });
     syncRiggingViewportPlaybackUi();
     syncRiggingAnimationBanner();
   })();
@@ -8811,23 +8816,17 @@ const riggingViewportPlaybackUi = {
 
 function ensureRiggingViewportPlaybackUi() {
   if (riggingViewportPlaybackUi.container) return riggingViewportPlaybackUi;
-  if (!viewport) return riggingViewportPlaybackUi;
-  const computed = window.getComputedStyle(viewport);
-  if (computed.position === "static") viewport.style.position = "relative";
+  const host = document.getElementById("rigging-chrome") || viewport;
+  if (!host) return riggingViewportPlaybackUi;
 
   const container = document.createElement("div");
   container.id = "rigging-viewport-playback";
-  container.style.position = "absolute";
-  container.style.left = "50%";
-  container.style.bottom = "14px";
-  container.style.transform = "translateX(-50%)";
-  container.style.zIndex = "18";
-  container.style.display = "none";
+  container.className = "rigging-viewport-playback";
 
   const button = document.createElement("button");
   button.type = "button";
   button.id = "btn-rigging-viewport-play";
-  button.className = "btn";
+  button.className = "btn accent btn-compact";
   button.textContent = "Play";
   button.title = "Play/pause rig animation";
   button.addEventListener("click", () => {
@@ -8835,7 +8834,7 @@ function ensureRiggingViewportPlaybackUi() {
   });
 
   container.appendChild(button);
-  viewport.appendChild(container);
+  host.appendChild(container);
   riggingViewportPlaybackUi.container = container;
   riggingViewportPlaybackUi.button = button;
   return riggingViewportPlaybackUi;
@@ -10413,14 +10412,23 @@ function syncRiggingToolbelt() {
   });
 }
 
+function setRiggingAdjustCollapsed(collapsed) {
+  const dock = document.getElementById("rigging-adjust-dock");
+  const toggle = document.getElementById("btn-rigging-adjust-toggle");
+  if (!dock) return;
+  dock.classList.toggle("is-collapsed", !!collapsed);
+  toggle?.setAttribute("aria-expanded", String(!collapsed));
+}
+
 function isSolidDesignTabActive() {
   return workspaceModes?.getMode?.() === "design"
     && (workspaceModes?.getDesignTab?.() || "SOLID") === "SOLID";
 }
 
-function syncSolidObjectAdjustmentsForSelection() {
+function syncSolidObjectAdjustmentsForSelection({ autoExpand = false } = {}) {
   if (!isSolidDesignTabActive()) return;
   syncObjectAdjustmentChrome("SOLID");
+  void syncRiggingAdjustSliders({ autoExpand });
 }
 
 function syncObjectAdjustmentChrome(tab = workspaceModes?.getDesignTab?.() || "SOLID") {
@@ -10428,11 +10436,58 @@ function syncObjectAdjustmentChrome(tab = workspaceModes?.getDesignTab?.() || "S
   if (!chrome) return;
   const solidAdjust = tab === "SOLID";
   chrome.classList.toggle("solid-adjust-chrome", solidAdjust);
-  if (solidAdjust) chrome.classList.remove("hidden");
+  if (solidAdjust) {
+    chrome.classList.remove("hidden");
+    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
+    if (title) title.textContent = "Object & params";
+    void syncRiggingAdjustSliders({ autoExpand: false });
+  } else {
+    const title = document.querySelector("#rigging-adjust-panel .rigging-adjust-head strong");
+    if (title) title.textContent = "Pose & params";
+  }
 }
 
-async function syncRiggingAdjustSliders() {
-  return 0;
+async function syncRiggingAdjustSliders({ autoExpand = false } = {}) {
+  const host = document.getElementById("rigging-adjust-sliders");
+  const countEl = document.getElementById("rigging-adjust-count");
+  if (!host) return 0;
+  const riggingActive = document.body.classList.contains("rigging-design-tab");
+  const robotJoints = riggingActive ? (robotArtifactData?.joints || []) : [];
+  const jointHtml = robotJointSlidersHtml(robotJoints);
+  let cadHtml = "";
+  let cadCount = 0;
+  try {
+    if (projectId && selectedFile) {
+      const cadParams = await fetchCadParams(rawFetch, projectId, selectedFile);
+      if (cadParams?.params?.length) {
+        cadCount = cadParams.params.length;
+        cadHtml = cadParamControlsHtml(cadParams);
+      }
+    }
+  } catch {
+    /* optional */
+  }
+  const movable = robotJoints.filter((j) => String(j.type || "").toLowerCase() !== "fixed");
+  const total = movable.length + cadCount;
+  host.innerHTML = `
+    ${movable.length ? `<div class="rigging-adjust-section"><strong class="muted small">Joints</strong>${jointHtml}</div>` : ""}
+    ${cadHtml ? `<div class="rigging-adjust-section">${cadHtml}</div>` : ""}
+    ${!total ? `<p class="cad-param-hint">${riggingActive ? "No joint or parametric adjustments yet. Load a robot or open a Jake text-to-cad model." : "No parametric adjustments yet. Select a Jake text-to-cad model from the part tree."}</p>` : ""}
+  `;
+  if (countEl) countEl.textContent = String(total);
+  if (cadHtml) {
+    bindCadParamControls(host, {
+      projectId,
+      filename: selectedFile,
+      api,
+      rawFetch,
+      onStatus: setEditStatus,
+      getPreviewRoot: () => projectAssembly.getRoot() || currentMesh,
+    });
+  }
+  if (autoExpand && total > 0) setRiggingAdjustCollapsed(false);
+  else if (!total) setRiggingAdjustCollapsed(true);
+  return total;
 }
 
 function syncRiggingViewportOverlay({ status = "" } = {}) {
@@ -10454,7 +10509,7 @@ function syncRiggingViewportOverlay({ status = "" } = {}) {
   if (statusEl) {
     statusEl.textContent = status
       || (urdfRobotRuntime.isLoaded?.()
-        ? "Robot scene loaded — pose joints from the rigging panel."
+        ? "Robot scene loaded — pose joints in Adjustments."
         : "Load a robot or motion module to pose joints.");
   }
   if (metaEl) {
@@ -10476,6 +10531,13 @@ function bindRiggingViewportOverlayUi() {
       btn.setAttribute("aria-expanded", String(!collapsed));
     }
   });
+
+  const setCollapsed = (collapsed) => setRiggingAdjustCollapsed(collapsed);
+  document.getElementById("btn-rigging-adjust-toggle")?.addEventListener("click", () => {
+    const dock = document.getElementById("rigging-adjust-dock");
+    setCollapsed(!dock?.classList.contains("is-collapsed"));
+  });
+  document.getElementById("btn-rigging-adjust-close")?.addEventListener("click", () => setCollapsed(true));
 
   document.getElementById("rigging-show-bones")?.addEventListener("change", (e) => {
     const on = !!e.target?.checked;
@@ -10511,6 +10573,15 @@ function bindRiggingViewportOverlayUi() {
   document.getElementById("rigging-vp-artifact-source")?.addEventListener("change", (e) => {
     const panel = document.getElementById("rigging-artifact-source");
     if (panel) panel.value = e.target.value;
+  });
+
+  document.getElementById("rigging-adjust-sliders")?.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const id = input.dataset.robotUrdfJoint || input.dataset.robotUrdfJointNumber;
+    if (!id) return;
+    const joint = (robotArtifactData?.joints || []).find((item) => item.name === id) || null;
+    applyRobotJointDisplayValue(id, input.value, joint);
   });
 }
 

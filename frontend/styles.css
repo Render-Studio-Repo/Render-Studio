@@ -5154,6 +5154,108 @@ body.canvas-design-tab .main-column {
   overflow: hidden;
 }
 
+/* Keep manage card clear of the top-left view bar (Grid / Transparent / …) */
+#app.rigging-design-tab .rigging-viewport-manage {
+  top: 56px;
+}
+
+.rigging-adjust-dock {
+  pointer-events: auto;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  max-height: calc(100% - 88px);
+}
+
+.rigging-adjust-tab {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 10px 0 0 10px;
+  background: rgba(13, 17, 23, 0.9);
+  color: #e6edf3;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rigging-adjust-tab em {
+  font-style: normal;
+  color: #79c0ff;
+}
+
+.rigging-adjust-panel {
+  width: min(320px, calc(100vw - 80px));
+  max-height: inherit;
+  display: none;
+  flex-direction: column;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: rgba(13, 17, 23, 0.92);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.rigging-adjust-dock:not(.is-collapsed) .rigging-adjust-panel {
+  display: flex;
+}
+
+.rigging-adjust-dock:not(.is-collapsed) .rigging-adjust-tab {
+  border-radius: 10px 0 0 10px;
+}
+
+.rigging-adjust-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.75);
+}
+
+.rigging-adjust-sliders {
+  padding: 10px 12px 14px;
+  overflow: auto;
+  max-height: min(58vh, 520px);
+}
+
+.rigging-adjust-sliders .cad-param-row {
+  grid-template-columns: minmax(72px, 0.9fr) minmax(0, 1.4fr) 64px auto;
+}
+
+.rigging-adjust-section + .rigging-adjust-section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(48, 54, 61, 0.55);
+}
+
+/* Play sits in #rigging-chrome (z-index 46) above the timeline dock */
+.rigging-viewport-playback {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: none;
+}
+
+#rigging-chrome.solid-adjust-chrome .rigging-viewport-playback {
+  display: none !important;
+}
+
 .rigging-manage-head {
   display: flex;
   align-items: center;
