@@ -68,7 +68,7 @@ import { createEditTools } from "./edit-tools.js?v=20260629-transform-drag-guard
 import { createTimelineUI } from "./timeline.js?v=20260801-tl-scroll";
 import { createPromptComposer } from "./prompt-composer.js?v=20260731-url-links";
 import { createPromptHistoryUI } from "./prompt-history.js?v=20260721-model-labels";
-import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260801-vibecad";
+import { copyText, formatModelLabel, formatPromptRef } from "./prompt-ref.js?v=20260801-vibecad-parity";
 import { createSkillsPromptUI, fetchSkillsCatalog, getEnabledSkillsForPrompt, setSkillEnabled, syncBlueprintVisionForImages } from "./skills-library.js?v=20260706-ui-fix";
 import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-base.js?v=20260715-kb-site-modal";
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
@@ -609,7 +609,7 @@ function syncViewportGenerationUserBadge(gen) {
   const kind = String(gen.kind || generationWatchOverlay?.kind || "prompt").toLowerCase();
   const mode = generationPromptMode(gen);
   const rendering = kind === "render" || kind === "scene_render" || mode === "render";
-  const v2ish = !rendering && ["v2", "mesh", "fusion", "architect"].includes(mode);
+  const v2ish = !rendering && ["v2", "vibecad", "mesh", "fusion", "architect"].includes(mode);
   btn.classList.remove("hidden");
   btn.classList.toggle("viewport-generation-user--rigging", rigging);
   btn.classList.toggle("viewport-generation-user--render", !rigging && rendering);
@@ -1522,6 +1522,13 @@ function promptGenerationOverlayOpts(mode = "standard") {
       estimateMs: 600000,
     };
   }
+  if (normalized === "vibecad" || normalized === "vibe" || normalized === "vibecade") {
+    return {
+      message: "Generating with VibeCAD in background... refresh anytime; model loads when ready.",
+      mode: "ai",
+      estimateMs: 900000,
+    };
+  }
   if (normalized === "v2") {
     return {
       message: "Generating with 2.0 in background... refresh anytime; model loads when ready.",
@@ -1629,10 +1636,13 @@ function applyPromptModeUI(mode = promptMode) {
 }
 
 function selectedPromptSupportsElectronics(mode = promptMode) {
-  // Electronics solids apply to parametric CAD (2.0 / Architect). The toggle
-  // stays visible in the mode row for all modes so it doesn't disappear when
-  // switching to Mesh/Render — preference still only affects 2.0/Architect generates.
-  return ["v2", "architect", "fusion"].includes(String(mode || "").toLowerCase());
+  // Electronics solids apply to parametric CAD (Jake 2.0 / VibeCAD / Architect).
+  // The toggle stays visible in the mode row for all modes so it doesn't disappear when
+  // switching to Mesh/Render — preference still only affects CAD generates.
+  const m = String(mode || "").toLowerCase();
+  if (m === "vibecad" || m === "vibe" || m === "vibecade") return true;
+  if (m === "v2" || m === "architect" || m === "fusion") return true;
+  return false;
 }
 
 function isModelElectronicsEnabled() {
@@ -1912,6 +1922,10 @@ function beginGenerationWatch(pid = projectId, { kind = "prompt", mode = "standa
       statusEl.textContent =
         (mode || "standard").toLowerCase() === "mesh" || (mode || "standard").toLowerCase() === "fusion"
           ? "Generating Mesh in background… Three.js factory → GLB (safe to refresh)."
+          : (mode || "standard").toLowerCase() === "vibecad"
+          || (mode || "standard").toLowerCase() === "vibe"
+          || (mode || "standard").toLowerCase() === "vibecade"
+          ? "Generating with VibeCAD in background... refresh anytime; model loads when ready."
           : (mode || "standard").toLowerCase() === "v2"
           ? "Generating with 2.0 in background... refresh anytime; model loads when ready."
           : "Generating in background… safe to refresh.";
@@ -4258,6 +4272,8 @@ function currentComposeSnapshot() {
     images: promptImages || [],
     project_id: projectId || null,
     filename: selectedFile || null,
+    promptMode: resolveCadPromptMode(promptMode),
+    cadEngine: getPromptCadEngine(),
     updated_at: Date.now(),
   };
 }
@@ -4532,6 +4548,8 @@ function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
       prompt,
       references: dedupeRefsById(newest.references),
       images: newest?.images,
+      promptMode: newest?.promptMode || null,
+      cadEngine: newest?.cadEngine || null,
     };
   }
   const modelRefs = modelState?.references || [];
@@ -4540,6 +4558,8 @@ function mergePromptReferenceSnapshots(modelState, projectState, globalState) {
     prompt,
     references: dedupeRefsById([...modelRefs, ...projectRefs]),
     images: newest?.images,
+    promptMode: newest?.promptMode || null,
+    cadEngine: newest?.cadEngine || null,
   };
 }
 
@@ -4574,6 +4594,20 @@ function restoreActiveModelPromptState() {
     meshRoot: currentMesh,
     meshCenterOffset,
   });
+  // Restore Mode 2.0 engine (Jake vs VibeCAD) + prompt mode with the draft.
+  const modeSnap = merged.promptMode || modelState?.promptMode || projectState?.promptMode || globalState?.promptMode;
+  const engineSnap = merged.cadEngine || modelState?.cadEngine || projectState?.cadEngine || globalState?.cadEngine;
+  if (engineSnap === "vibecad" || engineSnap === "jake") {
+    try { setPromptCadEngine(engineSnap); } catch { /* ignore */ }
+  }
+  if (modeSnap) {
+    try {
+      const mode = promptModeForRef(modeSnap);
+      if (["v2", "vibecad", "mesh", "architect", "draw", "render", "standard"].includes(mode)) {
+        applyPromptModeUI(mode === "standard" ? "render" : mode);
+      }
+    } catch { /* ignore */ }
+  }
   restoringModelPromptState = false;
   sendCollabPresence();
   refreshSelectionMeasureOverlay();
@@ -5820,7 +5854,7 @@ const promptHistory = createPromptHistoryUI({
   },
   onReuse: (entry) => {
     const reusedMode = generationPromptMode({ prompt_mode: entry.prompt_mode }, promptMode);
-    if (["v2", "mesh", "architect", "draw", "standard"].includes(reusedMode)) {
+    if (["v2", "vibecad", "mesh", "architect", "draw", "standard"].includes(reusedMode)) {
       applyPromptModeUI(reusedMode === "standard" ? "render" : reusedMode);
     }
     const refs = promptHistoryReferencesForReuse(entry);
@@ -6489,8 +6523,12 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
   }
   // Explicit forceMode (e.g. scene-render path). Otherwise honor the active UI
   // mode so Mode 2.0 always gets CAD improve — Mesh gets img2threejs realistic materials.
+  // VibeCAD engine under 2.0 uses mode=vibecad for improve + generation.
   let improveMode = forceMode
     || (promptMode === "draw" ? "draw" : promptMode || DEFAULT_PROMPT_MODE);
+  if (!forceMode && improveMode === "v2") {
+    improveMode = resolveCadPromptMode("v2");
+  }
   if (improveMode === "fusion" || improveMode === "img2threejs" || improveMode === "threejs") {
     improveMode = "mesh";
   }
@@ -6498,6 +6536,8 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     statusEl.className = "status loading";
     statusEl.textContent = improveMode === "mesh"
       ? "Improving for realistic mesh materials…"
+      : improveMode === "vibecad"
+      ? "Improving prompt for VibeCAD…"
       : "Improving prompt with AI…";
   }
   pushSpiceOverlayProgress({
@@ -6505,12 +6545,16 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
     stage: "analyze",
     label: improveMode === "mesh"
       ? "Improving for realistic mesh materials…"
+      : improveMode === "vibecad"
+      ? "Improving prompt for VibeCAD…"
       : "Improving prompt with AI…",
     thinking:
       improveMode === "render"
         ? "Rewriting your prompt for a clearer photoreal scene…"
         : improveMode === "mesh"
         ? "Rewriting for realistic PBR materials (img2threejs look-dev)…"
+        : improveMode === "vibecad"
+        ? "Rewriting your prompt for VibeCAD parametric CAD…"
         : improveMode === "v2" || improveMode === "architect"
         ? "Rewriting your prompt for clearer parametric CAD…"
         : improveMode === "draw"
@@ -6520,6 +6564,8 @@ async function maybeSpiceUpPrompt(promptText, { statusEl, forceMode = null } = {
       {
         text: improveMode === "mesh"
           ? "Improving for realistic mesh materials…"
+          : improveMode === "vibecad"
+          ? "Improving prompt for VibeCAD…"
           : "Improving prompt with AI…",
         stage: "analyze",
       },
@@ -7105,7 +7151,7 @@ function restoreComposeDraftAfterStop({ prompt, promptMode = null } = {}) {
     composer.setPromptText?.(text);
     if (promptMode) {
       const mode = promptModeForRef(promptMode);
-      if (mode === "mesh" || mode === "fusion" || mode === "v2" || mode === "architect") {
+      if (mode === "mesh" || mode === "fusion" || mode === "v2" || mode === "vibecad" || mode === "architect") {
         try {
           applyPromptModeUI(mode);
         } catch {
@@ -30216,7 +30262,7 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
       references: promptReferences,
       model: selectedModelInfo.model,
       provider: selectedModelInfo.provider,
-      codex_agent: ["v2", "architect"].includes(lockedPromptMode) && isCodexEnabled(),
+      codex_agent: ["v2", "architect"].includes(lockedPromptMode) && genMode !== "vibecad" && isCodexEnabled(),
       model_electronics: selectedPromptSupportsElectronics(lockedPromptMode) && isModelElectronicsEnabled(),
       skills: getEnabledSkillsForPrompt({ hasImages: promptImages.length > 0 }),
     });
@@ -30247,6 +30293,8 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
         label: "Improving prompt with AI…",
         thinking: genMode === "mesh"
           ? "Rewriting your prompt for a clearer Mesh rebuild…"
+          : genMode === "vibecad"
+          ? "Rewriting your prompt for VibeCAD parametric CAD…"
           : "Rewriting your prompt for clearer parametric CAD…",
         activity: [{ text: "Improving prompt with AI…", stage: "analyze" }],
         spiceHold: true,
@@ -30351,8 +30399,8 @@ async function handlePromptGenerateClick({ source = "ui" } = {}) {
         ...(["v2", "architect"].includes(lockedPromptMode) && genMode !== "vibecad" && isCodexEnabled()
           ? { codex_agent: true }
           : {}),
-        ...(selectedPromptSupportsElectronics(lockedPromptMode) && genMode !== "vibecad"
-          ? { model_electronics: isModelElectronicsEnabled() }
+        ...(selectedPromptSupportsElectronics(lockedPromptMode) && isModelElectronicsEnabled()
+          ? { model_electronics: true }
           : {}),
         ...getKnowledgePromptFields(),
         ...(spiceMeta.promptImproved

@@ -1,3 +1,11 @@
+## 2026-08-01 — VibeCAD parity with Mode 2.0 UX
+
+- VibeCAD now shares 2.0 features: @links in authoring context, prompt history save/reuse, draft restore with engine, refresh-safe generation watch, Improve prompt, electronics flag, orange CAD chrome.
+- `vibecad_service` consumes refs/DXF/components/STEP inputs like 2.0; Jake `mode=v2` still untouched.
+- Cache-bust `?v=20260801-vibecad-parity`.
+
+---
+
 ## 2026-08-01 — VibeCAD engine under Mode 2.0
 
 - Added Jake | VibeCAD dropdown on the 2.0 prompt control; Jake/`mode=v2` path untouched.

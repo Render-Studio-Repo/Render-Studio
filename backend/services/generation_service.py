@@ -144,7 +144,7 @@ def _is_long_running_model(job: dict[str, Any] | None) -> bool:
     mode = str(job.get("mode") or "").strip().lower()
     if model.endswith("-sol") or "-sol" in model:
         return True
-    if speed == "quality" and mode in {"v2", "fusion", "architect"}:
+    if speed == "quality" and mode in {"v2", "vibecad", "fusion", "architect"}:
         return True
     return False
 

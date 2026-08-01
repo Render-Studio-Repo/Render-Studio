@@ -3696,7 +3696,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
     elif (
         not referenced_components
         and not _is_reference_anchored_addition(body)
-        and (body.mode or "standard").lower() != "v2"
+        and (body.mode or "standard").lower() not in {"v2", "vibecad", "vibe", "vibecade"}
         and _looks_like_fixture_prompt(body.prompt, body.images)
     ):
         referenced_components = _project_component_refs_for_fixture(project_path)
@@ -3744,6 +3744,7 @@ def _slim_context(project_id: str, project_path: Path, body: PromptRequest) -> d
         context["pipeline"] = "vibecad_build123d"
         context["strict_upstream_text_to_cad"] = False
         context["jake_tool_agent"] = False
+        context["model_electronics"] = bool(getattr(body, "model_electronics", True))
     if (body.mode or "standard").lower() == "mesh":
         context["mesh_img2threejs"] = True
         context["pipeline"] = "img2threejs"

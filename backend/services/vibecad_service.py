@@ -52,11 +52,15 @@ Output JSON only:
   "model_name": "HumanReadableName",
   "source": "<complete python source assigning result>",
   "parameters": {"key": number_or_string, ...},
-  "expected_outputs": ["PartA", "PartB"]
+  "expected_outputs": ["PartA", "PartB"],
+  "input_objects": {"alias": "ExactStepFileName.step"}
 }
+
+`input_objects` is optional. When @-linked STEP files are provided in context, map aliases to those exact filenames and load them via `inputs[alias]` in source. Prefer mating to linked geometry over reinventing it.
 
 For a new substantial design, prefer one coherent component or a small set of named solids
 (not dozens of crumbs). Prefer defensible engineering defaults over asking questions.
+Honor @component / @face / DXF / document links listed in the user packet.
 """
 
 VIBECAD_REPAIR_SYSTEM = """You are repairing a VibeCAD build123d program for Render Studio.
@@ -86,6 +90,125 @@ def _progress(cb: ProgressCb, stage: str, pct: int, label: str) -> None:
 def _slug(value: str, fallback: str = "part") -> str:
     slug = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value or "").strip()).strip("_")
     return slug[:48] or fallback
+
+
+def _context_brief(context: dict[str, Any] | None, project_path: Path) -> str:
+    """Serialize Mode 2.0-style @links / DXF / components into the authoring packet."""
+    ctx = context or {}
+    parts: list[str] = []
+    guidance = str(ctx.get("reference_edit_guidance") or "").strip()
+    if guidance:
+        parts.append(f"Reference edit guidance:\n{guidance}")
+    refs = ctx.get("refs") or []
+    if refs:
+        lines = []
+        for ref in refs[:40]:
+            if not isinstance(ref, dict):
+                continue
+            label = ref.get("label") or ref.get("filename") or ref.get("stem") or ref.get("id") or "ref"
+            kind = ref.get("type") or "ref"
+            extra = []
+            if ref.get("filename"):
+                extra.append(f"file={ref['filename']}")
+            if ref.get("face_index") is not None:
+                extra.append(f"face={ref['face_index']}")
+            if ref.get("body_name"):
+                extra.append(f"body={ref['body_name']}")
+            lines.append(f"- [{kind}] {label}" + (f" ({', '.join(extra)})" if extra else ""))
+        if lines:
+            parts.append("Linked @references:\n" + "\n".join(lines))
+    comps = ctx.get("referenced_components") or []
+    if comps:
+        lines = []
+        for comp in comps[:24]:
+            if not isinstance(comp, dict):
+                continue
+            name = comp.get("filename") or comp.get("name") or comp.get("viewer_filename") or "component"
+            lines.append(f"- {name}")
+        if lines:
+            parts.append("Referenced project components:\n" + "\n".join(lines))
+    specs = ctx.get("component_specs") or []
+    if specs:
+        # Keep compact — full specs can be huge.
+        blob = json.dumps(specs[:8], ensure_ascii=True, default=str)
+        parts.append(f"Component geometry facts (JSON, truncated):\n{blob[:6000]}")
+    cad_files = ctx.get("cad_files") or []
+    if cad_files:
+        lines = []
+        for item in cad_files[:20]:
+            if isinstance(item, dict):
+                lines.append(f"- {item.get('filename') or item.get('name') or item}")
+            else:
+                lines.append(f"- {item}")
+        if lines:
+            parts.append("CAD reference files:\n" + "\n".join(lines))
+    dxf_files = ctx.get("dxf_files") or []
+    if dxf_files:
+        lines = []
+        for info in dxf_files[:8]:
+            if isinstance(info, dict):
+                name = info.get("readable_filename") or info.get("filename") or "drawing.dxf"
+                excerpt = str(info.get("text_content") or info.get("summary") or "")[:2500]
+                lines.append(f"- {name}\n{excerpt}")
+            else:
+                lines.append(f"- {info}")
+        if lines:
+            parts.append("DXF / drawing context:\n" + "\n".join(lines))
+    images = ctx.get("image_refs") or []
+    if images:
+        parts.append(
+            "Attached images: "
+            + ", ".join(str(img.get("name") or img.get("id") or "image") for img in images[:4] if isinstance(img, dict))
+        )
+    if ctx.get("model_electronics"):
+        parts.append(
+            "Electronics preference ON: when the prompt mentions motors/servos/ESC/battery/wiring, "
+            "model visible labeled electronics solids and wire runs — not empty pockets alone."
+        )
+    kb = ctx.get("knowledge_context") or ctx.get("knowledge") or ""
+    if isinstance(kb, str) and kb.strip():
+        parts.append(f"Knowledge base excerpt:\n{kb.strip()[:4000]}")
+    elif isinstance(kb, dict) and kb:
+        parts.append(f"Knowledge base:\n{json.dumps(kb, ensure_ascii=True, default=str)[:4000]}")
+    # Hint which STEP files can be imported as worker inputs.
+    step_names = sorted(
+        {
+            *(p.name for p in project_path.glob("*.step")),
+            *(p.name for p in project_path.glob("*.stp")),
+        }
+    )[:30]
+    if step_names:
+        parts.append(
+            "Available STEP files for input_objects / inputs[]:\n"
+            + "\n".join(f"- {name}" for name in step_names)
+        )
+    return "\n\n".join(parts).strip()
+
+
+def _resolve_worker_inputs(
+    project_path: Path,
+    input_objects: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Map aliases → absolute STEP paths for the isolated worker."""
+    out: dict[str, str] = {}
+    if not isinstance(input_objects, dict):
+        return out
+    for alias, filename in input_objects.items():
+        key = str(alias or "").strip()
+        name = Path(str(filename or "")).name.strip()
+        if not key or not name:
+            continue
+        candidate = project_path / name
+        if not candidate.is_file():
+            # Allow stem without suffix.
+            for suffix in (".step", ".stp"):
+                alt = project_path / f"{Path(name).stem}{suffix}"
+                if alt.is_file():
+                    candidate = alt
+                    break
+        if candidate.is_file() and candidate.suffix.lower() in {".step", ".stp"}:
+            out[key] = str(candidate.resolve())
+    return out
 
 
 def _strip_json(text: str) -> dict[str, Any]:
@@ -122,6 +245,7 @@ def _run_worker(
     source: str,
     parameters: dict[str, Any],
     expected_outputs: list[str],
+    inputs: dict[str, str] | None = None,
     cancel_check: CancelCb = None,
     timeout_sec: float = 240.0,
 ) -> dict[str, Any]:
@@ -135,13 +259,25 @@ def _run_worker(
     out_dir.mkdir(parents=True, exist_ok=True)
     req_path = work / "request.json"
     res_path = work / "result.json"
+    # Copy linked STEP inputs into the work dir so the -I -S worker can read them.
+    worker_inputs: dict[str, str] = {}
+    inputs_dir = work / "inputs"
+    if inputs:
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        for alias, abs_path in inputs.items():
+            src = Path(abs_path)
+            if not src.is_file():
+                continue
+            dest = inputs_dir / f"{_slug(alias)}_{src.name}"
+            shutil.copy2(src, dest)
+            worker_inputs[str(alias)] = str(dest)
     req_path.write_text(
         json.dumps(
             {
                 "build123d_version": _build123d_version(),
                 "source": source,
                 "parameters": parameters or {},
-                "inputs": {},
+                "inputs": worker_inputs,
                 "expected_outputs": expected_outputs,
                 "output_directory": str(out_dir),
                 "memory_limit_bytes": 0,
@@ -325,16 +461,19 @@ def run_vibecad(
     published: dict[str, Any] | None = None
     attempts = 0
 
-    _progress(progress_callback, "analyze", 8, "VibeCAD · analyzing prompt…")
+    _progress(progress_callback, "analyze", 8, "VibeCAD · analyzing prompt & links…")
     edit_line = (
         f"EDIT the existing VibeCAD model `{source_name}` — revise in place.\n"
         if is_edit
         else "NEW model — create a fresh parametric build123d program.\n"
     )
+    context_packet = _context_brief(ctx, project_path)
     user_brief = (
         f"{edit_line}"
         f"User request:\n{prompt.strip()}\n"
     )
+    if context_packet:
+        user_brief += f"\n{context_packet}\n"
     if previous_source and previous_source.strip():
         user_brief += (
             "\nExisting source to revise:\n"
@@ -384,6 +523,7 @@ def run_vibecad(
         source = str(program.get("source") or "").strip()
         parameters = program.get("parameters") if isinstance(program.get("parameters"), dict) else {}
         expected = [str(x) for x in (program.get("expected_outputs") or []) if str(x).strip()]
+        input_objects = program.get("input_objects") if isinstance(program.get("input_objects"), dict) else {}
         model_name = str(program.get("model_name") or stem)
         if not source or "result" not in source:
             last_error = "Authoring JSON missing build123d source that assigns `result`."
@@ -393,6 +533,7 @@ def run_vibecad(
             expected = ["Part"]
             program["expected_outputs"] = expected
 
+        worker_inputs = _resolve_worker_inputs(project_path, input_objects)
         source_path.write_text(source.rstrip() + "\n", encoding="utf-8")
         meta_path = project_path / f"{stem}.vibecad.json"
         meta_path.write_text(
@@ -401,6 +542,7 @@ def run_vibecad(
                     "model_name": model_name,
                     "parameters": parameters,
                     "expected_outputs": expected,
+                    "input_objects": input_objects,
                     "runtime": "vibecad-build123d",
                     "source": source_name,
                 },
@@ -418,6 +560,7 @@ def run_vibecad(
                 source=source,
                 parameters=parameters,
                 expected_outputs=expected,
+                inputs=worker_inputs,
                 cancel_check=cancel_check,
             )
         except RuntimeError as exc:
