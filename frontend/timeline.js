@@ -2,7 +2,7 @@
 
 export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest, onRemove }) {
   const wrap = document.createElement("div");
-  wrap.className = "timeline-wrap";
+  wrap.className = "timeline-wrap timeline-wrap--dock";
   wrap.innerHTML = `
     <div class="timeline-header">
       <div class="timeline-header-main">
@@ -12,8 +12,8 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
       <button type="button" id="btn-timeline-collapse" class="btn-collapse timeline-collapse-btn" title="Collapse timeline" aria-label="Collapse timeline" aria-pressed="false"><span class="timeline-collapse-icon">▼</span></button>
     </div>
     <div class="timeline-body">
-      <input type="range" id="timeline-slider" min="0" max="0" value="0" disabled />
-      <div id="timeline-steps" class="timeline-steps"></div>
+      <input type="range" id="timeline-slider" min="0" max="0" value="0" disabled aria-hidden="true" tabindex="-1" />
+      <div id="timeline-steps" class="timeline-steps" role="listbox" aria-label="Timeline steps"></div>
     </div>
   `;
   container.appendChild(wrap);
@@ -257,7 +257,10 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
         const label = entryLabel(e);
         const who = e.user_name || "";
         const detail = entryMetaLabel(e);
-        btn.title = [label, detail, who].filter(Boolean).join(" · ");
+        const tip = [label, detail, who].filter(Boolean).join(" · ");
+        btn.title = tip;
+        btn.setAttribute("aria-label", tip || label || "Timeline step");
+        btn.setAttribute("role", "option");
         const showAvatar = !!(e.user_name || e.user_id || e.user_avatar_url);
         const pending = !!(e.pending || e.id === "__pending_prompt__");
         const pendingKind =
@@ -267,15 +270,16 @@ export function createTimelineUI(container, { onScrub, onSelect, onRestoreLatest
               ? "generating"
               : (e.kind || "change");
         btn.disabled = pending;
+        // Icon-dock tile: labels live in title/aria; text kept for screen readers only.
         btn.innerHTML = `
-          <span class="step-topline">
-            <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
+          <span class="timeline-step-icon" aria-hidden="true">${escapeHtml(iconForKind(e.kind))}</span>
+          ${showAvatar ? userAvatar(e) : ""}
+          <span class="timeline-step-sr">
             <span class="step-kind">${escapeHtml(pendingKind)}</span>
-            ${showAvatar ? userAvatar(e) : ""}
+            <span class="step-label">${escapeHtml(label)}</span>
+            ${detail ? `<span class="step-meta">${escapeHtml(detail)}</span>` : ""}
+            ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
           </span>
-          <span class="step-label">${escapeHtml(label)}</span>
-          ${detail ? `<span class="step-meta">${escapeHtml(detail)}</span>` : ""}
-          ${who ? `<span class="step-user">${escapeHtml(who)}</span>` : ""}
         `;
         if (!pending) {
           btn.addEventListener("click", () => {

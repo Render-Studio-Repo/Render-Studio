@@ -11,14 +11,14 @@ const DEFAULTS = {
   leftWidth: 260,
   rightWidth: 320,
   leftLogHeight: 160,
-  timelineHeight: 140,
+  timelineHeight: 56,
 };
 
 const LIMITS = {
   leftWidth: [180, 520],
   rightWidth: [220, 560],
   leftLogHeight: [72, 480],
-  timelineHeight: [118, 360],
+  timelineHeight: [48, 220],
 };
 
 function clamp(n, [min, max]) {
@@ -123,7 +123,12 @@ export function initPanelResize() {
   setLeftWidth(loadNum(STORAGE.leftWidth, DEFAULTS.leftWidth));
   setRightWidth(loadNum(STORAGE.rightWidth, DEFAULTS.rightWidth));
   setLeftLogHeight(loadNum(STORAGE.leftLogHeight, DEFAULTS.leftLogHeight));
-  setTimelineHeight(loadNum(STORAGE.timelineHeight, DEFAULTS.timelineHeight));
+  {
+    const savedTl = loadNum(STORAGE.timelineHeight, DEFAULTS.timelineHeight);
+    // Migrate legacy card-style timeline heights to the slim dock default.
+    setTimelineHeight(savedTl >= 110 ? DEFAULTS.timelineHeight : savedTl);
+    if (savedTl >= 110) saveNum(STORAGE.timelineHeight, DEFAULTS.timelineHeight);
+  }
 
   const leftGutter = makeColGutter("left-split", "Resize left panel");
   const rightGutter = makeColGutter("right-split", "Resize right panel");

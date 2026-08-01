@@ -11,7 +11,7 @@ const LS = {
   timelineHeight: "render3d:timelineHeight",
 };
 
-const DEFAULT_TIMELINE_HEIGHT = 140;
+const DEFAULT_TIMELINE_HEIGHT = 56;
 
 const appEl = document.getElementById("app");
 const btnSidebar = document.getElementById("btn-toggle-sidebar");
@@ -194,11 +194,12 @@ function getTimelineBtn() {
 
 function readTimelineHeightPx() {
   const fromStorage = parseFloat(localStorage.getItem(LS.timelineHeight));
-  if (Number.isFinite(fromStorage) && fromStorage > 64) return fromStorage;
+  // Migrate old card-style heights (≥110) down to the slim dock default.
+  if (Number.isFinite(fromStorage) && fromStorage >= 48 && fromStorage < 110) return fromStorage;
   const fromVar = parseFloat(
     getComputedStyle(document.documentElement).getPropertyValue("--timeline-height")
   );
-  if (Number.isFinite(fromVar) && fromVar > 64) return fromVar;
+  if (Number.isFinite(fromVar) && fromVar >= 48 && fromVar < 110) return fromVar;
   return DEFAULT_TIMELINE_HEIGHT;
 }
 
@@ -207,7 +208,7 @@ let timelineHeightBeforeCollapse = null;
 function restoreTimelineHeight() {
   const h = timelineHeightBeforeCollapse ?? readTimelineHeightPx();
   timelineHeightBeforeCollapse = null;
-  const restored = Math.max(64, Math.round(h));
+  const restored = Math.max(48, Math.min(220, Math.round(h)));
   document.documentElement.style.setProperty("--timeline-height", `${restored}px`);
   try {
     localStorage.setItem(LS.timelineHeight, String(restored));
@@ -271,10 +272,8 @@ try {
   if (readFlag(LS.timeline)) setTimelineCollapsed(true);
   else {
     const saved = parseFloat(localStorage.getItem(LS.timelineHeight));
-    if (!Number.isFinite(saved) || saved < 64) {
-      document.documentElement.style.setProperty("--timeline-height", `${DEFAULT_TIMELINE_HEIGHT}px`);
-    } else if (saved === 64) {
-      // Likely corrupted by a collapse/resize cycle — restore a usable default.
+    // Reset missing/corrupt/legacy tall card heights to the slim dock default.
+    if (!Number.isFinite(saved) || saved < 48 || saved >= 110) {
       document.documentElement.style.setProperty("--timeline-height", `${DEFAULT_TIMELINE_HEIGHT}px`);
       localStorage.setItem(LS.timelineHeight, String(DEFAULT_TIMELINE_HEIGHT));
     }
