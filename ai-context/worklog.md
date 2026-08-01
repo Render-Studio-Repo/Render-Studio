@@ -1,3 +1,11 @@
+## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
+
+- Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
+- Create order matches VibeCAD strip: Box, Cylinder, Sphere, Cone, Torus, Extrude, Revolve, Hole, Pad (+ Create Sketch).
+- Larger ribbon icons; cache-bust `?v=20260801-vibecad-tools`.
+
+---
+
 ## 2026-08-01 — VibeCAD parity with Mode 2.0 UX
 
 - VibeCAD now shares 2.0 features: @links in authoring context, prompt history save/reuse, draft restore with engine, refresh-safe generation watch, Improve prompt, electronics flag, orange CAD chrome.

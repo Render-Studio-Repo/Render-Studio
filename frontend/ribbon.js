@@ -23,17 +23,17 @@ import { getUnits, parseLength, displayValue } from "./units.js?v=20260714-units
  *
  * featureOf(values) → Feature dict to append.
  */
-// Tool id -> icon image (served from frontend/assets/icons/cad/). Tools not
-// listed here fall back to their emoji `icon` glyph.
+// Tool id -> VibeCAD / FreeCAD PartDesign icons (LGPL icons from 10-X-eng/vibecad).
 const ICON_SVG = {
-  box:      "/assets/icons/cad/box.png",
-  cylinder: "/assets/icons/cad/cylinder.png",
-  sphere:   "/assets/icons/cad/sphere.png",
-  cone:     "/assets/icons/cad/cone.png",
-  torus:    "/assets/icons/cad/torus.png",
-  extrude:  "/assets/icons/cad/extrude.png",
-  revolve:  "/assets/icons/cad/revolve.png",
-  hole:     "/assets/icons/cad/hole.png",
+  box:      "/assets/icons/cad/vibecad/box.svg",
+  cylinder: "/assets/icons/cad/vibecad/cylinder.svg",
+  sphere:   "/assets/icons/cad/vibecad/sphere.svg",
+  cone:     "/assets/icons/cad/vibecad/cone.svg",
+  torus:    "/assets/icons/cad/vibecad/torus.svg",
+  extrude:  "/assets/icons/cad/vibecad/extrude.svg",
+  revolve:  "/assets/icons/cad/vibecad/revolve.svg",
+  hole:     "/assets/icons/cad/vibecad/hole.svg",
+  pad:      "/assets/icons/cad/vibecad/pad.svg",
 };
 
 /** HTML for a tool's icon: an <img> when an icon exists, else the emoji glyph. */
@@ -51,21 +51,10 @@ function _iconMarkup(entry, cls) {
 const CATALOG = {
   Create: [
     {
-      id: "create_sketch_solid",
-      label: "Create Sketch",
-      icon: "✎",
-      desc: "New sketch on a plane (switches to Sketch tab)",
-      sketchAction: "start_tab",
-      fields: [
-        { name: "plane", label: "Plane", type: "select", default: "XY", options: ["XY", "XZ", "YZ", "Face"] },
-      ],
-      featureOf: () => null,
-    },
-    {
       id: "box",
       label: "Box",
       icon: "⬛",
-      desc: "Rectangular solid — click-drag in viewport",
+      desc: "Rectangular solid (VibeCAD / PartDesign Additive Box)",
       viewportTool: "create_box",
       fields: [
         { name: "length", label: "Length (mm)", type: "number", default: 20, min: 0.1, step: 1 },
@@ -88,7 +77,7 @@ const CATALOG = {
       id: "cylinder",
       label: "Cylinder",
       icon: "🔵",
-      desc: "Cylinder / tube — click-drag in viewport",
+      desc: "Cylinder / tube (VibeCAD Additive Cylinder)",
       viewportTool: "create_cylinder",
       fields: [
         { name: "radius", label: "Radius (mm)", type: "number", default: 10, min: 0.1, step: 0.5 },
@@ -103,7 +92,7 @@ const CATALOG = {
       id: "sphere",
       label: "Sphere",
       icon: "🟡",
-      desc: "Sphere primitive — click-drag in viewport",
+      desc: "Sphere primitive (VibeCAD Additive Sphere)",
       viewportTool: "create_sphere",
       fields: [
         { name: "radius", label: "Radius (mm)", type: "number", default: 10, min: 0.1, step: 0.5 },
@@ -116,7 +105,7 @@ const CATALOG = {
       id: "cone",
       label: "Cone",
       icon: "🔺",
-      desc: "Cone / frustum — click-drag in viewport",
+      desc: "Cone / frustum (VibeCAD Additive Cone)",
       viewportTool: "create_cone",
       fields: [
         { name: "bottom_radius", label: "Base radius (mm)", type:"number", default:10, min:0.1, step:0.5 },
@@ -132,7 +121,7 @@ const CATALOG = {
       id: "torus",
       label: "Torus",
       icon: "⭕",
-      desc: "Torus (ring) — click-drag in viewport",
+      desc: "Torus / ring (VibeCAD Additive Torus)",
       viewportTool: "create_torus",
       fields: [
         { name: "major_radius", label: "Major radius (mm)", type:"number", default:20, min:0.1, step:1 },
@@ -147,12 +136,13 @@ const CATALOG = {
       id: "extrude",
       label: "Extrude",
       icon: "⬆",
-      desc: "Viewport Press-Pull: select a face and drag/enter distance",
+      desc: "Extrude a profile (VibeCAD / Part Extrude) — or Press-Pull a selected face",
       viewportTool: "presspull",
       fields: [
         { name: "profile_preset", label: "Profile preset", type:"select", default:"square",
           options:["square","triangle","hexagon","L-shape"] },
         { name: "profile_size", label: "Profile size (mm)", type:"number", default:20, min:1, step:1 },
+        { name: "height", label: "Depth (mm)", type:"number", default:10, min:0.1, step:1 },
         { name: "combine", label: "Combine", type: "select", default: "new",
           options: ["new","add","cut","intersect"] },
       ],
@@ -176,7 +166,7 @@ const CATALOG = {
       id: "revolve",
       label: "Revolve",
       icon: "🔄",
-      desc: "Revolve a profile around Z",
+      desc: "Revolve a profile (VibeCAD / PartDesign Revolution)",
       fields: [
         { name: "profile_preset", label: "Profile", type:"select", default:"vase",
           options:["vase","L-profile","rectangle"] },
@@ -201,7 +191,7 @@ const CATALOG = {
       id: "hole",
       label: "Hole",
       icon: "🕳",
-      desc: "Cut with Press-Pull from a selected face/region",
+      desc: "Cut a hole (VibeCAD / PartDesign Hole) — or Press-Pull cut from a face",
       viewportTool: "presspull-cut",
       fields: [
         { name: "diameter", label: "Diameter (mm)", type:"number", default:5, min:0.1, step:0.5 },
@@ -216,6 +206,47 @@ const CATALOG = {
           through, depth: through ? undefined : +v.depth,
           at:[+v.at_x, +v.at_y, +v.at_z] };
       },
+    },
+    {
+      id: "pad",
+      label: "Pad",
+      icon: "⬆",
+      desc: "Pad / additive extrude (VibeCAD PartDesign Pad) — joins onto the active solid",
+      viewportTool: "presspull",
+      fields: [
+        { name: "profile_preset", label: "Profile preset", type:"select", default:"square",
+          options:["square","triangle","hexagon","L-shape"] },
+        { name: "profile_size", label: "Profile size (mm)", type:"number", default:20, min:1, step:1 },
+        { name: "height", label: "Depth (mm)", type:"number", default:10, min:0.1, step:1 },
+        { name: "combine", label: "Combine", type: "select", default: "add",
+          options: ["new","add","cut","intersect"] },
+      ],
+      interactive: "drag_height",
+      featureOf: v => {
+        const s = +v.profile_size;
+        const profiles = {
+          square:   [[-s/2,-s/2],[s/2,-s/2],[s/2,s/2],[-s/2,s/2]],
+          triangle: [[0, s*0.577],[-s/2,-s*0.289],[s/2,-s*0.289]],
+          hexagon:  [[s,0],[s/2,s*0.866],[-s/2,s*0.866],[-s,-0],[-s/2,-s*0.866],[s/2,-s*0.866]],
+          "L-shape":[[0,0],[s,0],[s,s*0.33],[s*0.33,s*0.33],[s*0.33,s],[0,s]],
+        };
+        const height = +v.height;
+        if (!Number.isFinite(height) || height <= 0) throw new Error("Pad depth must be > 0");
+        return { op:"extrude", combine:v.combine || "add",
+          profile: profiles[v.profile_preset] || profiles.square,
+          height };
+      },
+    },
+    {
+      id: "create_sketch_solid",
+      label: "Create Sketch",
+      icon: "✎",
+      desc: "New sketch on a plane (switches to Sketch tab)",
+      sketchAction: "start_tab",
+      fields: [
+        { name: "plane", label: "Plane", type: "select", default: "XY", options: ["XY", "XZ", "YZ", "Face"] },
+      ],
+      featureOf: () => null,
     },
   ],
 
