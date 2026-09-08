@@ -46,18 +46,24 @@ Chart: bars / line / area / person / project / recent prompts
 ## Quick start
 
 ```bash
-cd /Users/og/Documents/Render3d
+git clone <this-repo> && cd <checkout>
+export RENDER_STUDIO_ROOT="$(pwd)"   # optional; scripts resolve the repo from their location
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Edit .env and set OPENAI_API_KEY
+cp .env.example .env                 # set OPENAI_API_KEY / JWT_SECRET / …
+python integrations/install.py --list
+python integrations/install.py dimos # optional: refresh DiMOS under integrations/
 python run.py
 ```
 
-Open **http://127.0.0.1:8001** (default port; set `PORT` in `.env` if needed).
+Open **http://127.0.0.1:8001** (default; set `PORT` in `.env` if needed).
 
-In-app documentation is available at **http://127.0.0.1:8001/docs.html**.
+In-app documentation: **http://127.0.0.1:8001/docs.html**.
+
+### Integrations
+
+Third-party CAD/robotics/cloud connectors live under [`integrations/`](./integrations/) (DiMOS, Fusion 360 bridge, MoveIt2, Onshape/Autodesk docs, etc.). See [`integrations/README.md`](./integrations/README.md) for GitHub links and install notes. Paths are always repo-relative — use `RENDER_STUDIO_ROOT` / `INTEGRATIONS_ROOT` instead of hard-coded `/Users/...` or `/home/...`. DiMOS is **cloned per machine** (`bash integrations/install.sh dimos`) and is not vendored in git (upstream Git LFS).
 
 ## Configuration
 

@@ -88,9 +88,16 @@ def _find_node() -> str:
     if which and Path(which).is_file():
         return which
     # Cursor-server ships Node under bin/linux-*/<hash>/node (not bin/linux-*/node).
-    root = Path("/home/ubuntu/.cursor-server/bin")
+    # Resolve via $HOME so clones on other machines still find a local Cursor Node.
+    home = Path(os.environ.get("HOME") or Path.home())
+    search_roots = [
+        home / ".cursor-server" / "bin",
+    ]
+    # Optional explicit Node binary: RENDER3D_NODE / NODE_BIN (checked above).
     candidates: list[Path] = []
-    if root.is_dir():
+    for root in search_roots:
+        if not root.is_dir():
+            continue
         candidates.extend(root.glob("linux-*/*/node"))
         candidates.extend(root.glob("*/node"))
     # Prefer newest mtime so upgrades stick.

@@ -9,14 +9,16 @@ import shutil
 import subprocess
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 from playwright.async_api import async_playwright
 
 BASE = "http://127.0.0.1:8001"
 EMAIL = "demo.docs.gif@r3d-studios.com"
 PASSWORD = "DemoGif2026!"
 USER_ID = "4d950fbd-b44"
-OUT = Path("/home/ubuntu/frontend/docs/media/source-parts.gif")
-RAW = Path("/home/ubuntu/scripts/gif-demos/raw-v2/source-parts-kf")
+OUT = _REPO_ROOT / "frontend" / "docs" / "media" / "source-parts.gif"
+RAW = _REPO_ROOT / "scripts" / "gif-demos" / "raw-v2" / "source-parts-kf"
 
 
 CURSOR_JS = r"""

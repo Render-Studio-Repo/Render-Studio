@@ -2,7 +2,7 @@
 # Sync agent skills from earthtojake/text-to-cad into Render3D backend/skills/.
 set -euo pipefail
 
-ROOT="/home/ubuntu"
+ROOT="${RENDER_STUDIO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DEST="${ROOT}/backend/skills"
 REPO="${SKILLS_SRC:-/tmp/text-to-cad}"
 REF="${SKILLS_REF:-main}"

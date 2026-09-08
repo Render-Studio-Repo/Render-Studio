@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOVEIT2_DIR="${ROOT}/tools/moveit2_server"
+MOVEIT2_DIR="${ROOT}/integrations/moveit2"
 TARGET="${1:-${PROJECT_ID:-${MOVEIT2_REPO_ROOT:-}}}"
 
 if [[ -z "${TARGET}" ]]; then
