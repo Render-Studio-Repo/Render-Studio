@@ -1,3 +1,14 @@
+## 2026-09-08 — Repository Governance + Server Settings + AI defaults
+
+- Added enterprise **Repository Governance** pack (`repository-governance/`) — Secure Publish Policy (replaces informal “system settings notes”).
+- Engine code is allowlisted for GitHub; root **`premium-features/`** is host-only (gitignored + fenced) and never pushed.
+- Gate script: `scripts/check-repository-governance.py` (agents must run before push; merges `off-limits.yaml`).
+- Management → **Server Settings**: open policy pack, edit off-limits folders, AI explain (subscription default), generate safeguard instructions **or** submit note-only, 👍/👎 + issue notes with suggested/attached logs + optional contact → `repository-governance/notes/README.md`.
+- Manage AI Keys: prompt billing default (subscription-first) + per-workspace key overrides (`ai_defaults_service`).
+- Cache-bust: `admin-dashboard` / `admin-server-settings` / `ai-key-ui` / `styles.css` `?v=20260908-*`.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

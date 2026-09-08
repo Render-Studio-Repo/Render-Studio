@@ -86,7 +86,7 @@ import { createUserProfileUI } from "./user-profile.js?v=20260715-user-profile";
 import { createStorePreferencesUI } from "./store-preferences.js?v=20260715-store-prefs";
 import { createWorkspaceManagementUI } from "./workspace-management.js?v=20260724-ws-perms";
 import { createRenderAgent } from "./render-agent.js?v=20260727-mobile-share-copy";
-import { createAIKeyUI } from "./ai-key-ui.js?v=20260729-no-pro-a1";
+import { createAIKeyUI } from "./ai-key-ui.js?v=20260908-ai-defaults";
 import { createCollab } from "./collab.js?v=20260724-transform-no-bounce";
 import { createRibbon } from "./ribbon.js?v=20260801-vibecad-tools";
 import { initPanelResize } from "./panel-resize.js?v=20260801-dock-tl";
@@ -18000,8 +18000,33 @@ function storePromptAiKeyValue(value, { projectScoped = true } = {}) {
 }
 
 function defaultPromptKeyValue(status) {
-  // Prefer the activated personal key so "Save & activate" / Use this stick,
-  // instead of silently falling back to a team or Render3D Claude key.
+  // Prefer saved AI defaults (subscription-first). Fall back to active personal /
+  // effective key when no preference is stored yet.
+  const defaults = status?.ai_defaults?.effective || status?.ai_defaults?.global;
+  if (defaults) {
+    const source = String(defaults.source || "subscription").toLowerCase();
+    if (source === "subscription") {
+      const platformKeys = getPlatformPromptKeys(status);
+      if (platformKeys.length) {
+        const preferred = normalizePlatformProviderId(
+          defaults.key_id || status?.credits?.platform_provider || platformKeys[0].id
+        );
+        const match = platformKeys.find((k) => k.id === preferred) || platformKeys[0];
+        return promptKeyOptionValue("platform", match.id);
+      }
+    } else if (source === "personal" && status?.active_key_id) {
+      return promptKeyOptionValue("personal", status.active_key_id);
+    } else if (source === "key" && defaults.key_id) {
+      const ks = String(defaults.key_source || "personal").toLowerCase();
+      return promptKeyOptionValue(ks === "platform" ? "platform" : ks, defaults.key_id);
+    }
+  }
+  const platformKeys = getPlatformPromptKeys(status);
+  if (platformKeys.length && (status?.credits?.use_platform_key || status?.ai_defaults?.always_default_to_subscription)) {
+    const preferred = normalizePlatformProviderId(status.credits?.platform_provider);
+    const match = platformKeys.find((k) => k.id === preferred) || platformKeys[0];
+    return promptKeyOptionValue("platform", match.id);
+  }
   if (status?.active_key_id) {
     return promptKeyOptionValue("personal", status.active_key_id);
   }
@@ -18011,12 +18036,6 @@ function defaultPromptKeyValue(status) {
   }
   if (eff?.key_id && eff?.source) {
     return promptKeyOptionValue(eff.source, eff.key_id);
-  }
-  const platformKeys = getPlatformPromptKeys(status);
-  if (platformKeys.length && status?.credits?.use_platform_key) {
-    const preferred = normalizePlatformProviderId(status.credits.platform_provider);
-    const match = platformKeys.find((k) => k.id === preferred) || platformKeys[0];
-    return promptKeyOptionValue("platform", match.id);
   }
   return "";
 }

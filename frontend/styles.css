@@ -42539,3 +42539,231 @@ body.xr-presenting .xr-capture-ready-banner {
   width: 100%;
 }
 
+
+/* ── Admin Server Settings / Repository Governance (2026-09-08) ── */
+.admin-panel--server-settings {
+  margin-bottom: 18px;
+}
+
+.admin-gov-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.admin-gov-side,
+.admin-gov-panel,
+.admin-gov-doc-view {
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 14px;
+  background: rgba(22, 27, 34, 0.55);
+  padding: 14px;
+}
+
+.admin-gov-side h4,
+.admin-gov-panel h4 {
+  margin: 0 0 8px;
+  font-size: 0.98rem;
+}
+
+.admin-gov-subh {
+  margin-top: 18px !important;
+}
+
+.admin-gov-doc-list {
+  display: grid;
+  gap: 6px;
+  max-height: 360px;
+  overflow: auto;
+  margin: 10px 0 12px;
+}
+
+.admin-gov-doc-btn {
+  text-align: left;
+  border: 1px solid transparent;
+  background: rgba(110, 118, 129, 0.12);
+  color: inherit;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+}
+
+.admin-gov-doc-btn small {
+  color: var(--muted, #9da7b3);
+  font-size: 0.72rem;
+}
+
+.admin-gov-doc-btn:hover,
+.admin-gov-doc-btn.active {
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.admin-gov-summary-card {
+  display: grid;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.admin-gov-summary-card div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.admin-gov-summary-card span {
+  color: var(--muted, #9da7b3);
+}
+
+.admin-gov-main {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-gov-doc-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.admin-gov-doc-body {
+  max-height: min(42vh, 520px);
+  overflow: auto;
+  line-height: 1.5;
+  color: #c9d1d9;
+}
+
+.admin-gov-h {
+  margin: 12px 0 8px;
+}
+
+.admin-gov-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(1, 4, 9, 0.55);
+  overflow: auto;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.admin-gov-field {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  font-size: 0.85rem;
+}
+
+.admin-gov-row {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-gov-panel textarea,
+.admin-gov-panel input[type="text"],
+.admin-gov-panel select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  background: rgba(1, 4, 9, 0.35);
+  color: inherit;
+  padding: 8px 10px;
+}
+
+.admin-gov-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.admin-gov-candidates,
+.admin-gov-logs {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0;
+}
+
+.admin-gov-check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(110, 118, 129, 0.08);
+  font-size: 0.82rem;
+}
+
+.admin-gov-check.is-locked {
+  opacity: 0.85;
+}
+
+.admin-gov-check code {
+  font-size: 0.75rem;
+}
+
+.admin-gov-votes {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.admin-gov-thumb {
+  font-size: 1.05rem;
+  min-width: 72px;
+}
+
+.admin-gov-explain-out {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.06);
+  border-left: 3px solid rgba(88, 166, 255, 0.45);
+  max-height: 280px;
+  overflow: auto;
+}
+
+.admin-gov-status.error {
+  color: #ff7b72;
+}
+
+@media (max-width: 960px) {
+  .admin-gov-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* AI defaults preferences (Manage AI Keys) */
+.ai-defaults-card {
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 12px;
+  padding: 12px;
+  margin: 0 0 14px;
+  background: rgba(22, 27, 34, 0.45);
+  display: grid;
+  gap: 10px;
+}
+.ai-defaults-row {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.ai-defaults-row select {
+  width: 100%;
+}
+.ai-defaults-advanced summary {
+  cursor: pointer;
+  color: var(--muted, #9da7b3);
+  font-size: 0.85rem;
+}
+.ai-defaults-override-form {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}

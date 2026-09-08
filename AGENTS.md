@@ -2,6 +2,8 @@
 
 **Read `ai-context/START-HERE.md` before doing anything else.** It is the entrypoint to this workspace's agent context: what Render Studio is, the workspace map, safety rules, and verification workflow.
 
+**Before any git push:** read `repository-governance/` (Secure Publish Policy Pack) and run `python3 scripts/check-repository-governance.py`. Never push `premium-features/` or secrets.
+
 Non-negotiables (details in `ai-context/`):
 
 1. This is a **live production server** (systemd `render3d.service`, port 8001, real users). `frontend/` edits go live on save; there is no staging.

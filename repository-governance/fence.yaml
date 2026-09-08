@@ -1,0 +1,80 @@
+# Repository Governance — hard fence (never publish)
+# Enterprise: Data Loss Prevention / Source Boundary Fence
+# Any match is a push blocker. fence wins over publish-manifest allow rules.
+
+version: 1
+description: >
+  Paths and globs that must never be committed or pushed from this host.
+
+paths:
+  # Premium / proprietary host-only code (never leave this machine)
+  - premium-features/**
+  - premium-features
+
+  # Operator-managed off-limits (merged from off-limits.yaml at gate time)
+  # See off-limits.yaml — edited from Management → Server Settings.
+
+  # Secrets & credentials
+  - .env
+  - .env.*
+  - "!.env.example"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/id_rsa*"
+  - "**/credentials*.json"
+  - "**/scripts/credentials_google*.json"
+  - "**/.config/**"
+  - "**/.ssh/**"
+
+  # Live user / runtime data
+  - backend/render3d.db
+  - "**/*.db"
+  - "**/*.db-journal"
+  - "**/*.sqlite"
+  - data/**
+  - projects/**
+  - backups/**
+  - inbox/**
+  - milestones/**
+  - logs/**
+  - "**/*.log"
+
+  # Local environments & caches
+  - .venv/**
+  - myenv/**
+  - .cache/**
+  - .codex/**
+  - .cursor/**
+  - .cursor-server/**
+  - .local/**
+  - "**/__pycache__/**"
+  - "**/.pytest_cache/**"
+  - node_modules/**
+
+  # Temp / scratch
+  - tmp_*/**
+  - tmp-*/**
+  - tmp-screenshots/**
+  - snap/**
+
+  # CAD binaries (regenerate locally)
+  - "**/*.glb"
+  - "**/*.gltf"
+  - "**/*.stl"
+  - "**/*.step"
+  - "**/*.stp"
+  - "**/*.3mf"
+  - "**/*.obj"
+
+content_scan:
+  enabled: true
+  patterns_file: secret-patterns.txt
+  skip_extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .webp
+    - .woff
+    - .woff2
+    - .ico

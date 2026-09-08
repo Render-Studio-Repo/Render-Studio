@@ -1,0 +1,48 @@
+# Repository Governance — publish allowlist
+# Enterprise: Secure Publish Manifest
+# Push the engine/application source; keep premium-features + secrets fenced.
+
+version: 1
+mode: allowlist-first
+description: >
+  Publish the Render Studio engine and product code to GitHub. Premium /
+  proprietary host-only code stays in premium-features/ (fenced). Runtime
+  secrets and user data stay off remotes.
+
+allow:
+  # Entire engine / product trees
+  - frontend/**
+  - backend/**
+  - scripts/**
+  - services/**
+  - supabase/**
+  - deploy/**
+  - fusion360-plugin/**
+  - tools/**
+  - demos/**
+  - TODO/**
+  - images/**
+  - ai-context/**
+  - repository-governance/**
+  - AGENTS.md
+  - README.md
+  - CHANGELOG.md
+  - DEVELOPER_CHANGELOG.md
+  - .gitignore
+  - .env.example
+  - .simple-changes.json
+  - .simple-changelogs.json
+  - run.py
+  - requirements.txt
+  - requirements*.txt
+  - pyproject.toml
+  - package.json
+  - package-lock.json
+
+deny_overrides_note: >
+  fence.yaml + off-limits.yaml always win. premium-features/** is never published.
+
+notes:
+  - Prefer pathspec adds; never git add premium-features.
+  - Binary CAD outputs remain gitignored even under allowed trees.
+  - Operator feedback lives in repository-governance/notes/ (pushable).

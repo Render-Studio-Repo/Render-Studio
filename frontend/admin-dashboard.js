@@ -11,6 +11,7 @@ import {
   adminNotificationsSectionHtml,
   createAdminNotificationsPager,
 } from "./admin-notifications.js?v=20260726-admin-notif";
+import { createAdminServerSettings } from "./admin-server-settings.js?v=20260908-gov-settings";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -296,6 +297,7 @@ let adminRealtimeSocket = null;
 let adminRealtimeReconnectTimer = null;
 let adminDashboardRoot = null;
 let adminNotificationsPager = null;
+let adminServerSettings = null;
 
 function clearChartCleanups() {
   chartCleanups.forEach((fn) => {
@@ -927,6 +929,7 @@ function renderAdminViewToolbar() {
   const items = [
     ["overview", "Overview", "Stats and trends"],
     ["changelog", "Changelog", "Latest product notes"],
+    ["server-settings", "Server Settings", "Repository Governance"],
     ["notifications", "Notifications", "Review one by one"],
     ["requests", "Requests", "Suggestions and bugs"],
     ["new-users", "New Users", "Signup alerts"],
@@ -978,6 +981,10 @@ function renderDashboard(root, data) {
       <div id="admin-changelog-body" class="admin-changelog-body">
         <p class="muted small">Loading latest CHANGELOG.md…</p>
       </div>
+    </section>
+
+    <section class="admin-panel admin-panel--server-settings" id="admin-section-server-settings" data-admin-section="server-settings">
+      <p class="muted small">Loading Server Settings…</p>
     </section>
 
     <section class="admin-stats-grid">
@@ -1167,6 +1174,10 @@ function renderDashboard(root, data) {
     void loadAdminChangelog(root);
   });
   void loadAdminChangelog(root);
+  if (!adminServerSettings) {
+    adminServerSettings = createAdminServerSettings({ api });
+  }
+  adminServerSettings.mount(root);
   void loadRenderAgentActivity(root);
   void loadGettingStartedApprovals(root);
   void loadNewUserAlerts(root);

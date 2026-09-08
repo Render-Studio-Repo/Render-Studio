@@ -576,11 +576,69 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey, blockGpt
     `;
   }
 
+  function renderDefaultsSection(defaults = {}, keys = [], teamKeys = [], teams = []) {
+    const global = defaults.global || { source: "subscription" };
+    const source = global.source || "subscription";
+    const overrides = defaults.workspace_overrides || [];
+    const keyOpts = [
+      ...(keys || []).map((k) => `<option value="personal:${esc(k.id)}" ${global.key_id === k.id && global.key_source === "personal" ? "selected" : ""}>${esc(k.name)} (personal)</option>`),
+      ...(teamKeys || []).map((k) => `<option value="team:${esc(k.id)}" ${global.key_id === k.id && global.key_source === "team" ? "selected" : ""}>${esc(k.name)} (team)</option>`),
+    ].join("");
+    const teamOpts = (teams || [])
+      .map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`)
+      .join("");
+    return `
+      <div class="ai-keys-section-label"><span>Default for prompts</span></div>
+      <p class="ai-keys-section-hint">Always defaults to <strong>subscription</strong> (Render Studio credits). Switch to your own key globally, or set a workspace override below.</p>
+      <div class="ai-defaults-card" data-ai-defaults>
+        <label class="ai-defaults-row">
+          <span>Prompt billing default</span>
+          <select data-action="ai-default-source">
+            <option value="subscription" ${source === "subscription" ? "selected" : ""}>Subscription (credits)</option>
+            <option value="personal" ${source === "personal" ? "selected" : ""}>Active personal key</option>
+            <option value="key" ${source === "key" ? "selected" : ""}>Specific key…</option>
+          </select>
+        </label>
+        <label class="ai-defaults-row ${source === "key" ? "" : "hidden"}" data-ai-default-key-wrap>
+          <span>Specific key</span>
+          <select data-action="ai-default-key">${keyOpts || '<option value="">No keys saved</option>'}</select>
+        </label>
+        <button type="button" class="btn ai-key-btn-activate" data-action="save-ai-default">Save default</button>
+        <details class="ai-defaults-advanced">
+          <summary>Workspace overrides</summary>
+          <p class="ai-keys-section-hint">Pin a default key or subscription per workspace.</p>
+          <div class="ai-defaults-override-form">
+            <select data-action="ai-default-ws-team">${teamOpts || '<option value="">No workspaces</option>'}</select>
+            <select data-action="ai-default-ws-source">
+              <option value="subscription">Subscription</option>
+              <option value="personal">Personal key</option>
+              <option value="key">Specific key</option>
+            </select>
+            <select data-action="ai-default-ws-key">${keyOpts || '<option value="">No keys</option>'}</select>
+            <button type="button" class="btn ai-key-btn-activate" data-action="save-ai-default-ws">Add / update</button>
+          </div>
+          <div class="ai-defaults-override-list">
+            ${overrides.length ? overrides.map((o) => `
+              <div class="ai-key-row">
+                <div class="ai-key-row-info">
+                  <span class="ai-key-row-name">${esc(o.team_name || o.team_id)}</span>
+                  <span class="ai-key-row-model">${esc(o.label || o.source)}</span>
+                </div>
+                <button type="button" class="btn ai-key-btn-delete" data-action="clear-ai-default-ws" data-team-id="${esc(o.team_id)}">✕</button>
+              </div>
+            `).join("") : '<p class="ai-keys-empty">No workspace overrides yet.</p>'}
+          </div>
+        </details>
+      </div>
+    `;
+  }
+
   function renderKeysList(keys = [], activeKeyId = null, teamKeys = []) {
     if (!keysList) return;
     const credits = status?.credits || {};
     let html = renderCreditCard(credits);
     html += renderPlatformKeysSection(credits, status?.platform_keys || []);
+    html += renderDefaultsSection(status?.ai_defaults || {}, keys, teamKeys, teams);
 
     // ── Personal keys ──
     if (keys.length) {
@@ -1075,6 +1133,72 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey, blockGpt
 
   // Delegate clicks in the keys list
   keysList?.addEventListener("click", async (e) => {
+    const saveDefault = e.target.closest("[data-action='save-ai-default']");
+    if (saveDefault) {
+      setError("");
+      const source = keysList.querySelector("[data-action='ai-default-source']")?.value || "subscription";
+      const keyRaw = keysList.querySelector("[data-action='ai-default-key']")?.value || "";
+      let key_id = null;
+      let key_source = null;
+      if (source === "key" && keyRaw.includes(":")) {
+        key_source = keyRaw.split(":")[0];
+        key_id = keyRaw.slice(keyRaw.indexOf(":") + 1);
+      }
+      try {
+        const data = await api("/api/user/ai-defaults", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source, key_id, key_source }),
+        });
+        render({ ...(data.ai || status || {}), ai_defaults: data.ai_defaults, keys: data.ai?.keys || status?.keys || [] });
+        if (source === "subscription") onSelectPromptKey?.("platform:openai");
+        else if (source === "key" && key_id) onSelectPromptKey?.(`${key_source}:${key_id}`);
+      } catch (err) {
+        setError(err.message || "Could not save AI default");
+      }
+      return;
+    }
+    const saveWs = e.target.closest("[data-action='save-ai-default-ws']");
+    if (saveWs) {
+      setError("");
+      const teamId = keysList.querySelector("[data-action='ai-default-ws-team']")?.value;
+      const source = keysList.querySelector("[data-action='ai-default-ws-source']")?.value || "subscription";
+      const keyRaw = keysList.querySelector("[data-action='ai-default-ws-key']")?.value || "";
+      if (!teamId) {
+        setError("Pick a workspace for the override");
+        return;
+      }
+      let key_id = null;
+      let key_source = null;
+      if (source === "key" && keyRaw.includes(":")) {
+        key_source = keyRaw.split(":")[0];
+        key_id = keyRaw.slice(keyRaw.indexOf(":") + 1);
+      }
+      try {
+        const data = await api(`/api/user/ai-defaults/workspaces/${encodeURIComponent(teamId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source, key_id, key_source }),
+        });
+        render({ ...(data.ai || status || {}), ai_defaults: data.ai_defaults, keys: data.ai?.keys || status?.keys || [] });
+      } catch (err) {
+        setError(err.message || "Could not save workspace default");
+      }
+      return;
+    }
+    const clearWs = e.target.closest("[data-action='clear-ai-default-ws']");
+    if (clearWs) {
+      const teamId = clearWs.dataset.teamId;
+      if (!teamId) return;
+      try {
+        const data = await api(`/api/user/ai-defaults/workspaces/${encodeURIComponent(teamId)}`, { method: "DELETE" });
+        render({ ...(data.ai || status || {}), ai_defaults: data.ai_defaults, keys: data.ai?.keys || status?.keys || [] });
+      } catch (err) {
+        setError(err.message || "Could not clear workspace default");
+      }
+      return;
+    }
+
     const creditTabBtn = e.target.closest("[data-action='credit-tab']");
     if (creditTabBtn) {
       creditTab = creditTabBtn.dataset.tab || "buy";
@@ -1567,6 +1691,12 @@ export function createAIKeyUI({ api, onStatusChange, onSelectPromptKey, blockGpt
   });
 
   keysList?.addEventListener("change", (e) => {
+    const defaultSource = e.target.closest("[data-action='ai-default-source']");
+    if (defaultSource) {
+      const wrap = keysList.querySelector("[data-ai-default-key-wrap]");
+      wrap?.classList.toggle("hidden", defaultSource.value !== "key");
+      return;
+    }
     const teamFilter = e.target.closest("[data-action='team-filter']");
     if (!teamFilter) return;
     selectedTeamFilter = teamFilter.value || "all";

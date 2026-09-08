@@ -714,6 +714,19 @@ class UserAICreditSettingsRequest(BaseModel):
     platform_model: str | None = Field(None, max_length=120)
 
 
+class UserAIDefaultsRequest(BaseModel):
+    source: str = Field("subscription", max_length=40)
+    key_id: str | None = Field(None, max_length=80)
+    key_source: str | None = Field(None, max_length=20)
+    team_id: str | None = Field(None, max_length=80)
+
+
+class UserWorkspaceAIDefaultRequest(BaseModel):
+    source: str = Field("subscription", max_length=40)
+    key_id: str | None = Field(None, max_length=80)
+    key_source: str | None = Field(None, max_length=20)
+
+
 class UserAICreditCheckoutRequest(BaseModel):
     amount_cents: int = Field(default=2000, ge=500, le=100_000)
     provider: str = Field(default="stripe", max_length=20)
@@ -2130,6 +2143,19 @@ def _ai_status_for_user(user: dict[str, Any]) -> dict[str, Any]:
         token_limit = key.get("daily_token_limit")
         if token_limit is not None:
             key["remaining_today_tokens"] = max(0, int(token_limit) - key_tokens)
+
+    try:
+        from backend.services import ai_defaults_service
+
+        status["ai_defaults"] = ai_defaults_service.status_for_user(user["id"])
+    except Exception:
+        status["ai_defaults"] = {
+            "default_source": "subscription",
+            "global": {"source": "subscription", "key_id": None, "key_source": "platform"},
+            "effective": {"source": "subscription", "key_id": None, "key_source": "platform", "from_workspace": False},
+            "workspace_overrides": [],
+            "always_default_to_subscription": True,
+        }
 
     return status
 
@@ -6297,6 +6323,241 @@ def admin_changelog(user: dict[str, Any] = Depends(get_current_user)):
     }
 
 
+class AdminGovOffLimitsRequest(BaseModel):
+    paths: list[str] = Field(default_factory=list)
+
+
+class AdminGovExplainRequest(BaseModel):
+    question: str | None = Field(None, max_length=4000)
+    ai_key_id: str | None = Field(None, max_length=80)
+    ai_key_source: str | None = Field(None, max_length=20)
+    use_subscription: bool = True
+    speed: str = Field("fast", max_length=20)
+
+
+class AdminGovSafeguardRequest(BaseModel):
+    selected_paths: list[str] = Field(default_factory=list)
+    prompt: str | None = Field(None, max_length=8000)
+    generate_instructions: bool = False
+    save_note: bool = True
+    title: str | None = Field(None, max_length=160)
+    ai_key_id: str | None = Field(None, max_length=80)
+    ai_key_source: str | None = Field(None, max_length=20)
+    use_subscription: bool = True
+    speed: str = Field("fast", max_length=20)
+
+
+class AdminGovFeedbackRequest(BaseModel):
+    vote: str = Field(..., max_length=20)
+    note: str | None = Field(None, max_length=4000)
+    contact: str | None = Field(None, max_length=200)
+
+
+class AdminGovIssueRequest(BaseModel):
+    note: str = Field(..., min_length=1, max_length=8000)
+    section: str | None = Field("server-settings", max_length=80)
+    contact: str | None = Field(None, max_length=200)
+    log_ids: list[str] = Field(default_factory=list)
+    include_log_excerpts: bool = True
+
+
+@app.get("/api/admin/repository-governance")
+def admin_repository_governance(user: dict[str, Any] = Depends(get_current_user)):
+    """Secure Publish Policy Pack summary (Management → Server Settings)."""
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    return gov.configuration_summary()
+
+
+@app.get("/api/admin/repository-governance/docs/{doc_name:path}")
+def admin_repository_governance_doc(doc_name: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    try:
+        return gov.read_document(doc_name)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Document not found: {doc_name}") from exc
+
+
+@app.get("/api/admin/repository-governance/off-limits")
+def admin_gov_off_limits_get(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    return gov.get_off_limits()
+
+
+@app.put("/api/admin/repository-governance/off-limits")
+def admin_gov_off_limits_put(body: AdminGovOffLimitsRequest, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    try:
+        return gov.set_off_limits(body.paths, updated_by=user.get("email") or user.get("display_name"))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/admin/repository-governance/candidates")
+def admin_gov_candidates(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    return {"candidates": gov.list_root_candidates()}
+
+
+@app.post("/api/admin/repository-governance/explain")
+def admin_gov_explain(body: AdminGovExplainRequest, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    context = gov.build_explain_context(body.question)
+    try:
+        if body.use_subscription or str(body.ai_key_source or "").lower() in {"", "platform", "subscription"}:
+            ai = _platform_ai_for_user(
+                user,
+                speed=body.speed or "fast",
+                provider=(body.ai_key_id if str(body.ai_key_source or "").lower() == "platform" else None),
+            )
+        else:
+            ai = _get_ai_for_user(
+                user,
+                body.speed or "fast",
+                key_id=body.ai_key_id,
+                key_source=body.ai_key_source,
+            )
+        answer, _trace = ai._call_model(
+            "You explain Repository Governance clearly in markdown. No secrets. Be concrete.",
+            context,
+            max_tokens=1800,
+            json_response=False,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"Explain failed: {exc}") from exc
+    return {"answer": answer, "billing": "subscription" if body.use_subscription else (body.ai_key_source or "key")}
+
+
+@app.post("/api/admin/repository-governance/safeguard")
+def admin_gov_safeguard(body: AdminGovSafeguardRequest, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    author = user.get("email") or user.get("display_name")
+    if not body.generate_instructions:
+        note = (body.prompt or "").strip()
+        if not note:
+            raise HTTPException(422, "Note text is required when not generating instructions")
+        saved = None
+        if body.save_note:
+            saved = gov.append_safeguard_note(
+                title=body.title or "Operator note",
+                body=note,
+                selected_paths=body.selected_paths,
+                generated=False,
+                author=author,
+            )
+        return {"instructions": None, "note": note, "saved": saved}
+
+    user_prompt = gov.build_safeguard_prompt(
+        selected_paths=body.selected_paths,
+        operator_prompt=body.prompt or "",
+        generate_instructions=True,
+    )
+    try:
+        if body.use_subscription or str(body.ai_key_source or "").lower() in {"", "platform", "subscription"}:
+            ai = _platform_ai_for_user(
+                user,
+                speed=body.speed or "fast",
+                provider=(body.ai_key_id if str(body.ai_key_source or "").lower() == "platform" else None),
+            )
+        else:
+            ai = _get_ai_for_user(
+                user,
+                body.speed or "fast",
+                key_id=body.ai_key_id,
+                key_source=body.ai_key_source,
+            )
+        instructions, _trace = ai._call_model(
+            "You write safeguarding instructions for Secure Publish. Markdown only. No secrets.",
+            user_prompt,
+            max_tokens=2200,
+            json_response=False,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"Safeguard generation failed: {exc}") from exc
+    saved = None
+    if body.save_note:
+        saved = gov.append_safeguard_note(
+            title=body.title or "Generated safeguarding instructions",
+            body=instructions,
+            selected_paths=body.selected_paths,
+            generated=True,
+            author=author,
+        )
+    return {"instructions": instructions, "note": None, "saved": saved}
+
+
+@app.get("/api/admin/repository-governance/feedback")
+def admin_gov_feedback_get(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    return gov.get_feedback_summary()
+
+
+@app.post("/api/admin/repository-governance/feedback")
+def admin_gov_feedback_post(body: AdminGovFeedbackRequest, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    try:
+        return gov.record_feedback_vote(
+            vote=body.vote,
+            note=body.note,
+            contact=body.contact,
+            author=user.get("email") or user.get("display_name"),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/admin/repository-governance/suggested-logs")
+def admin_gov_suggested_logs(
+    section: str = Query("server-settings"),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    return {"section": section, "logs": gov.suggested_logs(section)}
+
+
+@app.post("/api/admin/repository-governance/issue")
+def admin_gov_issue(body: AdminGovIssueRequest, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    from backend.services import repository_governance_service as gov
+
+    try:
+        return gov.record_issue_report(
+            note=body.note,
+            section=body.section,
+            contact=body.contact,
+            log_ids=body.log_ids,
+            include_log_excerpts=body.include_log_excerpts,
+            author=user.get("email") or user.get("display_name"),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.get("/api/admin/new-users")
 def admin_new_user_alerts(
     user: dict[str, Any] = Depends(get_current_user),
@@ -10003,6 +10264,60 @@ def update_user_ai_key(key_id: str, body: UserAIKeyRenameRequest, user: dict[str
         raise HTTPException(400, str(exc)) from exc
     return {"ai": _ai_status_for_user(user)}
 
+
+@app.get("/api/user/ai-defaults")
+def get_user_ai_defaults(
+    team_id: str | None = Query(None),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import ai_defaults_service
+
+    return {"ai_defaults": ai_defaults_service.status_for_user(user["id"], team_id=team_id), "ai": _ai_status_for_user(user)}
+
+
+@app.put("/api/user/ai-defaults")
+def put_user_ai_defaults(body: UserAIDefaultsRequest, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import ai_defaults_service
+
+    try:
+        defaults = ai_defaults_service.set_global_pref(
+            user["id"],
+            source=body.source,
+            key_id=body.key_id,
+            key_source=body.key_source,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ai_defaults": defaults, "ai": _ai_status_for_user(user)}
+
+
+@app.put("/api/user/ai-defaults/workspaces/{team_id}")
+def put_user_workspace_ai_default(
+    team_id: str,
+    body: UserWorkspaceAIDefaultRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import ai_defaults_service
+
+    try:
+        defaults = ai_defaults_service.set_workspace_override(
+            user["id"],
+            team_id,
+            source=body.source,
+            key_id=body.key_id,
+            key_source=body.key_source,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ai_defaults": defaults, "ai": _ai_status_for_user(user)}
+
+
+@app.delete("/api/user/ai-defaults/workspaces/{team_id}")
+def delete_user_workspace_ai_default(team_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    from backend.services import ai_defaults_service
+
+    defaults = ai_defaults_service.clear_workspace_override(user["id"], team_id)
+    return {"ai_defaults": defaults, "ai": _ai_status_for_user(user)}
 
 
 @app.get("/api/admin/trial-credits")

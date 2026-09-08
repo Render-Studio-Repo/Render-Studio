@@ -1111,3 +1111,29 @@ def init_db() -> None:
             conn.execute("ALTER TABLE oauth_state ADD COLUMN redirect_uri TEXT")
         except sqlite3.OperationalError:
             pass
+
+        # AI prompt billing defaults (subscription-first) + per-workspace overrides
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS user_ai_default_prefs (
+                user_id TEXT PRIMARY KEY,
+                source TEXT NOT NULL DEFAULT 'subscription',
+                key_id TEXT,
+                key_source TEXT,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS user_workspace_ai_defaults (
+                user_id TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'subscription',
+                key_id TEXT,
+                key_source TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, team_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+            );
+            """
+        )

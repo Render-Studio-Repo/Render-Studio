@@ -27,6 +27,8 @@
 | [quest-book-roadmap.md](./quest-book-roadmap.md) | Quest Book state, next stages, and dev use cases |
 | [worklog.md](./worklog.md) | Recent agent work — check before redoing something |
 
+**Before git push:** also read `../repository-governance/README.md` (Secure Publish / Repository Governance). Never publish `premium-features/`.
+
 Also load-bearing, outside this folder:
 
 - `TODO/quest-book/` — internal PM "quest book" for **Architect Mode** (chapters, decisions, safe-edit zones, smoke checklist). Source of truth for Architect work.

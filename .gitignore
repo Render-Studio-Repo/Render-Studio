@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 
+# Premium / proprietary host-only code (never publish)
+premium-features/
+
 # Runtime / user data
 data/
 projects/
@@ -19,8 +22,11 @@ milestones/
 # Temp vendor / experiment checkouts
 tmp_*/
 tmp-*/
+tmp-screenshots/
 tmp_img2threejs
 tmp_jake_text_to_cad
+regular-user-topbar.png
+regular-user-topbar*.png
 
 # 3D / CAD model binaries (generate locally; do not upload)
 *.glb
