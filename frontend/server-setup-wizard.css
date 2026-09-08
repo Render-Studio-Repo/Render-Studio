@@ -234,3 +234,19 @@ body.server-setup-open {
     white-space: nowrap;
   }
 }
+
+.server-setup-github-backup.is-dim {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.server-setup-drive-opt h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.server-setup-github-backup .server-setup-field,
+.server-setup-drive-opt .server-setup-choice {
+  margin-top: 10px;
+}
+

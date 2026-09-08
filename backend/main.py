@@ -64,6 +64,7 @@ from backend.services import branding_service
 from backend.services import server_config_service
 from backend.services import server_setup_service
 from backend.services import server_secrets_vault
+from backend.services import github_backup_service
 from backend.services import marketplace_ecosystem_service
 
 try:
@@ -5022,6 +5023,27 @@ async def _handle_social_callback(provider: str, code: str | None, state: str | 
     return RedirectResponse(f"/?social_token={token}&social_provider={safe_provider}{new_flag}", status_code=302)
 
 
+def _handle_github_setup_oauth_callback(
+    code: str | None, state: str | None, error: str | None = None
+) -> RedirectResponse:
+    """Server Setup → Connect GitHub (not end-user social login)."""
+    dest = "/admin-dashboard.html?github_setup="
+    if error:
+        return RedirectResponse(f"{dest}error&github_error={urllib.parse.quote(str(error)[:160])}", status_code=302)
+    if not code or not state:
+        return RedirectResponse(f"{dest}error&github_error=missing_params", status_code=302)
+    try:
+        result = github_backup_service.complete_oauth(code=code, state=state)
+        login = urllib.parse.quote(str(result.get("login") or "")[:80])
+        return RedirectResponse(f"{dest}connected&github_login={login}", status_code=302)
+    except Exception as exc:
+        logger.warning("GitHub setup OAuth callback failed: %s", exc)
+        return RedirectResponse(
+            f"{dest}error&github_error={urllib.parse.quote(str(exc)[:160])}",
+            status_code=302,
+        )
+
+
 async def _handle_discord_link_callback(code: str | None, state: str | None, error: str | None = None) -> RedirectResponse:
     from backend.services.discord_link_service import upsert_link
     from backend.services.social_oauth import consume_oauth_state
@@ -5095,6 +5117,8 @@ async def social_oauth_callback(
         return autodesk_oauth_callback(request, code=code, state=state, error=error, error_description=error_description)
     if provider_key == "discord":
         return await _handle_discord_link_callback(code, state, error)
+    if provider_key == "github":
+        return _handle_github_setup_oauth_callback(code, state, error)
     if provider_key in {"twitter", "x"}:
         return await _handle_twitter_link_callback(
             code,
@@ -6555,6 +6579,15 @@ class AdminBackupOwnerCheckRequest(BaseModel):
     token: str | None = None
 
 
+class AdminGitHubBackupUpdateRequest(BaseModel):
+    github_skipped: bool | None = None
+    backup_enabled: bool | None = None
+    repo_full_name: str | None = Field(default=None, max_length=200)
+    branch: str | None = Field(default=None, max_length=120)
+    interval: str | None = Field(default=None, max_length=32)
+    drive_models_opt_in: bool | None = None
+
+
 class AdminEcosystemSyncRequest(BaseModel):
     items: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -6662,6 +6695,74 @@ def admin_verify_backup_owner(
     if not result.get("allowed"):
         raise HTTPException(403, result.get("detail") or "Owner verification failed")
     return result
+
+
+@app.get("/api/admin/server-setup/github")
+def admin_server_setup_github(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return github_backup_service.public_status()
+
+
+@app.put("/api/admin/server-setup/github")
+def admin_server_setup_github_update(
+    body: AdminGitHubBackupUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(400, "No GitHub backup fields to update.")
+    try:
+        github_backup_service.save_config(patch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return github_backup_service.public_status()
+
+
+@app.get("/api/admin/server-setup/github/connect-url")
+def admin_server_setup_github_connect_url(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    try:
+        url = github_backup_service.build_authorize_url(user_id=str(user.get("id") or ""))
+    except Exception as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"ok": True, "url": url, "redirect_uri": github_backup_service.redirect_uri()}
+
+
+@app.post("/api/admin/server-setup/github/skip")
+def admin_server_setup_github_skip(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    github_backup_service.save_config({"github_skipped": True})
+    return github_backup_service.public_status()
+
+
+@app.get("/api/admin/server-setup/github/repos")
+def admin_server_setup_github_repos(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    try:
+        repos = github_backup_service.list_repos()
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "repos": repos}
+
+
+@app.get("/api/admin/server-setup/github/branches")
+def admin_server_setup_github_branches(
+    repo: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        branches = github_backup_service.list_branches(repo)
+    except Exception as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "repo": repo, "branches": branches}
+
+
+@app.get("/api/admin/server-setup/github/install-instructions")
+def admin_server_setup_github_install_instructions(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return github_backup_service.install_instructions()
 
 
 @app.get("/api/admin/ecosystem/sync")

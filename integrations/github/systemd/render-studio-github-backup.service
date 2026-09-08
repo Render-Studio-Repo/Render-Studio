@@ -1,0 +1,18 @@
+[Unit]
+Description=Render Studio — push source-code backup to GitHub
+Documentation=file:integrations/github/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# install-backup-timer.sh rewrites REPLACE_WITH_RENDER_STUDIO_ROOT to the checkout path.
+Environment=RENDER_STUDIO_ROOT=/REPLACE_WITH_RENDER_STUDIO_ROOT
+WorkingDirectory=/REPLACE_WITH_RENDER_STUDIO_ROOT
+ExecStart=/usr/bin/env bash /REPLACE_WITH_RENDER_STUDIO_ROOT/scripts/backup-to-github.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

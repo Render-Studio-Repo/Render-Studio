@@ -106,6 +106,26 @@ SECRET_APPS: Dict[str, Dict[str, Any]] = {
         "keys": ["OWNER_EMAIL", "OWNER_GITHUB", "BACKUP_OWNER_TOKEN"],
         "env_aliases": ["OWNER_EMAIL", "OWNER_GITHUB", "BACKUP_OWNER_TOKEN"],
     },
+    "github": {
+        "label": "GitHub OAuth / backups",
+        "description": "OAuth App credentials + linked token for Server Setup Connect and source-code backups.",
+        "keys": [
+            "GITHUB_OAUTH_CLIENT_ID",
+            "GITHUB_OAUTH_CLIENT_SECRET",
+            "GITHUB_OAUTH_REDIRECT_URI",
+            "GITHUB_ACCESS_TOKEN",
+            "GITHUB_LOGIN",
+        ],
+        "env_aliases": [
+            "GITHUB_OAUTH_CLIENT_ID",
+            "GITHUB_OAUTH_CLIENT_SECRET",
+            "GITHUB_OAUTH_REDIRECT_URI",
+            "GITHUB_CLIENT_ID",
+            "GITHUB_CLIENT_SECRET",
+            "GITHUB_ACCESS_TOKEN",
+            "GITHUB_LOGIN",
+        ],
+    },
 }
 
 
@@ -252,6 +272,11 @@ MYSQL_PORT=3306
 MYSQL_DATABASE=render_studio
 MYSQL_USER=render
 MYSQL_PASSWORD=
+
+# GitHub OAuth (Server Setup Connect + source backups)
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_REDIRECT_URI=https://render3d.app/oauth/github/callback
 
 # Auth platform (optional)
 SUPABASE_URL=

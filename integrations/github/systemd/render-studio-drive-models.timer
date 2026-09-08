@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for Render Studio Google Drive model backups
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

@@ -150,5 +150,10 @@ class Settings(BaseSettings):
     linkedin_schedule_sunday_hours: str = "10,16"
     linkedin_schedule_recent_window: int = 10
 
+    # GitHub OAuth (Server Setup Connect + automated source backups)
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    github_oauth_redirect_uri: str = "https://render3d.app/oauth/github/callback"
+
 
 settings = Settings()

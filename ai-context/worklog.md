@@ -1,3 +1,15 @@
+## 2026-09-08 — GitHub OAuth setup + source/Drive backup timers
+
+- Stored GitHub OAuth client secret in gitignored vault `data/server-config/secrets/github/secret.env` (`GITHUB_OAUTH_CLIENT_SECRET` only; client id still placeholder).
+- Added `github` secrets app + public templates / `.env.example` placeholders (`GITHUB_OAUTH_CLIENT_ID` / `CLIENT_SECRET` / `REDIRECT_URI`).
+- New `backend/services/github_backup_service.py` + thin `/api/admin/server-setup/github*` routes and `/oauth/github/callback` setup link.
+- Server Setup wizard step **GitHub**: Connect / Skip, optional source-code backup (repo / branch / hourly|daily|monthly), Drive models opt-in button.
+- Portable installers + systemd unit templates under `integrations/github/` (`install-backup-timer.sh`, `install-drive-model-backup.sh`); runner `scripts/backup-to-github.sh` (source-only excludes).
+- Cache-bust: `server-setup-wizard.js|css?v=20260908-github-backup`.
+- Branch: `cursor/github-oauth-setup-backups-cacf`.
+
+---
+
 ## 2026-09-08 — `integrations/` folder + DiMOS vendor
 
 - Added root [`integrations/`](../integrations/) with catalog README, `MANIFEST.json`, `paths.py`, `install.py` / `install.sh`.

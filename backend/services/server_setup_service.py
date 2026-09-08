@@ -64,6 +64,7 @@ AUTHORIZED_APPS = {
     "slack": "Slack updates",
     "discord": "Discord updates",
     "linkedin": "LinkedIn updates",
+    "github": "GitHub OAuth / backups",
     "google-drive": "Google Drive storage",
     "mysql": "MySQL users DB",
     "supabase": "Supabase auth/storage",
@@ -72,6 +73,7 @@ AUTHORIZED_APPS = {
 STEPS = [
     {"id": "welcome", "title": "Welcome"},
     {"id": "identity", "title": "Identity"},
+    {"id": "github", "title": "GitHub"},
     {"id": "keys", "title": "API keys"},
     {"id": "ecosystem", "title": "Ecosystem"},
     {"id": "apps", "title": "Apps"},
@@ -212,12 +214,15 @@ def build_harness_prompt(*, intent: str = "", include_paths: bool = True) -> Dic
     paths = [
         "data/server-config/local-settings.json",
         "data/server-config/setup-state.json",
+        "data/server-config/github-backup.json",
         "data/server-config/secrets/",
         "backend/services/server_secrets_vault.py",
         "backend/services/server_setup_service.py",
+        "backend/services/github_backup_service.py",
         "backend/services/server_config_service.py",
         "frontend/server-setup-wizard.js",
         "backend/skills/server-setup/SKILL.md",
+        "integrations/github/README.md",
         "server-configurations/secrets-templates/EXAMPLE-bulk-settings.txt",
     ]
     configured = [a["id"] for a in secrets.get("apps") or [] if a.get("configured")]
@@ -275,6 +280,8 @@ You are editing a self-hosted Render Studio install.
 
 
 def admin_view() -> Dict[str, Any]:
+    from backend.services import github_backup_service
+
     state = load_state()
     return {
         "ok": True,
@@ -284,10 +291,13 @@ def admin_view() -> Dict[str, Any]:
         "secrets": secrets_vault.status_view(),
         "ecosystem": public_ecosystem_policy(),
         "owner": secrets_vault.owner_identity(),
+        "github": github_backup_service.public_status(),
         "paths": {
             "setup_state": "data/server-config/setup-state.json",
             "secrets_vault": "data/server-config/secrets/",
+            "github_backup": "data/server-config/github-backup.json",
             "bulk_example": "server-configurations/secrets-templates/EXAMPLE-bulk-settings.txt",
             "skill": "backend/skills/server-setup/SKILL.md",
+            "github_integration": "integrations/github/README.md",
         },
     }

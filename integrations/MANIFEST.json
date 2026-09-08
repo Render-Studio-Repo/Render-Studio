@@ -157,6 +157,20 @@
       "install": "docs_only",
       "optional": true,
       "summary": "Connect X / Share to X for viewport videos."
+    },
+    {
+      "id": "github",
+      "name": "GitHub OAuth + source backups",
+      "kind": "cloud_oauth",
+      "path": "github",
+      "github": "https://github.com/settings/developers",
+      "docs": "integrations/github/README.md",
+      "backend_modules": [
+        "backend.services.github_backup_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Server Setup Connect GitHub, source-code backup timers, optional Drive model backup installer."
     }
   ]
 }

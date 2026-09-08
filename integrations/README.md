@@ -35,6 +35,7 @@ print(integration_dir("dimos"))
 | **Stripe** | Marketplace / AI credits | [`stripe/`](./stripe/) | [github.com/stripe/stripe-python](https://github.com/stripe/stripe-python) |
 | **Slack** | Optional update publishing | [`slack/`](./slack/) | [api.slack.com](https://api.slack.com/) |
 | **Twitter / X** | Connect X / Share to X | [`twitter/`](./twitter/) | [developer.x.com](https://developer.x.com) |
+| **GitHub** | OAuth Connect + source-code backup timers | [`github/`](./github/) | [github.com/settings/developers](https://github.com/settings/developers) |
 
 Core OAuth/API client code stays under `backend/services/` (thin runtime). Setup docs, installers, plugins, and vendored SDKs live here.
 

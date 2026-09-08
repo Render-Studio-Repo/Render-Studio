@@ -1,0 +1,13 @@
+[Unit]
+Description=Timer for Render Studio GitHub source-code backups
+Documentation=file://%h/integrations/github/README.md
+
+[Timer]
+# Default: daily. install-backup-timer.sh rewrites OnCalendar from setup config
+# (hourly | daily | monthly).
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

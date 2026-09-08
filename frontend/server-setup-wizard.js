@@ -6,6 +6,7 @@
 const STEPS = [
   "welcome",
   "identity",
+  "github",
   "keys",
   "ecosystem",
   "apps",
@@ -78,6 +79,7 @@ function tipForStep(step) {
   const tips = {
     welcome: "Local settings stay under data/server-config so git pull cannot overwrite them.",
     identity: "Name this server, then set owner identity in Secrets so backups verify it’s you.",
+    github: "Connect GitHub for source-code backups, or skip and do it later. Models stay off GitHub by default.",
     keys: "Upload a bulk settings .txt or fill each app folder’s secret.env. Every app has a README.",
     ecosystem: "Private = no sync. Curated = only items you publish. Public = eligible listings sync out.",
     apps: "Enable only the integrations this organization should use.",
@@ -151,6 +153,105 @@ function renderMain(view) {
         </span>
       </label>
       <p class="muted small">Owner identity for backups lives in Secrets → <code>owner</code> (<code>OWNER_EMAIL</code>, <code>OWNER_GITHUB</code>, <code>BACKUP_OWNER_TOKEN</code>).</p>
+    `;
+  }
+
+  if (step === "github") {
+    const gh = view.github || {};
+    const backup = gh.backup || {};
+    const linked = !!gh.linked;
+    const skipped = !!gh.skipped;
+    const oauthReady = !!gh.oauth_configured;
+    const intervals = gh.intervals || [
+      { id: "hourly", label: "Hourly" },
+      { id: "daily", label: "Daily" },
+      { id: "monthly", label: "Monthly" },
+    ];
+    const statusLine = linked
+      ? `Linked as <strong>@${esc(gh.login || "")}</strong>`
+      : skipped
+        ? "Skipped for now — you can connect later."
+        : oauthReady
+          ? "Not linked yet."
+          : "OAuth App client id still needed in Secrets → <code>github</code> (client secret may already be stored).";
+    return `
+      <h3>GitHub &amp; backups</h3>
+      <p class="muted small">${statusLine}</p>
+      <div class="server-setup-inline-actions">
+        <button type="button" class="btn primary btn-compact" id="server-setup-github-connect" ${oauthReady ? "" : "disabled"}>
+          Connect GitHub
+        </button>
+        <button type="button" class="btn secondary btn-compact" id="server-setup-github-skip">
+          Skip and do it later
+        </button>
+        <button type="button" class="btn secondary btn-compact" id="server-setup-github-refresh-repos" ${linked ? "" : "disabled"}>
+          Refresh repos
+        </button>
+      </div>
+      <p class="muted small" id="server-setup-github-status"></p>
+
+      <div class="server-setup-github-backup ${linked ? "" : "is-dim"}">
+        <label class="server-setup-choice">
+          <input type="checkbox" id="server-setup-github-backup-enabled" ${backup.enabled ? "checked" : ""} ${linked ? "" : "disabled"} />
+          <span>
+            <strong>Automatic source-code backup to GitHub</strong>
+            <span class="muted small">Default scope: code only (excludes 3D models, venv, node_modules, data/).</span>
+          </span>
+        </label>
+        <label class="server-setup-field">
+          <span>Repository</span>
+          <select id="server-setup-github-repo" ${linked ? "" : "disabled"}>
+            <option value="">Select a repo…</option>
+            ${(view._githubRepos || [])
+              .map(
+                (r) =>
+                  `<option value="${esc(r.full_name)}" ${backup.repo_full_name === r.full_name ? "selected" : ""}>${esc(r.full_name)}${r.private ? " (private)" : ""}</option>`,
+              )
+              .join("")}
+            ${
+              backup.repo_full_name &&
+              !(view._githubRepos || []).some((r) => r.full_name === backup.repo_full_name)
+                ? `<option value="${esc(backup.repo_full_name)}" selected>${esc(backup.repo_full_name)}</option>`
+                : ""
+            }
+          </select>
+        </label>
+        <label class="server-setup-field">
+          <span>Branch</span>
+          <input type="text" id="server-setup-github-branch" list="server-setup-github-branches" maxlength="120" value="${esc(backup.branch || "main")}" ${linked ? "" : "disabled"} />
+          <datalist id="server-setup-github-branches">
+            ${(view._githubBranches || []).map((b) => `<option value="${esc(b)}"></option>`).join("")}
+          </datalist>
+        </label>
+        <div class="server-setup-choice-grid">
+          ${intervals
+            .map(
+              (iv) => `
+            <label class="server-setup-choice ${(backup.interval || "daily") === iv.id ? "is-selected" : ""}">
+              <input type="radio" name="github_backup_interval" value="${esc(iv.id)}" ${(backup.interval || "daily") === iv.id ? "checked" : ""} ${linked ? "" : "disabled"} />
+              <strong>${esc(iv.label || iv.id)}</strong>
+              <span class="muted small">${esc(iv.summary || "")}</span>
+            </label>`,
+            )
+            .join("")}
+        </div>
+        <p class="muted small">Install timer on this machine (portable paths via <code>RENDER_STUDIO_ROOT</code>):</p>
+        <pre class="server-setup-harness-out">bash integrations/github/install-backup-timer.sh
+bash integrations/github/install-backup-timer.sh --enable</pre>
+      </div>
+
+      <div class="server-setup-drive-opt" style="margin-top:16px">
+        <h4>Optional: 3D models → Google Drive</h4>
+        <p class="muted small">Code stays on GitHub. Models use the existing Drive backup scripts.</p>
+        <label class="server-setup-choice">
+          <input type="checkbox" id="server-setup-drive-models" ${gh.drive_models_opt_in ? "checked" : ""} />
+          <strong>I want model backups to Google Drive</strong>
+        </label>
+        <button type="button" class="btn secondary btn-compact" id="server-setup-drive-setup">
+          Set up 3D model backup to Google Drive
+        </button>
+        <pre class="server-setup-harness-out" id="server-setup-drive-hint" hidden></pre>
+      </div>
     `;
   }
 
@@ -294,6 +395,25 @@ async function collectAndSave(root, view, nextStep) {
     state.ecosystem_mode =
       root.querySelector('input[name="ecosystem_mode"]:checked')?.value || state.ecosystem_mode;
   }
+  if (step === "github") {
+    const patch = {
+      backup_enabled: !!root.querySelector("#server-setup-github-backup-enabled")?.checked,
+      repo_full_name: root.querySelector("#server-setup-github-repo")?.value || "",
+      branch: root.querySelector("#server-setup-github-branch")?.value || "main",
+      interval:
+        root.querySelector('input[name="github_backup_interval"]:checked')?.value || "daily",
+      drive_models_opt_in: !!root.querySelector("#server-setup-drive-models")?.checked,
+    };
+    try {
+      const gh = await api("/api/admin/server-setup/github", {
+        method: "PUT",
+        body: JSON.stringify(patch),
+      });
+      view.github = gh;
+    } catch (_) {
+      /* keep going; status shown on refresh */
+    }
+  }
   if (step === "apps") {
     const apps = { ...(state.authorized_apps || {}) };
     root.querySelectorAll("[data-auth-app]").forEach((el) => {
@@ -388,6 +508,100 @@ function bindDynamic(root) {
     });
   });
 
+  root.querySelector("#server-setup-github-connect")?.addEventListener("click", async () => {
+    const status = root.querySelector("#server-setup-github-status");
+    try {
+      const data = await api("/api/admin/server-setup/github/connect-url");
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      if (status) status.textContent = "No connect URL returned.";
+    } catch (err) {
+      if (status) status.textContent = err.message || "Connect failed — check GITHUB_OAUTH_CLIENT_ID in secrets/github.";
+    }
+  });
+
+  root.querySelector("#server-setup-github-skip")?.addEventListener("click", async () => {
+    const status = root.querySelector("#server-setup-github-status");
+    try {
+      await api("/api/admin/server-setup/github/skip", { method: "POST", body: "{}" });
+      if (status) status.textContent = "Skipped — you can connect later from this step.";
+      await refresh(root);
+    } catch (err) {
+      if (status) status.textContent = err.message || "Skip failed";
+    }
+  });
+
+  root.querySelector("#server-setup-github-refresh-repos")?.addEventListener("click", async () => {
+    const status = root.querySelector("#server-setup-github-status");
+    try {
+      const data = await api("/api/admin/server-setup/github/repos");
+      root._setupView._githubRepos = data.repos || [];
+      if (status) status.textContent = `Loaded ${(data.repos || []).length} repo(s).`;
+      root.querySelector("#server-setup-main").innerHTML = renderMain(root._setupView);
+      bindDynamic(root);
+    } catch (err) {
+      if (status) status.textContent = err.message || "Could not list repos";
+    }
+  });
+
+  root.querySelector("#server-setup-github-repo")?.addEventListener("change", async (ev) => {
+    const repo = ev.target.value;
+    if (!repo) return;
+    try {
+      const data = await api(`/api/admin/server-setup/github/branches?repo=${encodeURIComponent(repo)}`);
+      root._setupView._githubBranches = data.branches || [];
+      const branchInput = root.querySelector("#server-setup-github-branch");
+      const list = root.querySelector("#server-setup-github-branches");
+      if (list) {
+        list.innerHTML = (data.branches || []).map((b) => `<option value="${esc(b)}"></option>`).join("");
+      }
+      if (branchInput && !branchInput.value && data.branches?.[0]) {
+        branchInput.value = data.branches[0];
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  });
+
+  root.querySelector("#server-setup-drive-setup")?.addEventListener("click", async () => {
+    const hint = root.querySelector("#server-setup-drive-hint");
+    const driveBox = root.querySelector("#server-setup-drive-models");
+    if (driveBox) driveBox.checked = true;
+    try {
+      await api("/api/admin/server-setup/github", {
+        method: "PUT",
+        body: JSON.stringify({ drive_models_opt_in: true }),
+      });
+    } catch (_) {
+      /* ignore */
+    }
+    const text = [
+      "# 3D model backup → Google Drive (opt-in)",
+      "export RENDER_STUDIO_ROOT=\"$(pwd)\"",
+      "# Put OAuth client id/secret in data/server-config/secrets/google-drive/secret.env",
+      "bash integrations/github/install-drive-model-backup.sh --auth",
+      "bash integrations/github/install-drive-model-backup.sh --enable",
+      "# Reuses scripts/backup-to-drive.py + scripts/backup-daily.sh",
+      "# See integrations/github/README.md",
+    ].join("\n");
+    if (hint) {
+      hint.hidden = false;
+      hint.textContent = text;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      /* ignore */
+    }
+    const input = root.querySelector("#server-setup-agent-input");
+    if (input) {
+      input.value =
+        "Help me finish Google Drive 3D model backup setup using integrations/github/install-drive-model-backup.sh and the google-drive secrets vault.";
+    }
+  });
+
   root.querySelector("#server-setup-copy-harness")?.addEventListener("click", () => {
     void copyHarness(root, root.querySelector("#server-setup-agent-input")?.value);
   });
@@ -413,6 +627,25 @@ async function refresh(root) {
   ]);
   if (branding && view.state) {
     view.state.loading_screen_enabled = branding.loading_screen_enabled !== false;
+  }
+  if (view.github?.linked) {
+    try {
+      const repos = await api("/api/admin/server-setup/github/repos");
+      view._githubRepos = repos.repos || [];
+    } catch (_) {
+      view._githubRepos = [];
+    }
+    const repo = view.github?.backup?.repo_full_name;
+    if (repo) {
+      try {
+        const branches = await api(
+          `/api/admin/server-setup/github/branches?repo=${encodeURIComponent(repo)}`,
+        );
+        view._githubBranches = branches.branches || [];
+      } catch (_) {
+        view._githubBranches = [];
+      }
+    }
   }
   root._setupView = view;
   renderSteps(root, view.state || {}, view.catalog || {});

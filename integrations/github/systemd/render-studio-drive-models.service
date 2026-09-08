@@ -1,0 +1,15 @@
+[Unit]
+Description=Render Studio — daily 3D model backup to Google Drive
+Documentation=file:integrations/github/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=RENDER_STUDIO_ROOT=/REPLACE_WITH_RENDER_STUDIO_ROOT
+WorkingDirectory=/REPLACE_WITH_RENDER_STUDIO_ROOT
+ExecStart=/usr/bin/env bash /REPLACE_WITH_RENDER_STUDIO_ROOT/scripts/backup-daily.sh
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

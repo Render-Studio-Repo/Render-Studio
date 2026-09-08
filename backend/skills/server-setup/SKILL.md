@@ -47,6 +47,13 @@ When the user wants Cursor / VS Code / Claude Code help:
 
 Backups / premium push must verify owner via `OWNER_EMAIL`, `OWNER_GITHUB`, or `BACKUP_OWNER_TOKEN` in `secrets/owner/`.
 
+## GitHub Connect + source backups
+
+- Vault: `data/server-config/secrets/github/` (`GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`)
+- Wizard step: **GitHub** — Connect or skip; optional repo/branch/interval for source-only remote backups
+- Install timers: `integrations/github/install-backup-timer.sh` (and optional Drive models via `install-drive-model-backup.sh`)
+- Never commit OAuth secrets; never enable production timers casually on a live host without operator intent
+
 ## Do not
 
 - Commit `data/server-config/secrets/**`

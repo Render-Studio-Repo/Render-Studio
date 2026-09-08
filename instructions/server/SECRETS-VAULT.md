@@ -40,3 +40,14 @@ Configure `secrets/owner/` with:
 - `BACKUP_OWNER_TOKEN`
 
 `scripts/backup-code.sh` checks these before taking premium/personal backups.
+
+## GitHub OAuth (Connect + remote source backups)
+
+Configure `secrets/github/` with:
+
+- `GITHUB_OAUTH_CLIENT_ID`
+- `GITHUB_OAUTH_CLIENT_SECRET`
+- `GITHUB_OAUTH_REDIRECT_URI`
+
+After **Connect GitHub** in Server Setup, `GITHUB_ACCESS_TOKEN` / `GITHUB_LOGIN` are written automatically.
+See `integrations/github/README.md` for timer install and Drive model opt-in.

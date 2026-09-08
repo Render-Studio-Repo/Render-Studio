@@ -36,6 +36,11 @@ MYSQL_DATABASE=render_studio
 MYSQL_USER=render
 MYSQL_PASSWORD=
 
+# GitHub OAuth (Server Setup Connect + source backups)
+GITHUB_OAUTH_CLIENT_ID=
+GITHUB_OAUTH_CLIENT_SECRET=
+GITHUB_OAUTH_REDIRECT_URI=https://render3d.app/oauth/github/callback
+
 # Auth platform (optional)
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
