@@ -2,9 +2,8 @@
 
 - Server Settings + setup wizard: toggle “Show loading screen for 5 seconds”.
 - Branding API stores `loading_screen_enabled` / `loading_screen_duration_ms` (default ON / 5000).
-- Studio boot honors the setting; localStorage cache skips splash immediately when disabled.
-- Management `#settings` → Server section (aliases `#server-settings`); cache-bust `?v=20260908-loading-toggle`.
-
+- Studio boot honors the setting; localStorage cache tentatively hides splash when disabled, branding confirms (avoids stale-cache race).
+- Management `#settings` → Server section (aliases `#server-settings`); cache-bust `?v=20260908-loading-toggle4`.
 ---
 
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons

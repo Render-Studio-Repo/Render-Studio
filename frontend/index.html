@@ -257,30 +257,29 @@
     var timer = null;
     var tipIndex = 0;
     var BOOT_MIN_MS = 5000;
+    window.__studioBootPageStartedAt = Date.now();
     try {
       var logoutReload = sessionStorage.getItem(LOGOUT_RELOAD_KEY) === "1";
       sessionStorage.removeItem(LOGOUT_RELOAD_KEY);
       var loadingPref = null;
       try { loadingPref = localStorage.getItem("render3d:loadingScreenEnabled:v1"); } catch (prefErr) {}
-      // Server Settings can disable the boot splash. Cached pref skips the 5s hold immediately.
+      // Server Settings can disable the boot splash. Cached pref only tentatively skips the
+      // 5s hold / hides the splash — branding fetch confirms and may restore if still enabled.
       if (loadingPref === "0") {
         window.__studioBootMinUntil = 0;
-        document.body.classList.remove("studio-booting");
         if (boot) {
-          boot.classList.add("is-done");
-          boot.setAttribute("aria-busy", "false");
-          boot.remove();
+          boot.dataset.loadingPrefHidden = "1";
+          boot.style.opacity = "0";
+          boot.style.pointerEvents = "none";
         }
-        window.__dismissStudioBoot = window.__dismissStudioBoot || function () {};
-        return;
-      }
-      // Default / enabled: hold the studio boot screen for ~5s so the load animation can play,
-      // except when we intentionally skip boot (logout hop / back from docs).
-      if (!logoutReload) {
-        window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
+        document.body.classList.add("studio-boot-pref-off");
+      } else if (!logoutReload) {
+        // Default / enabled: hold the studio boot screen for ~5s so the load animation can play,
+        // except when we intentionally skip boot (logout hop / back from docs).
+        window.__studioBootMinUntil = window.__studioBootPageStartedAt + BOOT_MIN_MS;
       }
     } catch (e) {
-      window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
+      window.__studioBootMinUntil = (window.__studioBootPageStartedAt || Date.now()) + BOOT_MIN_MS;
     }
     var randomWalkthroughs = [
       { id: "ai-generate", kicker: "AI Generate", label: "Build CAD from text" },
@@ -2888,6 +2887,16 @@
     }
     function dismissBoot() {
       var el = document.getElementById("studio-boot-screen");
+      // Tentative localStorage "off" only hides the splash — wait for branding to confirm
+      // before tearing it down, so a stale cache cannot skip an enabled 5s boot.
+      if (
+        el &&
+        el.dataset.loadingPrefHidden === "1" &&
+        document.documentElement.dataset.loadingScreen !== "off"
+      ) {
+        setTimeout(dismissBoot, 50);
+        return;
+      }
       var minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
       if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
       el.dataset.dismissScheduled = "1";
@@ -2955,9 +2964,9 @@
       });
   })();
   </script>
-  <script type="module" src="/studio-branding.js?v=20260908-loading-toggle"></script>
+  <script type="module" src="/studio-branding.js?v=20260908-loading-toggle4"></script>
   <script type="module" src="/server-setup-wizard.js?v=20260908-loading-toggle"></script>
-  <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
+  <script type="module" src="/early-boot.js?v=20260908-loading-toggle3"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="model-pick-recommend-modal" class="auth-modal model-pick-recommend-modal hidden" role="dialog" aria-modal="true" aria-labelledby="model-pick-recommend-title" aria-hidden="true">
     <div class="auth-backdrop" data-model-pick-close></div>

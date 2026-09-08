@@ -148,6 +148,11 @@ function applyLoadingScreenPolicy(branding) {
     Number(branding?.loading_screen_duration_ms ?? 5000) || 0,
   );
   const boot = document.getElementById("studio-boot-screen");
+  // Capture before clearing the tentative-off markers.
+  const wasPrefHidden =
+    boot?.dataset.loadingPrefHidden === "1" ||
+    document.body.classList.contains("studio-boot-pref-off");
+  document.body.classList.remove("studio-boot-pref-off");
   if (!enabled) {
     window.__studioBootMinUntil = 0;
     document.documentElement.dataset.loadingScreen = "off";
@@ -166,14 +171,22 @@ function applyLoadingScreenPolicy(branding) {
   }
   document.documentElement.dataset.loadingScreen = "on";
   const holdFor = durationMs > 0 ? durationMs : 5000;
-  const existing = Number(window.__studioBootMinUntil || 0);
-  // Keep the earliest page-load deadline when it still covers the required hold.
-  if (!existing || existing < Date.now()) {
-    window.__studioBootMinUntil = Date.now() + holdFor;
-  } else {
-    const startedAt = existing - 5000;
-    window.__studioBootMinUntil = Math.max(existing, startedAt + holdFor);
+  if (boot) {
+    delete boot.dataset.loadingPrefHidden;
+    delete boot.dataset.dismissScheduled;
+    boot.style.opacity = "";
+    boot.style.pointerEvents = "";
+    boot.classList.remove("is-done");
+    boot.setAttribute("aria-busy", "true");
+    document.body.classList.add("studio-booting");
   }
+  const pageStarted = Number(window.__studioBootPageStartedAt || 0) || Date.now();
+  window.__studioBootPageStartedAt = pageStarted;
+  // Hold from first paint. If a stale "off" cache hid the splash, guarantee a full
+  // visible duration once branding confirms it should be on.
+  const fromStart = pageStarted + holdFor;
+  const fromNow = Date.now() + holdFor;
+  window.__studioBootMinUntil = wasPrefHidden ? fromNow : Math.max(fromStart, Date.now() + 250);
 }
 
 export function applyBranding(branding = cachedBranding) {

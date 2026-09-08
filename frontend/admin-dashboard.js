@@ -14,9 +14,9 @@ import {
 import {
   serverSettingsSectionHtml,
   bindServerSettingsSection,
-} from "./admin-server-settings.js?v=20260908-loading-toggle";
-import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-loading-toggle";
-import { initStudioBranding } from "./studio-branding.js?v=20260908-loading-toggle";
+} from "./admin-server-settings.js?v=20260908-loading-toggle4";
+import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-loading-toggle4";
+import { initStudioBranding } from "./studio-branding.js?v=20260908-loading-toggle4";
 
 function escapeHtml(value) {
   return String(value ?? "")
