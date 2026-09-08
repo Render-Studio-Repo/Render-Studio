@@ -4,7 +4,7 @@
 
 Instruction playbooks (read the matching folder before the job):
 
-- `instructions/server/` — server settings, update publishing, profile import (start with `UPDATE-DOCS.md` before posting updates)
+- `instructions/server/` — server settings, first-run setup, secrets vault, update publishing (start with `SERVER-SETUP.md` / `UPDATE-DOCS.md`)
 - `instructions/actions/` — non-server action playbooks
 
 Non-negotiables (details in `ai-context/`):

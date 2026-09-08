@@ -62,6 +62,14 @@ from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
 from backend.services import branding_service
 from backend.services import server_config_service
+from backend.services import server_setup_service
+from backend.services import server_secrets_vault
+from backend.services import marketplace_ecosystem_service
+
+try:
+    server_secrets_vault.load_vault_into_environ()
+except Exception:
+    pass
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
 from backend.ws.manager import hub
 from backend.auth import decode_token
@@ -6503,6 +6511,155 @@ def admin_publish_server_updates(
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod.publish(dry_run=body.dry_run, force=body.force, only_id=body.update_id)
+
+
+class AdminServerSetupUpdateRequest(BaseModel):
+    setup_complete: bool | None = None
+    current_step: str | None = None
+    server_name: str | None = Field(default=None, max_length=80)
+    ecosystem_mode: str | None = None
+    storage_backend: str | None = None
+    dashboard_ready: bool | None = None
+    authorized_apps: dict[str, Any] | None = None
+    notes: str | None = None
+
+
+class AdminServerSetupHarnessRequest(BaseModel):
+    intent: str = Field(default="", max_length=4000)
+
+
+class AdminServerSetupBulkSecretsRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=200000)
+
+
+class AdminBackupOwnerCheckRequest(BaseModel):
+    email: str | None = None
+    github: str | None = None
+    token: str | None = None
+
+
+class AdminEcosystemSyncRequest(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@app.get("/api/admin/server-setup")
+def admin_get_server_setup(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return server_setup_service.admin_view()
+
+
+@app.put("/api/admin/server-setup")
+def admin_update_server_setup(
+    body: AdminServerSetupUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(400, "No setup fields to update.")
+    try:
+        server_setup_service.save_state(patch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return server_setup_service.admin_view()
+
+
+@app.post("/api/admin/server-setup/complete")
+def admin_complete_server_setup(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    server_setup_service.mark_complete()
+    return server_setup_service.admin_view()
+
+
+@app.post("/api/admin/server-setup/harness-prompt")
+def admin_server_setup_harness_prompt(
+    body: AdminServerSetupHarnessRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return server_setup_service.build_harness_prompt(intent=body.intent)
+
+
+@app.get("/api/admin/server-setup/secrets")
+def admin_server_setup_secrets(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return server_secrets_vault.status_view()
+
+
+@app.post("/api/admin/server-setup/secrets/bulk")
+def admin_server_setup_secrets_bulk(
+    body: AdminServerSetupBulkSecretsRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return server_secrets_vault.apply_bulk_upload(body.text)
+
+
+@app.get("/api/admin/server-setup/secrets/example.txt")
+def admin_server_setup_secrets_example(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    server_secrets_vault.seed_public_templates()
+    path = ROOT / "server-configurations" / "secrets-templates" / "EXAMPLE-bulk-settings.txt"
+    if not path.is_file():
+        raise HTTPException(404, "Example bulk settings file not found")
+    return FileResponse(path, media_type="text/plain", filename="EXAMPLE-bulk-settings.txt")
+
+
+@app.get("/api/admin/server-setup/secrets/{app_id}")
+def admin_server_setup_secret_app(app_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    try:
+        return server_secrets_vault.get_app_detail(app_id, reveal=False)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.put("/api/admin/server-setup/secrets/{app_id}")
+def admin_server_setup_secret_app_save(
+    app_id: str,
+    body: dict[str, Any],
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    values = body.get("values") if isinstance(body, dict) else None
+    if not isinstance(values, dict):
+        raise HTTPException(400, "Provide { values: { KEY: value } }")
+    try:
+        return server_secrets_vault.save_app_secrets(app_id, values)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/admin/backups/verify-owner")
+def admin_verify_backup_owner(
+    body: AdminBackupOwnerCheckRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Gate backups / premium push on configured owner identity."""
+    _require_a1projects_admin(user)
+    result = server_secrets_vault.verify_owner(
+        email=body.email or user.get("email"),
+        github=body.github,
+        token=body.token,
+    )
+    if not result.get("allowed"):
+        raise HTTPException(403, result.get("detail") or "Owner verification failed")
+    return result
+
+
+@app.get("/api/admin/ecosystem/sync")
+def admin_ecosystem_sync_status(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return marketplace_ecosystem_service.sync_status()
+
+
+@app.post("/api/admin/ecosystem/sync")
+def admin_ecosystem_sync_prepare(
+    body: AdminEcosystemSyncRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return marketplace_ecosystem_service.prepare_public_payload(body.items)
 
 
 @app.get("/api/admin/new-users")

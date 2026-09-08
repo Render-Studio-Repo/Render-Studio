@@ -1,0 +1,43 @@
+# Render Studio — bulk secrets upload example
+# Upload this (with your real values) from Server Setup → Secrets.
+# Safe forms:
+#   KEY=value
+#   app-id.KEY=value
+#   app-id.api_key=value   (for openai / anthropic)
+
+# AI providers
+OPENAI_API_KEY=sk-your-openai-key
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
+
+# Owner identity (required for backups / premium sync)
+OWNER_EMAIL=you@company.com
+OWNER_GITHUB=your-github-username
+BACKUP_OWNER_TOKEN=generate-a-long-random-token
+
+# Billing (optional)
+STRIPE_SECRET_KEY=sk_live_or_test
+STRIPE_PUBLISHABLE_KEY=pk_live_or_test
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+# Update publishing
+SLACK_UPDATES_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
+DISCORD_BOT_TOKEN=
+DISCORD_UPDATES_CHANNEL_ID=
+LINKEDIN_ACCESS_TOKEN=
+LINKEDIN_AUTHOR_URN=
+
+# Storage / DB (optional)
+GOOGLE_DRIVE_CLIENT_ID=
+GOOGLE_DRIVE_CLIENT_SECRET=
+GOOGLE_DRIVE_REFRESH_TOKEN=
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DATABASE=render_studio
+MYSQL_USER=render
+MYSQL_PASSWORD=
+
+# Auth platform (optional)
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+JWT_SECRET=change-me-to-a-long-random-string

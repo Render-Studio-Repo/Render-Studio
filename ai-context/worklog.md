@@ -1258,3 +1258,10 @@ Shipped the first real gameplay loop — not full instrumentation of every featu
 - Management dashboard Server Settings: branding + update-publishing toggles (docs/Slack/Discord/LinkedIn) + profile import.
 - Publisher: `scripts/publish-server-updates.py` with publication ledger; dry-run verified for docs channel.
 - Public push/pull must not overwrite private server settings (local files under `data/`).
+
+## 2026-09-08 — Server setup wizard + secrets vault
+
+- Added gitignored secrets vault under `data/server-config/secrets/<app>/` with per-app READMEs + bulk upload example in `server-configurations/secrets-templates/`.
+- First-run setup wizard (ecosystem privacy, authorized apps, storage, harness prompt export) + Render Agent `server-setup` skill.
+- Backup script owner identity gate; marketplace ecosystem sync policy stubs.
+- Local runtime remains in `data/server-config/` so public pull/push does not overwrite private server settings.

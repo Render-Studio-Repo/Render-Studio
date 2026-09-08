@@ -42,6 +42,48 @@ if [[ -f "${ROOT}/scripts/scan-milestones.py" ]]; then
   "${PY}" "${ROOT}/scripts/scan-milestones.py" --quiet || log "Milestone scan skipped/failed (non-fatal)"
 fi
 
+# ── 0b. Owner identity gate (premium / personal backups) ─────────────────────
+# Only continue automatic premium backups when this machine is owned by the
+# configured operator (OWNER_EMAIL / OWNER_GITHUB / BACKUP_OWNER_TOKEN).
+if [[ "${BACKUP_REQUIRE_OWNER:-1}" == "1" ]]; then
+  OWNER_EMAIL_ENV="${OWNER_EMAIL:-}"
+  OWNER_GITHUB_ENV="${OWNER_GITHUB:-}"
+  BACKUP_TOKEN_ENV="${BACKUP_OWNER_TOKEN:-}"
+  if [[ -f "${ROOT}/data/server-config/secrets/owner/secret.env" ]]; then
+    # shellcheck disable=SC1091
+    set -a
+    # Read KEY=value lines without executing
+    while IFS= read -r line; do
+      case "$line" in
+        OWNER_EMAIL=*) OWNER_EMAIL_ENV="${line#OWNER_EMAIL=}" ;;
+        OWNER_GITHUB=*) OWNER_GITHUB_ENV="${line#OWNER_GITHUB=}" ;;
+        BACKUP_OWNER_TOKEN=*) BACKUP_TOKEN_ENV="${line#BACKUP_OWNER_TOKEN=}" ;;
+      esac
+    done < "${ROOT}/data/server-config/secrets/owner/secret.env"
+    set +a
+  fi
+  if [[ -z "${OWNER_EMAIL_ENV}" && -z "${OWNER_GITHUB_ENV}" && -z "${BACKUP_TOKEN_ENV}" ]]; then
+    log "Owner identity not configured — skipping backup (set secrets/owner or BACKUP_REQUIRE_OWNER=0)"
+    exit 0
+  fi
+  CLAIM_EMAIL="${BACKUP_CLAIM_EMAIL:-${OWNER_EMAIL_ENV}}"
+  CLAIM_GITHUB="${BACKUP_CLAIM_GITHUB:-${OWNER_GITHUB_ENV}}"
+  CLAIM_TOKEN="${BACKUP_CLAIM_TOKEN:-${BACKUP_TOKEN_ENV}}"
+  if [[ -n "${OWNER_EMAIL_ENV}" && "${CLAIM_EMAIL}" != "${OWNER_EMAIL_ENV}" ]]; then
+    log "Backup blocked: OWNER_EMAIL mismatch (not the configured owner)"
+    exit 0
+  fi
+  if [[ -n "${OWNER_GITHUB_ENV}" && "${CLAIM_GITHUB}" != "${OWNER_GITHUB_ENV}" ]]; then
+    log "Backup blocked: OWNER_GITHUB mismatch (not the configured owner)"
+    exit 0
+  fi
+  if [[ -n "${BACKUP_TOKEN_ENV}" && -n "${BACKUP_CLAIM_TOKEN:-}" && "${CLAIM_TOKEN}" != "${BACKUP_TOKEN_ENV}" ]]; then
+    log "Backup blocked: BACKUP_OWNER_TOKEN mismatch"
+    exit 0
+  fi
+  log "Owner identity check passed for backups"
+fi
+
 # ── 1. Auto-commit all dirty/untracked git changes ───────────────────────────
 if git -C "${ROOT}" rev-parse --git-dir &>/dev/null; then
   if ! git -C "${ROOT}" diff --quiet HEAD 2>/dev/null || \

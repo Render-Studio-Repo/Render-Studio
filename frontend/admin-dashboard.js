@@ -15,6 +15,7 @@ import {
   serverSettingsSectionHtml,
   bindServerSettingsSection,
 } from "./admin-server-settings.js?v=20260908-update-publishing";
+import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-server-setup";
 import { initStudioBranding } from "./studio-branding.js?v=20260908-update-publishing";
 
 function escapeHtml(value) {
@@ -1181,6 +1182,12 @@ function renderDashboard(root, data) {
   void loadTrialCredits(root);
   void loadFeedbackInbox(root);
   bindServerSettingsSection(root, { api });
+  const setupMount =
+    root.querySelector("#admin-section-server-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-server-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-server-settings");
+  mountServerSetupEntry(setupMount);
+  void maybeAutoOpenServerSetup();
   adminNotificationsPager?.destroy?.();
   adminNotificationsPager = createAdminNotificationsPager({
     api,

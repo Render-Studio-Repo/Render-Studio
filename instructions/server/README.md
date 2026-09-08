@@ -1,11 +1,13 @@
 # Server instruction docs
 
-Actionable playbooks that change **how this server publishes, brands, or
-imports configuration**. These are distinct from one-off coding actions.
+Actionable playbooks for **this server’s** publishing, branding, secrets, and setup.
 
 | Doc | When to read |
 | --- | --- |
-| [UPDATE-DOCS.md](./UPDATE-DOCS.md) | Before posting product updates (docs / Slack / Discord / LinkedIn) |
+| [SERVER-SETUP.md](./SERVER-SETUP.md) | First install / reconfigure server wizard |
+| [SECRETS-VAULT.md](./SECRETS-VAULT.md) | API keys, passwords, bulk upload format |
+| [UPDATE-DOCS.md](./UPDATE-DOCS.md) | Before posting product updates |
 
-Related public templates: `server-configurations/`  
-Related workflow on the trusted release branch: `docs/UPDATE-PUBLISHING.md`
+Public templates: `server-configurations/`  
+Local runtime (gitignored): `data/server-config/`  
+Trusted-branch workflow: `docs/UPDATE-PUBLISHING.md`
