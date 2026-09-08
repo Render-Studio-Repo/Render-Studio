@@ -136,11 +136,19 @@ function renderMain(view) {
   }
 
   if (step === "identity") {
+    const loadingOn = state.loading_screen_enabled !== false;
     return `
       <h3>Server identity</h3>
       <label class="server-setup-field">
         <span>Server name</span>
         <input type="text" id="server-setup-name" maxlength="80" value="${esc(state.server_name || "Render Studio")}" />
+      </label>
+      <label class="server-setup-choice" style="margin-top:12px">
+        <input type="checkbox" id="server-setup-loading-enabled" ${loadingOn ? "checked" : ""} />
+        <span>
+          <strong>Show loading screen for 5 seconds</strong>
+          <span class="muted small">Boot splash on Studio open. Turn off to skip straight into the editor.</span>
+        </span>
       </label>
       <p class="muted small">Owner identity for backups lives in Secrets → <code>owner</code> (<code>OWNER_EMAIL</code>, <code>OWNER_GITHUB</code>, <code>BACKUP_OWNER_TOKEN</code>).</p>
     `;
@@ -264,6 +272,23 @@ async function collectAndSave(root, view, nextStep) {
   const step = state.current_step || "welcome";
   if (step === "identity") {
     state.server_name = root.querySelector("#server-setup-name")?.value || state.server_name;
+    state.loading_screen_enabled = !!root.querySelector("#server-setup-loading-enabled")?.checked;
+    try {
+      await api("/api/admin/server-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          loading_screen_enabled: state.loading_screen_enabled,
+          loading_screen_duration_ms: state.loading_screen_enabled ? 5000 : 0,
+        }),
+      });
+      try {
+        localStorage.setItem("render3d:loadingScreenEnabled:v1", state.loading_screen_enabled ? "1" : "0");
+      } catch (_) {
+        /* ignore */
+      }
+    } catch (_) {
+      /* branding save is best-effort during setup */
+    }
   }
   if (step === "ecosystem") {
     state.ecosystem_mode =
@@ -382,7 +407,13 @@ function bindDynamic(root) {
 }
 
 async function refresh(root) {
-  const view = await api("/api/admin/server-setup");
+  const [view, branding] = await Promise.all([
+    api("/api/admin/server-setup"),
+    api("/api/admin/server-settings").catch(() => null),
+  ]);
+  if (branding && view.state) {
+    view.state.loading_screen_enabled = branding.loading_screen_enabled !== false;
+  }
   root._setupView = view;
   renderSteps(root, view.state || {}, view.catalog || {});
   root.querySelector("#server-setup-main").innerHTML = renderMain(view);

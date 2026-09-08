@@ -1,3 +1,12 @@
+## 2026-09-08 — Loading screen enable/disable (5s hold)
+
+- Server Settings + setup wizard: toggle “Show loading screen for 5 seconds”.
+- Branding API stores `loading_screen_enabled` / `loading_screen_duration_ms` (default ON / 5000).
+- Studio boot honors the setting; localStorage cache skips splash immediately when disabled.
+- Management `#settings` → Server section (aliases `#server-settings`); cache-bust `?v=20260908-loading-toggle`.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

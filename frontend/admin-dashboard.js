@@ -14,9 +14,9 @@ import {
 import {
   serverSettingsSectionHtml,
   bindServerSettingsSection,
-} from "./admin-server-settings.js?v=20260908-update-publishing";
-import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-server-setup";
-import { initStudioBranding } from "./studio-branding.js?v=20260908-update-publishing";
+} from "./admin-server-settings.js?v=20260908-loading-toggle";
+import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-loading-toggle";
+import { initStudioBranding } from "./studio-branding.js?v=20260908-loading-toggle";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -799,9 +799,16 @@ function bindAdminViewToolbar(root) {
       scrollToView(view);
     });
   });
+  const hashAliases = {
+    "server-settings": "settings",
+    server: "settings",
+    "admin-section-settings": "settings",
+    "admin-section-server-settings": "settings",
+  };
   const initialHash = (window.location.hash || "").replace(/^#/, "");
-  if (initialHash && root.querySelector(`#admin-section-${CSS.escape(initialHash)}`)) {
-    window.setTimeout(() => scrollToView(initialHash, { updateHash: false }), 80);
+  const resolvedHash = hashAliases[initialHash] || initialHash;
+  if (resolvedHash && root.querySelector(`#admin-section-${CSS.escape(resolvedHash)}`)) {
+    window.setTimeout(() => scrollToView(resolvedHash, { updateHash: false }), 80);
   }
   const sections = [...root.querySelectorAll("[data-admin-section][id]")];
   const observer = new IntersectionObserver((entries) => {
@@ -944,7 +951,7 @@ function renderAdminViewToolbar() {
     ["prompts", "Prompts", "History and errors"],
     ["network", "Network", "Collaboration graph"],
     ["training", "Training", "Ready data"],
-    ["server-settings", "Server Settings", "Name, logo, loading"],
+    ["settings", "Server", "Name, logo, loading screen"],
   ];
   return `
     <nav class="admin-view-toolbar" aria-label="Management dashboard views">
@@ -1183,9 +1190,9 @@ function renderDashboard(root, data) {
   void loadFeedbackInbox(root);
   bindServerSettingsSection(root, { api });
   const setupMount =
-    root.querySelector("#admin-section-server-settings .admin-agent-head") ||
-    root.querySelector("#admin-section-server-settings .admin-agent-head") ||
-    root.querySelector("#admin-section-server-settings");
+    root.querySelector("#admin-section-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-settings");
   mountServerSetupEntry(setupMount);
   void maybeAutoOpenServerSetup();
   adminNotificationsPager?.destroy?.();

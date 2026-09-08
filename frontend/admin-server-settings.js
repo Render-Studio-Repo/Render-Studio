@@ -20,12 +20,12 @@ function isVideoUrl(url = "") {
 
 export function serverSettingsSectionHtml() {
   return `
-    <section class="admin-panel admin-panel--server-settings" id="admin-section-server-settings" data-admin-section="server-settings">
+    <section class="admin-panel admin-panel--server-settings" id="admin-section-settings" data-admin-section="settings">
       <div class="admin-agent-head">
         <div>
           <h3>Server Settings</h3>
           <p class="muted small admin-panel-hint">
-            Branding, update publishing, and configuration profiles.
+            Branding, loading screen, update publishing, and configuration profiles.
             Public templates ship in <code>server-configurations/</code>; this machine’s live settings stay in
             <code>data/server-config/</code> (gitignored) so <code>git pull</code> cannot overwrite them.
           </p>
@@ -204,6 +204,13 @@ function renderBody(branding, config) {
           <div class="admin-field">
             <span>Loading screen</span>
             <p class="muted small">Replace the built-in PC boot stage with an image, GIF, or short muted video.</p>
+            <label class="admin-toggle-row" style="margin-bottom: 10px;">
+              <input type="checkbox" id="admin-loading-enabled" ${branding.loading_screen_enabled !== false ? "checked" : ""} />
+              <span>
+                <strong>Show loading screen for 5 seconds</strong>
+                <small class="muted">When off, Studio opens immediately with no boot splash.</small>
+              </span>
+            </label>
             <div class="admin-upload-row">
               <input type="file" id="admin-loading-file" accept="image/*,video/mp4,video/webm" />
               <button type="button" class="btn secondary btn-compact" id="admin-loading-upload">Upload loading screen</button>
@@ -399,6 +406,30 @@ function bindBranding(root, { api }) {
       await loadServerSettings(root, { api });
     } catch (err) {
       setStatus(root, err.message || "Loading screen upload failed", true);
+    }
+  });
+
+  root.querySelector("#admin-loading-enabled")?.addEventListener("change", async (event) => {
+    const enabled = !!event.target.checked;
+    setStatus(root, enabled ? "Enabling 5s loading screen…" : "Disabling loading screen…");
+    try {
+      await api("/api/admin/server-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          loading_screen_enabled: enabled,
+          loading_screen_duration_ms: enabled ? 5000 : 0,
+        }),
+      });
+      try {
+        localStorage.setItem("render3d:loadingScreenEnabled:v1", enabled ? "1" : "0");
+      } catch (_) {
+        /* ignore */
+      }
+      setStatus(root, enabled ? "Loading screen enabled (5 seconds)." : "Loading screen disabled.");
+      await loadServerSettings(root, { api });
+    } catch (err) {
+      setStatus(root, err.message || "Could not update loading screen", true);
+      event.target.checked = !enabled;
     }
   });
 

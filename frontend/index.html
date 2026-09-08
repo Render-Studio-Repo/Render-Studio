@@ -37,8 +37,8 @@
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
-  <link rel="stylesheet" href="/studio-branding.css?v=20260908-update-publishing" />
-  <link rel="stylesheet" href="/server-setup-wizard.css?v=20260908-server-setup" />
+  <link rel="stylesheet" href="/studio-branding.css?v=20260908-loading-toggle" />
+  <link rel="stylesheet" href="/server-setup-wizard.css?v=20260908-loading-toggle" />
   <script type="importmap">
   {
     "imports": {
@@ -258,10 +258,23 @@
     var tipIndex = 0;
     var BOOT_MIN_MS = 5000;
     try {
-      var navEntry = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
       var logoutReload = sessionStorage.getItem(LOGOUT_RELOAD_KEY) === "1";
       sessionStorage.removeItem(LOGOUT_RELOAD_KEY);
-      // Always hold the studio boot screen for ~5s so the load animation can play,
+      var loadingPref = null;
+      try { loadingPref = localStorage.getItem("render3d:loadingScreenEnabled:v1"); } catch (prefErr) {}
+      // Server Settings can disable the boot splash. Cached pref skips the 5s hold immediately.
+      if (loadingPref === "0") {
+        window.__studioBootMinUntil = 0;
+        document.body.classList.remove("studio-booting");
+        if (boot) {
+          boot.classList.add("is-done");
+          boot.setAttribute("aria-busy", "false");
+          boot.remove();
+        }
+        window.__dismissStudioBoot = window.__dismissStudioBoot || function () {};
+        return;
+      }
+      // Default / enabled: hold the studio boot screen for ~5s so the load animation can play,
       // except when we intentionally skip boot (logout hop / back from docs).
       if (!logoutReload) {
         window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
@@ -2942,8 +2955,8 @@
       });
   })();
   </script>
-  <script type="module" src="/studio-branding.js?v=20260908-update-publishing"></script>
-  <script type="module" src="/server-setup-wizard.js?v=20260908-server-setup"></script>
+  <script type="module" src="/studio-branding.js?v=20260908-loading-toggle"></script>
+  <script type="module" src="/server-setup-wizard.js?v=20260908-loading-toggle"></script>
   <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="model-pick-recommend-modal" class="auth-modal model-pick-recommend-modal hidden" role="dialog" aria-modal="true" aria-labelledby="model-pick-recommend-title" aria-hidden="true">

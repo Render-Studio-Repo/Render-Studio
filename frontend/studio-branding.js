@@ -5,6 +5,17 @@
 const ATTRIBUTION_REPO = "https://github.com/wprojects/Render-Studio";
 const ATTRIBUTION_LOGO = "/assets/loading-screen/render-studio-logo.png?v=20260908-branding";
 
+
+const LOADING_SCREEN_PREF_KEY = "render3d:loadingScreenEnabled:v1";
+
+function rememberLoadingScreenPref(enabled) {
+  try {
+    localStorage.setItem(LOADING_SCREEN_PREF_KEY, enabled ? "1" : "0");
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 let cachedBranding = null;
 
 function isVideoUrl(url = "") {
@@ -26,6 +37,8 @@ export async function fetchBranding() {
       logo_url: ATTRIBUTION_LOGO,
       loading_screen_url: "",
       loading_screen_builtin: true,
+      loading_screen_enabled: true,
+      loading_screen_duration_ms: 5000,
       attribution_logo_url: ATTRIBUTION_LOGO,
       attribution_repo_url: ATTRIBUTION_REPO,
     };
@@ -127,6 +140,42 @@ function applyProductLogo(branding) {
   }
 }
 
+function applyLoadingScreenPolicy(branding) {
+  const enabled = branding?.loading_screen_enabled !== false;
+  rememberLoadingScreenPref(enabled);
+  const durationMs = Math.max(
+    0,
+    Number(branding?.loading_screen_duration_ms ?? 5000) || 0,
+  );
+  const boot = document.getElementById("studio-boot-screen");
+  if (!enabled) {
+    window.__studioBootMinUntil = 0;
+    document.documentElement.dataset.loadingScreen = "off";
+    if (boot) {
+      boot.classList.add("is-done");
+      boot.setAttribute("aria-busy", "false");
+      document.body.classList.remove("studio-booting");
+      boot.remove();
+    }
+    try {
+      window.__dismissStudioBoot?.();
+    } catch (_) {
+      /* ignore */
+    }
+    return;
+  }
+  document.documentElement.dataset.loadingScreen = "on";
+  const holdFor = durationMs > 0 ? durationMs : 5000;
+  const existing = Number(window.__studioBootMinUntil || 0);
+  // Keep the earliest page-load deadline when it still covers the required hold.
+  if (!existing || existing < Date.now()) {
+    window.__studioBootMinUntil = Date.now() + holdFor;
+  } else {
+    const startedAt = existing - 5000;
+    window.__studioBootMinUntil = Math.max(existing, startedAt + holdFor);
+  }
+}
+
 export function applyBranding(branding = cachedBranding) {
   if (!branding) return branding;
   cachedBranding = branding;
@@ -135,6 +184,7 @@ export function applyBranding(branding = cachedBranding) {
   applyCustomLoadingScreen(boot, branding);
   applyProductName(branding);
   applyProductLogo(branding);
+  applyLoadingScreenPolicy(branding);
   document.documentElement.dataset.productName = branding.product_name || "Render Studio";
   return branding;
 }

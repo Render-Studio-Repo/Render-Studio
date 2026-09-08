@@ -1004,6 +1004,8 @@ class AdminFeedbackMessageRequest(BaseModel):
 
 class AdminServerSettingsUpdateRequest(BaseModel):
     product_name: str | None = Field(default=None, max_length=64)
+    loading_screen_enabled: bool | None = None
+    loading_screen_duration_ms: int | None = Field(default=None, ge=0, le=60_000)
 
 
 class AdminServerConfigUpdateRequest(BaseModel):
@@ -6351,10 +6353,25 @@ def admin_update_server_settings(
     user: dict[str, Any] = Depends(get_current_user),
 ):
     _require_a1projects_admin(user)
-    if body.product_name is None:
-        raise HTTPException(400, "Provide product_name to update.")
+    if (
+        body.product_name is None
+        and body.loading_screen_enabled is None
+        and body.loading_screen_duration_ms is None
+    ):
+        raise HTTPException(
+            400,
+            "Provide product_name, loading_screen_enabled, and/or loading_screen_duration_ms.",
+        )
     try:
-        return branding_service.update_product_name(body.product_name)
+        result = None
+        if body.product_name is not None:
+            result = branding_service.update_product_name(body.product_name)
+        if body.loading_screen_enabled is not None or body.loading_screen_duration_ms is not None:
+            result = branding_service.update_loading_screen_prefs(
+                enabled=body.loading_screen_enabled,
+                duration_ms=body.loading_screen_duration_ms,
+            )
+        return result or branding_service.admin_branding()
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

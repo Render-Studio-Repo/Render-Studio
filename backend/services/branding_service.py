@@ -17,6 +17,8 @@ from backend.config import settings
 DEFAULT_PRODUCT_NAME = "Render Studio"
 DEFAULT_LOGO_URL = "/assets/loading-screen/render-studio-logo.png?v=20260908-branding"
 DEFAULT_LOADING_SCREEN_URL = ""  # empty = built-in PC boot animation
+DEFAULT_LOADING_SCREEN_ENABLED = True
+DEFAULT_LOADING_SCREEN_DURATION_MS = 5000  # hold boot splash when enabled
 ATTRIBUTION_LOGO_URL = "/assets/loading-screen/render-studio-logo.png?v=20260908-branding"
 ATTRIBUTION_REPO_URL = "https://github.com/wprojects/Render-Studio"
 
@@ -46,6 +48,8 @@ def _default_settings() -> dict[str, Any]:
         "product_name": DEFAULT_PRODUCT_NAME,
         "logo_asset": None,
         "loading_screen_asset": None,
+        "loading_screen_enabled": DEFAULT_LOADING_SCREEN_ENABLED,
+        "loading_screen_duration_ms": DEFAULT_LOADING_SCREEN_DURATION_MS,
         "updated_at": None,
     }
 
@@ -83,16 +87,33 @@ def _asset_public_url(filename: str | None) -> str | None:
     return f"/api/branding/assets/{filename}?v={mtime}"
 
 
+def _loading_screen_enabled(raw: dict[str, Any]) -> bool:
+    if "loading_screen_enabled" not in raw:
+        return DEFAULT_LOADING_SCREEN_ENABLED
+    return bool(raw.get("loading_screen_enabled"))
+
+
+def _loading_screen_duration_ms(raw: dict[str, Any]) -> int:
+    try:
+        value = int(raw.get("loading_screen_duration_ms") or DEFAULT_LOADING_SCREEN_DURATION_MS)
+    except (TypeError, ValueError):
+        value = DEFAULT_LOADING_SCREEN_DURATION_MS
+    return max(0, min(value, 60_000))
+
+
 def public_branding() -> dict[str, Any]:
     raw = _read_raw()
     name = str(raw.get("product_name") or DEFAULT_PRODUCT_NAME).strip() or DEFAULT_PRODUCT_NAME
     logo_url = _asset_public_url(raw.get("logo_asset")) or DEFAULT_LOGO_URL
     loading_url = _asset_public_url(raw.get("loading_screen_asset")) or DEFAULT_LOADING_SCREEN_URL
+    enabled = _loading_screen_enabled(raw)
     return {
         "product_name": name,
         "logo_url": logo_url,
         "loading_screen_url": loading_url,
         "loading_screen_builtin": not bool(loading_url),
+        "loading_screen_enabled": enabled,
+        "loading_screen_duration_ms": _loading_screen_duration_ms(raw) if enabled else 0,
         "attribution_logo_url": ATTRIBUTION_LOGO_URL,
         "attribution_repo_url": ATTRIBUTION_REPO_URL,
         "updated_at": raw.get("updated_at"),
@@ -110,6 +131,8 @@ def admin_branding() -> dict[str, Any]:
             "product_name": DEFAULT_PRODUCT_NAME,
             "logo_url": DEFAULT_LOGO_URL,
             "loading_screen_url": DEFAULT_LOADING_SCREEN_URL,
+            "loading_screen_enabled": DEFAULT_LOADING_SCREEN_ENABLED,
+            "loading_screen_duration_ms": DEFAULT_LOADING_SCREEN_DURATION_MS,
             "attribution_logo_url": ATTRIBUTION_LOGO_URL,
             "attribution_repo_url": ATTRIBUTION_REPO_URL,
         },
@@ -124,6 +147,31 @@ def update_product_name(product_name: str) -> dict[str, Any]:
         raise ValueError("Product name must be 64 characters or fewer.")
     raw = _read_raw()
     raw["product_name"] = name
+    _write_raw(raw)
+    return admin_branding()
+
+
+def update_loading_screen_prefs(
+    *,
+    enabled: bool | None = None,
+    duration_ms: int | None = None,
+) -> dict[str, Any]:
+    """Enable/disable the studio boot loading screen (default hold: 5 seconds)."""
+    if enabled is None and duration_ms is None:
+        raise ValueError("Provide loading_screen_enabled and/or loading_screen_duration_ms.")
+    raw = _read_raw()
+    if enabled is not None:
+        raw["loading_screen_enabled"] = bool(enabled)
+    if duration_ms is not None:
+        try:
+            ms = int(duration_ms)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("loading_screen_duration_ms must be an integer.") from exc
+        if ms < 0 or ms > 60_000:
+            raise ValueError("loading_screen_duration_ms must be between 0 and 60000.")
+        raw["loading_screen_duration_ms"] = ms
+    elif enabled is True and not raw.get("loading_screen_duration_ms"):
+        raw["loading_screen_duration_ms"] = DEFAULT_LOADING_SCREEN_DURATION_MS
     _write_raw(raw)
     return admin_branding()
 
