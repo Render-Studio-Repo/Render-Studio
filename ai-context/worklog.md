@@ -7,6 +7,8 @@
 
 ---
 
+## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
+
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
 - Create order matches VibeCAD strip: Box, Cylinder, Sphere, Cone, Torus, Extrude, Revolve, Hole, Pad (+ Create Sketch).
 - Larger ribbon icons; cache-bust `?v=20260801-vibecad-tools`.
