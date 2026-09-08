@@ -4,6 +4,10 @@
 
 > Comprehensive product history reconstructed from `ai-context/worklog.md` (2026-07-19 onward) and git non-backup commits / daily Auto-backup diffs (2026-06-19, 2026-07-06→17). Date headings are deployment/session milestones, not SemVer releases. Auto-backup-only days with no durable frontend/backend deltas are omitted. Some early Jul 6–15 items marked as baseline or uncertain in source notes are stated without inventing boundaries.
 
+## 2026-09-08
+
+- Management dashboard **Servers** tab: live CPU/RAM/load + top processes for the Studio host and registered Mac agents; build a Cursor ops prompt (BYOK or platform key) with **Open in Cursor** / copy.
+
 ## 2026-07-27
 
 - Management dashboard has a Changelog tab that shows the live `CHANGELOG.md` from the repo (Refresh reloads the latest copy).

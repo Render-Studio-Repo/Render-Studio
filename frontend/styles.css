@@ -42539,3 +42539,354 @@ body.xr-presenting .xr-capture-ready-banner {
   width: 100%;
 }
 
+
+/* ── Management Servers (Mac / host monitor) ───────────────────────────── */
+.admin-panel--macmon {
+  scroll-margin-top: 88px;
+}
+
+.macmon-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.macmon-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.macmon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 720px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.macmon-server-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  background: rgba(13, 17, 23, 0.55);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.macmon-server-card:hover {
+  border-color: rgba(88, 166, 255, 0.45);
+}
+
+.macmon-server-card.active {
+  border-color: rgba(88, 166, 255, 0.75);
+  background: rgba(31, 111, 235, 0.14);
+}
+
+.macmon-server-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.macmon-mini-metrics {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.macmon-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.macmon-pill--on {
+  background: rgba(63, 185, 80, 0.18);
+  color: #3fb950;
+}
+
+.macmon-pill--off {
+  background: rgba(139, 148, 158, 0.18);
+  color: var(--muted);
+}
+
+.macmon-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(139, 148, 158, 0.18);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.macmon-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #58a6ff;
+}
+
+.macmon-bar--ok > span { background: #3fb950; }
+.macmon-bar--warn > span { background: #d29922; }
+.macmon-bar--crit > span { background: #f85149; }
+.macmon-bar--mem > span { background: #a371f7; }
+.macmon-bar--mem.macmon-bar--ok > span { background: #a371f7; }
+
+.macmon-main {
+  min-width: 0;
+}
+
+.macmon-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.macmon-detail-head h4 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+
+.macmon-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.macmon-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.macmon-stats article {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 148, 158, 0.2);
+  background: rgba(22, 27, 34, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.macmon-stats span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.macmon-stats strong {
+  font-size: 1.25rem;
+}
+
+.macmon-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.95fr);
+  gap: 12px;
+}
+
+.macmon-panel {
+  border: 1px solid rgba(139, 148, 158, 0.2);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(13, 17, 23, 0.4);
+  min-width: 0;
+}
+
+.macmon-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.macmon-panel-head h5 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.macmon-proc-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.macmon-proc-head,
+.macmon-proc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) 88px 88px 64px;
+  gap: 8px;
+  align-items: center;
+}
+
+.macmon-proc-head {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 4px 4px;
+  border-bottom: 1px solid rgba(139, 148, 158, 0.18);
+}
+
+.macmon-proc-row {
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: rgba(22, 27, 34, 0.35);
+  font-size: 12px;
+}
+
+.macmon-proc-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.macmon-proc-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macmon-proc-name em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.macmon-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.macmon-label textarea,
+.macmon-label select,
+.macmon-prompt-out {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  background: rgba(13, 17, 23, 0.75);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  resize: vertical;
+}
+
+.macmon-prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 8px;
+}
+
+.macmon-prompt-row .macmon-label {
+  flex: 1 1 180px;
+  margin-bottom: 0;
+}
+
+.macmon-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.macmon-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.macmon-open-cursor.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.macmon-prompt-out {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 180px;
+}
+
+.macmon-logs {
+  margin-top: 12px;
+}
+
+.macmon-logs pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.7);
+  border: 1px solid rgba(139, 148, 158, 0.2);
+  white-space: pre-wrap;
+  font-size: 11px;
+}
+
+.macmon-token-banner {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(210, 153, 34, 0.45);
+  background: rgba(210, 153, 34, 0.1);
+}
+
+.macmon-token-banner pre {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.7);
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .macmon-layout,
+  .macmon-grid,
+  .macmon-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .macmon-list {
+    max-height: none;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .macmon-server-card {
+    min-width: 200px;
+  }
+
+  .macmon-proc-head,
+  .macmon-proc-row {
+    grid-template-columns: minmax(0, 1.4fr) 72px 72px 52px;
+  }
+}

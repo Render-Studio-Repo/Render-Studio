@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -60,6 +60,7 @@ from backend.services import teams_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
+from backend.services import mac_server_monitor_service
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
 from backend.ws.manager import hub
 from backend.auth import decode_token
@@ -995,6 +996,23 @@ class AdminFeedbackMessageRequest(BaseModel):
 class AdminNewUserReviewRequest(BaseModel):
     status: str = Field(..., description="new | checked | contacted | dismissed")
     note: str | None = Field(None, max_length=1000)
+
+
+class AdminMacServerRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    hostname: str | None = Field(None, max_length=120)
+    platform: str = Field("darwin", max_length=40)
+    labels: list[str] = Field(default_factory=list, max_length=8)
+
+
+class AdminMacServerCursorPromptRequest(BaseModel):
+    server_id: str = Field(..., min_length=1, max_length=64)
+    focus: str | None = Field(None, max_length=2000)
+    extra: str | None = Field(None, max_length=4000)
+    use_ai: bool = False
+    ai_key_id: str | None = Field(default=None, max_length=64)
+    ai_key_source: str | None = Field(default=None, description="personal, team, or platform")
+    speed: str = "fast"
 
 
 class WiringDiagnoseRequest(BaseModel):
@@ -6294,6 +6312,136 @@ def admin_changelog(user: dict[str, Any] = Depends(get_current_user)):
         "path": "CHANGELOG.md",
         "bytes": len(markdown.encode("utf-8")),
         "mtime": mtime,
+    }
+
+
+@app.get("/api/admin/mac-servers")
+def admin_mac_servers_list(user: dict[str, Any] = Depends(get_current_user)):
+    """Live Mac/host performance snapshots for Management → Servers."""
+    _require_a1projects_admin(user)
+    servers = mac_server_monitor_service.list_servers(include_local=True)
+    return {
+        "servers": servers,
+        "poll_seconds": 3,
+        "stale_after_seconds": mac_server_monitor_service.STALE_SECONDS,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/admin/mac-servers/{server_id}")
+def admin_mac_server_detail(server_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    row = mac_server_monitor_service.get_server(server_id)
+    if not row:
+        raise HTTPException(404, "Server not found")
+    return {"server": row}
+
+
+@app.post("/api/admin/mac-servers")
+def admin_mac_server_register(
+    body: AdminMacServerRegisterRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    row = mac_server_monitor_service.register_server(
+        name=body.name,
+        hostname=body.hostname or "",
+        platform=body.platform or "darwin",
+        labels=body.labels or [],
+    )
+    return {"ok": True, "server": row}
+
+
+@app.post("/api/admin/mac-servers/{server_id}/rotate-token")
+def admin_mac_server_rotate_token(server_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    row = mac_server_monitor_service.rotate_token(server_id)
+    if not row:
+        raise HTTPException(404, "Server not found")
+    return {"ok": True, "server": row}
+
+
+@app.delete("/api/admin/mac-servers/{server_id}")
+def admin_mac_server_delete(server_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    if not mac_server_monitor_service.revoke_server(server_id):
+        raise HTTPException(404, "Server not found")
+    return {"ok": True}
+
+
+@app.post("/api/admin/mac-servers/{server_id}/ingest")
+def admin_mac_server_ingest(
+    server_id: str,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_mac_server_token: str | None = Header(default=None, alias="X-Mac-Server-Token"),
+):
+    """Agent heartbeat — authenticated by per-server ingest token (not user JWT)."""
+    token = (x_mac_server_token or "").strip()
+    if not token and isinstance(body, dict):
+        token = str(body.get("token") or "").strip()
+    try:
+        row = mac_server_monitor_service.ingest_heartbeat(server_id, token, body if isinstance(body, dict) else {})
+    except PermissionError as exc:
+        raise HTTPException(401, str(exc)) from exc
+    return {"ok": True, "server": row, "latest": row.get("latest") or {}}
+
+
+@app.post("/api/admin/mac-servers/cursor-prompt")
+def admin_mac_server_cursor_prompt(
+    body: AdminMacServerCursorPromptRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Build a Cursor-ready ops prompt from live metrics; optionally refine with AI (BYOK / platform)."""
+    _require_a1projects_admin(user)
+    server = mac_server_monitor_service.get_server(body.server_id)
+    if not server:
+        raise HTTPException(404, "Server not found")
+    base_prompt = mac_server_monitor_service.build_cursor_prompt_context(
+        server,
+        focus=body.focus or "",
+        extra=body.extra or "",
+    )
+    prompt = base_prompt
+    ai_meta: dict[str, Any] = {"used": False}
+    if body.use_ai:
+        try:
+            ai = _get_ai_for_user(
+                user,
+                speed=body.speed or "fast",
+                key_id=body.ai_key_id,
+                key_source=body.ai_key_source,
+            )
+            refined, call_trace = ai._call_model(
+                (
+                    "You write concise Cursor agent prompts for Render Studio ops debugging. "
+                    "Return ONLY the prompt text (no markdown fences). Keep under 3500 characters. "
+                    "Include the metrics summary, top processes, and actionable investigation steps."
+                ),
+                base_prompt,
+                max_tokens=2048,
+                json_response=False,
+            )
+            text = str(refined or "").strip()
+            if text:
+                prompt = text
+                ai_meta = {
+                    "used": True,
+                    "model": getattr(ai, "model", None),
+                    "provider": getattr(ai, "provider", None),
+                    "trace_id": (call_trace or {}).get("trace_id"),
+                }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(502, f"AI prompt refine failed: {exc}") from exc
+    urls = mac_server_monitor_service.cursor_prompt_urls(prompt)
+    return {
+        "ok": True,
+        "server_id": body.server_id,
+        "server_name": server.get("name"),
+        "prompt": prompt,
+        "ai": ai_meta,
+        **urls,
     }
 
 

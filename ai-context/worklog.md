@@ -1,4 +1,11 @@
-## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
+## 2026-09-08 — Management Servers tab (Mac + host monitor → Cursor)
+
+- New Management dashboard tab **Servers**: live CPU/memory/load/disk and top processes.
+- Always shows **Studio host** (builtin `/proc` + `ps` sample). Register Mac agents via one-time ingest token + `scripts/mac-server-agent.py`.
+- Cursor bridge: Build prompt from live metrics/logs; optional AI refine with platform OpenAI/Anthropic or personal BYOK; **Open in Cursor** uses official prompt deeplink (`cursor://` / `cursor.com/link/prompt`) and always copies full text.
+- Files: `backend/services/mac_server_monitor_service.py`, thin routes in `main.py`, `frontend/admin-mac-servers.js`, agent script, CSS `?v=20260908-macmon`. Backend restart required for API routes.
+
+---
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
 - Create order matches VibeCAD strip: Box, Cylinder, Sphere, Cone, Torus, Extrude, Revolve, Hole, Pad (+ Create Sketch).

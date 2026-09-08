@@ -11,6 +11,10 @@ import {
   adminNotificationsSectionHtml,
   createAdminNotificationsPager,
 } from "./admin-notifications.js?v=20260726-admin-notif";
+import {
+  adminMacServersSectionHtml,
+  createMacServersMonitor,
+} from "./admin-mac-servers.js?v=20260908-macmon";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -296,6 +300,7 @@ let adminRealtimeSocket = null;
 let adminRealtimeReconnectTimer = null;
 let adminDashboardRoot = null;
 let adminNotificationsPager = null;
+let macServersMonitor = null;
 
 function clearChartCleanups() {
   chartCleanups.forEach((fn) => {
@@ -927,6 +932,7 @@ function renderAdminViewToolbar() {
   const items = [
     ["overview", "Overview", "Stats and trends"],
     ["changelog", "Changelog", "Latest product notes"],
+    ["servers", "Servers", "Mac + host load"],
     ["notifications", "Notifications", "Review one by one"],
     ["requests", "Requests", "Suggestions and bugs"],
     ["new-users", "New Users", "Signup alerts"],
@@ -979,6 +985,8 @@ function renderDashboard(root, data) {
         <p class="muted small">Loading latest CHANGELOG.md…</p>
       </div>
     </section>
+
+    ${adminMacServersSectionHtml()}
 
     <section class="admin-stats-grid">
       ${statCard("Users", formatNumber(stats.user_count), "Registered accounts")}
@@ -1181,6 +1189,8 @@ function renderDashboard(root, data) {
     authBlobUrl,
   });
   adminNotificationsPager.mount(root);
+  macServersMonitor?.destroy?.();
+  macServersMonitor = null;
   const search = root.querySelector("#admin-user-search");
   const lookupList = root.querySelector("#admin-user-lookup-list");
   const allUsers = data.users || [];
@@ -1200,6 +1210,17 @@ function renderDashboard(root, data) {
 
   clearChartCleanups();
   bindAdminViewToolbar(root);
+  macServersMonitor = createMacServersMonitor({
+    api,
+    onStatus: (kind, message) => {
+      if (kind === "error") console.warn("[macmon]", message);
+    },
+  });
+  macServersMonitor.mount(root);
+  chartCleanups.push(() => {
+    macServersMonitor?.destroy?.();
+    macServersMonitor = null;
+  });
   const chartsHost = root.querySelector("#admin-activity-charts");
   const networkHost = root.querySelector("#admin-network-brain");
   if (chartsHost) chartCleanups.push(mountActivityCharts(chartsHost, data.daily || []));
