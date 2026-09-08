@@ -1,0 +1,1 @@
+Propose minimal local-settings patches. Never enable public projects or outbound update channels unless the admin asks. Prefer Slack enterprise webhooks over Discord when they want chat notifications.

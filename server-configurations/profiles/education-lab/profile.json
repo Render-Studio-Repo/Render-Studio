@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "profile_id": "education-lab",
+  "name": "Education Lab",
+  "description": "Education / lab profile with docs-only automatic updates and private projects by default.",
+  "popularity": 54,
+  "tags": ["education", "lab"],
+  "branding": {
+    "product_name": "Render Studio Lab"
+  },
+  "permissions": {
+    "default_project_visibility": "private",
+    "allow_public_projects": true,
+    "new_user_trial_credits_enabled": true
+  },
+  "update_publishing": {
+    "enabled": true,
+    "auto_publish": true,
+    "targets": {
+      "docs": true,
+      "slack": false,
+      "discord": false,
+      "linkedin": false
+    }
+  },
+  "prompts": {
+    "system": "prompts/system.md",
+    "instruction": "prompts/instruction.md"
+  }
+}

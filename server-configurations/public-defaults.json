@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "profile_id": "public-defaults",
+  "name": "Public Render Studio defaults",
+  "description": "Shipped with the public repo. Auto update publishing is ON for docs only. Local servers copy this once into data/server-config/ and then own their settings.",
+  "popularity": 100,
+  "tags": ["public", "docs", "default"],
+  "branding": {
+    "product_name": "Render Studio",
+    "logo_asset": null,
+    "loading_screen_asset": null
+  },
+  "permissions": {
+    "default_project_visibility": "private",
+    "allow_public_projects": true,
+    "new_user_trial_credits_enabled": true
+  },
+  "marketplace": {
+    "enabled": true,
+    "platform_fee_bps": 1000
+  },
+  "update_publishing": {
+    "enabled": true,
+    "auto_publish": true,
+    "trusted_release_branch": "master",
+    "workflow_doc": "docs/UPDATE-PUBLISHING.md",
+    "update_log_path": "data/server-config/updates/UPDATE-LOG.md",
+    "ledger_path": "data/server-config/publication-ledger.json",
+    "targets": {
+      "docs": true,
+      "slack": false,
+      "discord": false,
+      "linkedin": false
+    },
+    "instructions": {
+      "docs": "Writes to frontend/docs/updates/shipped.json and syncs milestones. Always safe for the public repo.",
+      "slack": "Set SLACK_UPDATES_WEBHOOK_URL in the environment (Incoming Webhook). Enable the Slack toggle here. Secrets stay out of git.",
+      "discord": "Configure DISCORD_BOT_TOKEN + DISCORD_UPDATES_CHANNEL_ID or DISCORD_UPDATES_WEBHOOK_URL, then enable Discord here.",
+      "linkedin": "Configure LINKEDIN_ACCESS_TOKEN + LINKEDIN_AUTHOR_URN, then enable LinkedIn here."
+    }
+  },
+  "secrets_refs": {
+    "slack_webhook": "SLACK_UPDATES_WEBHOOK_URL",
+    "discord_bot_token": "DISCORD_BOT_TOKEN",
+    "discord_webhook": "DISCORD_UPDATES_WEBHOOK_URL",
+    "linkedin_token": "LINKEDIN_ACCESS_TOKEN"
+  }
+}

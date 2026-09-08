@@ -1250,3 +1250,11 @@ Shipped the first real gameplay loop — not full instrumentation of every featu
 - Finished the Quest Book modal begun in a disconnected session: added the full modal CSS block to `frontend/styles.css`.
 - Fixed first-node tooltip clipping; gold menu button + Studio walkthrough already landed.
 - Plan `.cursor/plans/quest_book_menu_entry_b3ec02ac.plan.md` marked complete.
+
+## 2026-09-08 — Server update publishing + local settings
+
+- Added `server-configurations/` public templates (docs-only auto publish ON) vs gitignored `data/server-config/` local runtime.
+- Added `docs/UPDATE-PUBLISHING.md`, `instructions/server/UPDATE-DOCS.md`, and `instructions/actions/` playbooks.
+- Management dashboard Server Settings: branding + update-publishing toggles (docs/Slack/Discord/LinkedIn) + profile import.
+- Publisher: `scripts/publish-server-updates.py` with publication ledger; dry-run verified for docs channel.
+- Public push/pull must not overwrite private server settings (local files under `data/`).

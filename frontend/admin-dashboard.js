@@ -11,6 +11,11 @@ import {
   adminNotificationsSectionHtml,
   createAdminNotificationsPager,
 } from "./admin-notifications.js?v=20260726-admin-notif";
+import {
+  serverSettingsSectionHtml,
+  bindServerSettingsSection,
+} from "./admin-server-settings.js?v=20260908-update-publishing";
+import { initStudioBranding } from "./studio-branding.js?v=20260908-update-publishing";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -938,6 +943,7 @@ function renderAdminViewToolbar() {
     ["prompts", "Prompts", "History and errors"],
     ["network", "Network", "Collaboration graph"],
     ["training", "Training", "Ready data"],
+    ["server-settings", "Server Settings", "Name, logo, loading"],
   ];
   return `
     <nav class="admin-view-toolbar" aria-label="Management dashboard views">
@@ -1144,6 +1150,8 @@ function renderDashboard(root, data) {
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
       <p class="muted small">Generated ${formatDate(data.generated_at)}</p>
     </section>
+
+    ${serverSettingsSectionHtml()}
   `;
 
   root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
@@ -1172,6 +1180,7 @@ function renderDashboard(root, data) {
   void loadNewUserAlerts(root);
   void loadTrialCredits(root);
   void loadFeedbackInbox(root);
+  bindServerSettingsSection(root, { api });
   adminNotificationsPager?.destroy?.();
   adminNotificationsPager = createAdminNotificationsPager({
     api,
@@ -1766,6 +1775,7 @@ export function initAdminDashboard() {
   const root = document.getElementById("admin-dashboard-root");
   if (!root) return;
   adminDashboardRoot = root;
+  void initStudioBranding();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
   });
