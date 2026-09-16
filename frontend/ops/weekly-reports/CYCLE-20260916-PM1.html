@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weekly Agent-Bus Report — CYCLE-20260916-PM1</title>
+  <meta
+    name="description"
+    content="Render Studio weekly HTML agent-bus report for CYCLE-20260916-PM1 with searchable text, infra flaw memo, and markup/editor tooling."
+  />
+  <meta property="og:title" content="Render Studio Weekly Agent-Bus Report" />
+  <meta
+    property="og:description"
+    content="Searchable first weekly HTML report covering cycle CYCLE-20260916-PM1, infra flaw notes, ticket tracking, and PM feedback markup tools."
+  />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/png" href="/render3d-logo.png?v=20260715-new-logo" sizes="any" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
+  <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
+  <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=20260916-weekly-report" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --weekly-bg: #08101c;
+      --weekly-panel: rgba(11, 19, 31, 0.92);
+      --weekly-panel-2: rgba(18, 28, 46, 0.92);
+      --weekly-border: rgba(126, 160, 210, 0.22);
+      --weekly-border-strong: rgba(238, 164, 87, 0.52);
+      --weekly-text: #e8edf7;
+      --weekly-muted: #a7b1c2;
+      --weekly-accent: #f0883e;
+      --weekly-accent-2: #58a6ff;
+      --weekly-good: #3fb950;
+      --weekly-warn: #ffb86c;
+      --weekly-shadow: 0 22px 60px rgba(0, 0, 0, 0.38);
+      --weekly-radius: 22px;
+    }
+
+    body.weekly-report-body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--weekly-text);
+      background:
+        radial-gradient(circle at top right, rgba(88, 166, 255, 0.18), transparent 26%),
+        radial-gradient(circle at top left, rgba(240, 136, 62, 0.16), transparent 24%),
+        linear-gradient(180deg, #07101a 0%, #091320 42%, #070d17 100%);
+    }
+
+    .weekly-report-whitepaper-link {
+      display: block;
+      padding: 16px 24px;
+      background: linear-gradient(90deg, rgba(240, 136, 62, 0.28), rgba(88, 166, 255, 0.16));
+      color: #fff6ea;
+      text-decoration: none;
+      font: 700 0.96rem/1.4 "Manrope", system-ui, sans-serif;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .weekly-report-whitepaper-link:hover,
+    .weekly-report-whitepaper-link:focus-visible {
+      background: linear-gradient(90deg, rgba(240, 136, 62, 0.36), rgba(88, 166, 255, 0.24));
+      outline: none;
+    }
+
+    .weekly-report-shell {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 28px 22px 56px;
+    }
+
+    .weekly-report-toolbar {
+      margin-top: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(7, 12, 20, 0.74);
+      backdrop-filter: blur(22px);
+    }
+
+    .weekly-report-toolbar .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+
+    .weekly-auth-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--weekly-muted);
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 0.88rem;
+    }
+
+    .weekly-report-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(360px, 0.95fr);
+      gap: 24px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    .weekly-report-main,
+    .weekly-report-rail {
+      display: grid;
+      gap: 20px;
+    }
+
+    .weekly-card {
+      border: 1px solid var(--weekly-border);
+      border-radius: var(--weekly-radius);
+      background: var(--weekly-panel);
+      box-shadow: var(--weekly-shadow);
+      overflow: hidden;
+    }
+
+    .weekly-card-body {
+      padding: 22px 24px;
+    }
+
+    .weekly-hero {
+      display: grid;
+      gap: 18px;
+    }
+
+    .weekly-kicker {
+      margin: 0;
+      color: var(--weekly-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font: 700 0.77rem/1.4 "Manrope", system-ui, sans-serif;
+    }
+
+    .weekly-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .weekly-title-row h1,
+    .weekly-section-head h2,
+    .weekly-section-head h3,
+    .weekly-tool-head h2,
+    .weekly-tool-head h3 {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+    }
+
+    .weekly-title-row h1 {
+      font-size: clamp(1.9rem, 3vw, 2.7rem);
+      line-height: 1.06;
+    }
+
+    .weekly-badges,
+    .weekly-meta-grid,
+    .weekly-search-row,
+    .weekly-pill-row,
+    .weekly-feedback-actions,
+    .weekly-feedback-status-row,
+    .weekly-ai-actions,
+    .weekly-recent-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .weekly-badge,
+    .weekly-pill,
+    .weekly-id-chip,
+    .weekly-recent-list code {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--weekly-text);
+      font-size: 0.85rem;
+    }
+
+    .weekly-badge.is-warn,
+    .weekly-pill.is-warn {
+      border-color: rgba(255, 184, 108, 0.34);
+      color: #ffd9ab;
+      background: rgba(255, 184, 108, 0.1);
+    }
+
+    .weekly-badge.is-good,
+    .weekly-pill.is-good {
+      border-color: rgba(63, 185, 80, 0.32);
+      color: #baf3c2;
+      background: rgba(63, 185, 80, 0.1);
+    }
+
+    .weekly-copy {
+      margin: 0;
+      color: var(--weekly-muted);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    .weekly-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 14px;
+    }
+
+    .weekly-meta-grid article,
+    .weekly-small-card,
+    .weekly-search,
+    .weekly-tool-panel,
+    .weekly-id-panel,
+    .weekly-feedback-panel,
+    .weekly-editor-panel {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      background: var(--weekly-panel-2);
+    }
+
+    .weekly-meta-grid article,
+    .weekly-small-card,
+    .weekly-tool-panel,
+    .weekly-id-panel,
+    .weekly-feedback-panel,
+    .weekly-editor-panel {
+      padding: 16px 18px;
+    }
+
+    .weekly-meta-grid span,
+    .weekly-table td small,
+    .weekly-note,
+    .weekly-muted {
+      color: var(--weekly-muted);
+    }
+
+    .weekly-meta-grid strong,
+    .weekly-id-grid code,
+    .weekly-table code,
+    .weekly-status-value,
+    .weekly-field code,
+    .weekly-recent-list code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .weekly-section-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .weekly-section-head p,
+    .weekly-tool-head p {
+      margin: 6px 0 0;
+      color: var(--weekly-muted);
+    }
+
+    .weekly-small-card {
+      display: grid;
+      gap: 10px;
+    }
+
+    .weekly-small-card h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    #infra-flaw {
+      display: grid;
+      gap: 14px;
+    }
+
+    #infra-flaw p {
+      margin: 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--weekly-accent);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.04);
+      line-height: 1.75;
+    }
+
+    .weekly-search {
+      padding: 18px 20px;
+    }
+
+    .weekly-search-row {
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .weekly-search label,
+    .weekly-field label,
+    .weekly-fieldset legend,
+    .weekly-note-label {
+      display: block;
+      margin-bottom: 7px;
+      font: 700 0.83rem/1.4 "Manrope", system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #dfe6f2;
+    }
+
+    .weekly-search input,
+    .weekly-field input,
+    .weekly-field textarea,
+    .weekly-field select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 13px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(4, 10, 18, 0.9);
+      color: var(--weekly-text);
+      font: inherit;
+    }
+
+    .weekly-field textarea {
+      resize: vertical;
+      min-height: 92px;
+    }
+
+    .weekly-report-main [data-search-block].is-filtered {
+      display: none;
+    }
+
+    .weekly-table-wrap {
+      overflow-x: auto;
+    }
+
+    .weekly-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+    }
+
+    .weekly-table th,
+    .weekly-table td {
+      padding: 14px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .weekly-table th {
+      color: #dfe6f2;
+      font: 700 0.8rem/1.3 "Manrope", system-ui, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .weekly-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .weekly-link-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+      color: var(--weekly-muted);
+    }
+
+    .weekly-link-list a,
+    .weekly-inline-link {
+      color: #b9d7ff;
+    }
+
+    .weekly-report-rail {
+      position: sticky;
+      top: 18px;
+    }
+
+    .weekly-tool-head {
+      margin-bottom: 16px;
+    }
+
+    .weekly-id-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .weekly-id-row {
+      display: grid;
+      grid-template-columns: 108px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    .weekly-id-row span {
+      color: var(--weekly-muted);
+      font-size: 0.88rem;
+    }
+
+    .weekly-id-row code,
+    .weekly-status-value,
+    .weekly-field code {
+      display: block;
+      padding: 10px 11px;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      border-radius: 13px;
+      background: rgba(0, 0, 0, 0.26);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #f1f5fb;
+      font-size: 0.82rem;
+    }
+
+    .weekly-editor-stage {
+      position: relative;
+      margin-top: 14px;
+      border-radius: 18px;
+      border: 1px dashed rgba(255, 255, 255, 0.16);
+      background:
+        linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+      background-size: 22px 22px;
+      background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+      min-height: 280px;
+      overflow: hidden;
+    }
+
+    .weekly-editor-stack {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 280px;
+      cursor: crosshair;
+    }
+
+    .weekly-editor-stack.is-pan {
+      cursor: default;
+    }
+
+    .weekly-editor-placeholder {
+      max-width: 320px;
+      padding: 34px 26px;
+      text-align: center;
+      color: var(--weekly-muted);
+    }
+
+    .weekly-editor-img,
+    .weekly-editor-svg,
+    .weekly-region-overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .weekly-editor-img {
+      object-fit: contain;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .weekly-editor-svg {
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .weekly-region-overlay {
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .weekly-region-box {
+      position: absolute;
+      border: 2px dashed var(--weekly-accent-2);
+      border-radius: 14px;
+      background: rgba(88, 166, 255, 0.12);
+      box-shadow: 0 0 0 9999px rgba(3, 8, 15, 0.28);
+    }
+
+    .weekly-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .weekly-toolbar button,
+    .weekly-copy-btn,
+    .weekly-feedback-actions .btn,
+    .weekly-ai-actions .btn {
+      cursor: pointer;
+    }
+
+    .weekly-tool-btn,
+    .weekly-copy-btn {
+      padding: 9px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--weekly-text);
+      font: 600 0.88rem/1.2 "IBM Plex Sans", system-ui, sans-serif;
+    }
+
+    .weekly-tool-btn.is-active,
+    .weekly-copy-btn:hover,
+    .weekly-tool-btn:hover {
+      border-color: rgba(240, 136, 62, 0.48);
+      background: rgba(240, 136, 62, 0.14);
+    }
+
+    .weekly-toolbar input[type="color"] {
+      width: 42px;
+      height: 40px;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .weekly-toolbar input[type="range"] {
+      width: 120px;
+    }
+
+    .weekly-toolbar .weekly-range-label {
+      color: var(--weekly-muted);
+      font-size: 0.87rem;
+    }
+
+    .weekly-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .weekly-feedback-panel,
+    .weekly-editor-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .weekly-feedback-status-row {
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .weekly-status-value {
+      min-height: 20px;
+    }
+
+    .weekly-status-value.is-error {
+      border-color: rgba(255, 123, 114, 0.35);
+      color: #ffb4ae;
+    }
+
+    .weekly-status-value.is-ok {
+      border-color: rgba(63, 185, 80, 0.35);
+      color: #baf3c2;
+    }
+
+    .weekly-recent-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .weekly-recent-list li {
+      display: contents;
+    }
+
+    .weekly-feedback-json {
+      margin: 0;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(0, 0, 0, 0.24);
+      overflow: auto;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      color: #d8e4f7;
+    }
+
+    .weekly-context-menu {
+      position: fixed;
+      z-index: 9999;
+      min-width: 220px;
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(7, 12, 20, 0.97);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+    }
+
+    .weekly-context-menu strong {
+      display: block;
+      margin: 0 0 10px;
+      padding: 4px 6px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      color: #fff5eb;
+      font: 700 0.86rem/1.4 "Manrope", system-ui, sans-serif;
+    }
+
+    .weekly-context-menu button {
+      width: 100%;
+      margin: 0;
+      padding: 10px 11px;
+      border: 0;
+      border-radius: 12px;
+      text-align: left;
+      color: var(--weekly-text);
+      background: transparent;
+      font: 500 0.92rem/1.3 "IBM Plex Sans", system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    .weekly-context-menu button:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .weekly-health-note {
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 184, 108, 0.24);
+      background: rgba(255, 184, 108, 0.08);
+      color: #ffe1b6;
+    }
+
+    .weekly-foot {
+      margin-top: 10px;
+      color: var(--weekly-muted);
+      text-align: center;
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 1180px) {
+      .weekly-report-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .weekly-report-rail {
+        position: static;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .weekly-report-shell {
+        padding: 18px 14px 42px;
+      }
+
+      .weekly-id-row,
+      .weekly-field-grid,
+      .weekly-meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .weekly-card-body {
+        padding: 18px 16px;
+      }
+
+      .weekly-table {
+        min-width: 560px;
+      }
+    }
+  </style>
+</head>
+<body class="weekly-report-body">
+  <a
+    class="weekly-report-whitepaper-link"
+    href="https://render3d.app/docs/whitepaper"
+    target="_blank"
+    rel="noopener noreferrer"
+  >Read the Render Studio whitepaper before triage or PM review.</a>
+
+  <div class="weekly-report-shell">
+    <header class="toolbar weekly-report-toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render Studio" />
+          <h1>Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/admin-dashboard.html" class="nav-tab" role="menuitem">Management</a>
+          <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+          <a href="/ops/weekly-reports/CYCLE-20260916-PM1.html" class="nav-tab active" role="menuitem">Weekly report</a>
+        </div>
+      </nav>
+      <div class="toolbar-spacer"></div>
+      <div class="weekly-auth-pill" id="weekly-auth-pill" aria-live="polite">Checking sign-in status…</div>
+    </header>
+
+    <div class="weekly-report-grid">
+      <main class="weekly-report-main">
+        <section
+          class="weekly-card"
+          data-search-block
+          data-id-context
+          data-project-id="render-studio"
+          data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html"
+          data-log-id="CYCLE-20260916-PM1"
+          data-tracking-id="INTRO-20260916"
+          data-ref-id="INTRO-20260916"
+        >
+          <div class="weekly-card-body weekly-hero">
+            <p class="weekly-kicker">Weekly agent-bus report</p>
+            <div class="weekly-title-row">
+              <h1>CYCLE-20260916-PM1</h1>
+              <div class="weekly-badges">
+                <span class="weekly-badge is-warn">Draft only</span>
+                <span class="weekly-badge">instance_public_factor=0</span>
+                <span class="weekly-badge">ref_id=INTRO-20260916</span>
+              </div>
+            </div>
+            <p class="weekly-copy">
+              First searchable HTML report for Render Studio agent-bus weekly review. This page keeps the report as plain text/HTML for browser search while pairing it with compact debugger markup and PM feedback tooling.
+            </p>
+            <div class="weekly-meta-grid">
+              <article>
+                <span>cycle_id</span>
+                <strong>CYCLE-20260916-PM1</strong>
+              </article>
+              <article>
+                <span>ref_id</span>
+                <strong>INTRO-20260916</strong>
+              </article>
+              <article>
+                <span>Desired Outcome Score</span>
+                <strong>46 → target &ge;60</strong>
+              </article>
+              <article>
+                <span>Claim state</span>
+                <strong>Fail closed until deploy/health probes pass</strong>
+              </article>
+            </div>
+            <div class="weekly-health-note">
+              Health note: GET <code>/api/webhooks/x</code> currently 404s on production until deploy.
+            </div>
+          </div>
+        </section>
+
+        <section class="weekly-card weekly-search" data-search-block>
+          <div class="weekly-search-row">
+            <div>
+              <label for="weekly-report-search">Search this report</label>
+              <input
+                id="weekly-report-search"
+                type="search"
+                autocomplete="off"
+                placeholder="Search infra flaw, webhook 404, token, DOS, hires..."
+              />
+            </div>
+            <p id="weekly-report-search-status" class="weekly-note">Search is client-side; browser find also works because the report is plain HTML/text.</p>
+          </div>
+        </section>
+
+        <section class="weekly-card" data-search-block>
+          <div class="weekly-card-body">
+            <div class="weekly-section-head">
+              <div>
+                <p class="weekly-kicker">PM memo</p>
+                <h2>Biggest infrastructure flaw</h2>
+              </div>
+              <div class="weekly-pill-row">
+                <span class="weekly-pill">control plane vs data plane</span>
+                <span class="weekly-pill is-warn">attendance masquerades as autonomy</span>
+              </div>
+            </div>
+            <section
+              id="infra-flaw"
+              data-id-context
+              data-project-id="render-studio"
+              data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#infra-flaw"
+              data-log-id="CYCLE-20260916-PM1"
+              data-tracking-id="INTRO-20260916"
+              data-ref-id="INTRO-20260916"
+            >
+              <p>The biggest infrastructure flaw is that our control plane (MCP agent-bus, SCORECARDs, watchdog headcount) can report a healthy swarm while the data plane that actually closes bugs (live Studio token, deployed webhook routes, Playwright/clip verify) is silently absent — attendance masquerades as autonomy.</p>
+              <p>Second, identity and deploy state are split across repo-truth and production-truth without a single gate that refuses CRC register or confirm_fixed when the route/process fingerprint does not match.</p>
+              <p>Fix: make every weekly report and claim state machine fail-closed on a deploy/health probe (routes mounted, Studio reachable, verify harness green) and only then count MCP hellos toward Desired Outcome Score.</p>
+            </section>
+          </div>
+        </section>
+
+        <section
+          class="weekly-card"
+          data-search-block
+          data-id-context
+          data-project-id="render-studio"
+          data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#tickets"
+          data-log-id="CYCLE-20260916-PM1-tickets"
+          data-tracking-id="INTRO-20260916"
+          data-ref-id="INTRO-20260916"
+        >
+          <div class="weekly-card-body">
+            <div class="weekly-section-head">
+              <div>
+                <p class="weekly-kicker">Week 1 skeleton</p>
+                <h2>Ticket focus</h2>
+              </div>
+              <div class="weekly-pill-row">
+                <span class="weekly-pill is-good">searchable HTML</span>
+                <span class="weekly-pill">compact ids only</span>
+              </div>
+            </div>
+            <div class="weekly-table-wrap">
+              <table class="weekly-table">
+                <thead>
+                  <tr>
+                    <th scope="col">tracking_id</th>
+                    <th scope="col">log_id</th>
+                    <th scope="col">summary</th>
+                    <th scope="col">claim gate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    data-id-context
+                    data-project-id="render-studio"
+                    data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#ticket-t-xr-01"
+                    data-log-id="CYCLE-20260916-PM1-T-XR-01"
+                    data-tracking-id="T-XR-01"
+                    data-ref-id="INTRO-20260916"
+                    id="ticket-t-xr-01"
+                  >
+                    <td><code>T-XR-01</code></td>
+                    <td><code>CYCLE-20260916-PM1-T-XR-01</code></td>
+                    <td>
+                      X webhook 404 on prod
+                      <br />
+                      <small>GET <code>/api/webhooks/x</code> currently 404s on production until deploy.</small>
+                    </td>
+                    <td>Do not count as closed unless the prod route fingerprint matches repo-truth.</td>
+                  </tr>
+                  <tr
+                    data-id-context
+                    data-project-id="render-studio"
+                    data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#ticket-t-dbg-01"
+                    data-log-id="CYCLE-20260916-PM1-T-DBG-01"
+                    data-tracking-id="T-DBG-01"
+                    data-ref-id="INTRO-20260916"
+                    id="ticket-t-dbg-01"
+                  >
+                    <td><code>T-DBG-01</code></td>
+                    <td><code>CYCLE-20260916-PM1-T-DBG-01</code></td>
+                    <td>RENDER_STUDIO_TOKEN</td>
+                    <td>Reject green swarm claims when a live Studio token is missing.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="weekly-card"
+          data-search-block
+          data-id-context
+          data-project-id="render-studio"
+          data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#staffing"
+          data-log-id="CYCLE-20260916-PM1-staffing"
+          data-tracking-id="INTRO-20260916"
+          data-ref-id="INTRO-20260916"
+          id="staffing"
+        >
+          <div class="weekly-card-body">
+            <div class="weekly-section-head">
+              <div>
+                <p class="weekly-kicker">Placeholders</p>
+                <h2>Hire table</h2>
+              </div>
+              <p>Draft-only placeholders until PM fills live recruiting data.</p>
+            </div>
+            <div class="weekly-table-wrap">
+              <table class="weekly-table">
+                <thead>
+                  <tr>
+                    <th scope="col">ref_id</th>
+                    <th scope="col">role</th>
+                    <th scope="col">owner</th>
+                    <th scope="col">status</th>
+                    <th scope="col">note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>ref-hire-01</code></td>
+                    <td>Placeholder — autonomous debugger</td>
+                    <td>PM</td>
+                    <td>Draft</td>
+                    <td>Fill when approve UI/process exists.</td>
+                  </tr>
+                  <tr>
+                    <td><code>ref-hire-02</code></td>
+                    <td>Placeholder — deploy health gate</td>
+                    <td>PM</td>
+                    <td>Draft</td>
+                    <td>No watchdog auto-start from this page.</td>
+                  </tr>
+                  <tr>
+                    <td><code>ref-hire-03</code></td>
+                    <td>Placeholder — clip verify harness</td>
+                    <td>PM</td>
+                    <td>Draft</td>
+                    <td>Keep compact ids only; no transcript dumps.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="weekly-card"
+          data-search-block
+          data-id-context
+          data-project-id="render-studio"
+          data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#links"
+          data-log-id="CYCLE-20260916-PM1-links"
+          data-tracking-id="INTRO-20260916"
+          data-ref-id="INTRO-20260916"
+          id="links"
+        >
+          <div class="weekly-card-body">
+            <div class="weekly-section-head">
+              <div>
+                <p class="weekly-kicker">Review links</p>
+                <h2>Reference surfaces</h2>
+              </div>
+            </div>
+            <ul class="weekly-link-list">
+              <li><a href="https://render3d.app/docs/whitepaper" target="_blank" rel="noopener noreferrer">Public whitepaper</a></li>
+              <li><a href="/admin-dashboard.html">Management dashboard</a></li>
+              <li><a href="/updates.html">Recent updates page</a></li>
+              <li><a href="/ops/weekly-reports/CYCLE-20260916-PM1.html">This weekly HTML report</a></li>
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      <aside class="weekly-report-rail">
+        <section
+          class="weekly-card"
+          data-id-context
+          data-project-id="render-studio"
+          data-path-id="/ops/weekly-reports/CYCLE-20260916-PM1.html#editor-tools"
+          data-log-id="CYCLE-20260916-PM1-editor"
+          data-tracking-id="INTRO-20260916"
+          data-ref-id="INTRO-20260916"
+          id="editor-tools"
+        >
+          <div class="weekly-card-body">
+            <div class="weekly-tool-head">
+              <p class="weekly-kicker">Editor tools</p>
+              <h2>Markup, ID copy, and PM feedback</h2>
+              <p>Right-click any tagged report block to copy IDs. Upload a screenshot, annotate it, and submit compact JSON into the PM review queue.</p>
+            </div>
+
+            <div class="weekly-tool-panel">
+              <div class="weekly-feedback-status-row">
+                <strong>NE tracking</strong>
+                <button type="button" class="weekly-copy-btn" id="weekly-copy-feedback-json">Copy feedback JSON</button>
+              </div>
+              <div class="weekly-id-grid" id="weekly-id-grid">
+                <div class="weekly-id-row"><span>project_id</span><code id="weekly-project-id">render-studio</code></div>
+                <div class="weekly-id-row"><span>path_id</span><code id="weekly-path-id">/ops/weekly-reports/CYCLE-20260916-PM1.html</code></div>
+                <div class="weekly-id-row"><span>log_id</span><code id="weekly-log-id">CYCLE-20260916-PM1</code></div>
+                <div class="weekly-id-row"><span>tracking_id</span><code id="weekly-tracking-id">INTRO-20260916</code></div>
+                <div class="weekly-id-row"><span>ref_id</span><code id="weekly-ref-id">INTRO-20260916</code></div>
+                <div class="weekly-id-row"><span>screenshot_ref</span><code id="weekly-screenshot-ref">none</code></div>
+              </div>
+            </div>
+
+            <div class="weekly-id-panel">
+              <div class="weekly-feedback-status-row">
+                <strong>ID tracking</strong>
+                <button type="button" class="weekly-copy-btn" id="weekly-clear-recent">Clear</button>
+              </div>
+              <ul class="weekly-recent-list" id="weekly-recent-list">
+                <li><code>Right-click a report card or ticket row to start copying IDs.</code></li>
+              </ul>
+            </div>
+
+            <div class="weekly-editor-panel">
+              <div class="weekly-tool-head">
+                <h3>Image markup + existing image edit route</h3>
+                <p>Reuses the same markup conventions as Studio screenshot/reference editing. Region edits are wired to the existing authenticated project image-edit endpoint.</p>
+              </div>
+              <div class="weekly-field-grid">
+                <div class="weekly-field">
+                  <label for="weekly-image-upload">Screenshot upload</label>
+                  <input id="weekly-image-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                </div>
+                <div class="weekly-field">
+                  <label for="weekly-project-input">Target project_id for AI edit</label>
+                  <input id="weekly-project-input" type="text" value="render-studio" spellcheck="false" />
+                </div>
+              </div>
+              <div class="weekly-toolbar" role="toolbar" aria-label="Markup tools">
+                <button type="button" class="weekly-tool-btn is-active" data-tool="pen">Pen</button>
+                <button type="button" class="weekly-tool-btn" data-tool="highlight">Highlight</button>
+                <button type="button" class="weekly-tool-btn" data-tool="rect">Rect</button>
+                <button type="button" class="weekly-tool-btn" data-tool="arrow">Arrow</button>
+                <button type="button" class="weekly-tool-btn" data-tool="text">Text</button>
+                <button type="button" class="weekly-tool-btn" data-tool="eraser">Eraser</button>
+                <button type="button" class="weekly-tool-btn" data-tool="region">Region</button>
+                <button type="button" class="weekly-tool-btn" data-tool="pan">Pan</button>
+                <button type="button" class="weekly-tool-btn" data-action="undo">Undo</button>
+                <button type="button" class="weekly-tool-btn" data-action="redo">Redo</button>
+                <button type="button" class="weekly-tool-btn" data-action="clear">Clear</button>
+                <input id="weekly-color-input" type="color" value="#f0883e" aria-label="Markup color" />
+                <label class="weekly-range-label" for="weekly-width-input">Width</label>
+                <input id="weekly-width-input" type="range" min="1" max="16" value="3" aria-label="Markup width" />
+              </div>
+              <div class="weekly-editor-stage" id="weekly-editor-stage">
+                <div class="weekly-editor-stack" id="weekly-editor-stack">
+                  <div class="weekly-editor-placeholder" id="weekly-editor-placeholder">
+                    Upload a screenshot or debugger still to annotate it here. Compact IDs stay in the rail; no transcript content is dumped into this page.
+                  </div>
+                  <img class="weekly-editor-img" id="weekly-editor-img" alt="" hidden draggable="false" />
+                  <svg class="weekly-editor-svg" id="weekly-editor-svg" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+                  <div class="weekly-region-overlay" id="weekly-region-overlay" hidden></div>
+                </div>
+              </div>
+              <div class="weekly-field">
+                <label for="weekly-ai-prompt">Existing image edit prompt (optional)</label>
+                <textarea id="weekly-ai-prompt" rows="3" placeholder="Describe the edit for the selected region. Example: highlight route failure points with a red badge and keep the rest unchanged."></textarea>
+              </div>
+              <div class="weekly-field-grid">
+                <div class="weekly-field">
+                  <label for="weekly-save-mode">Save result as</label>
+                  <select id="weekly-save-mode">
+                    <option value="new">New render file</option>
+                    <option value="replace">Replace current file if it already lives in project renders/references</option>
+                  </select>
+                </div>
+                <div class="weekly-field">
+                  <label for="weekly-source-filename">source_filename for replace mode</label>
+                  <input id="weekly-source-filename" type="text" placeholder="example.png" spellcheck="false" />
+                </div>
+              </div>
+              <div class="weekly-ai-actions">
+                <button type="button" class="btn secondary" id="weekly-download-markup">Download marked PNG</button>
+                <button type="button" class="btn secondary" id="weekly-copy-screenshot-ref">Copy screenshot_ref</button>
+                <button type="button" class="btn accent" id="weekly-run-ai-edit">Run existing image edit</button>
+              </div>
+              <p class="weekly-status-value" id="weekly-editor-status">Upload an image to start markup. AI edit requires a signed-in session plus access to the target project.</p>
+            </div>
+
+            <div class="weekly-feedback-panel">
+              <div class="weekly-tool-head">
+                <h3>PM review payload</h3>
+                <p>Posts a compact JSON payload into the existing management feedback review queue with the current IDs, note, and screenshot attachment/reference.</p>
+              </div>
+              <div class="weekly-field">
+                <label for="weekly-note-input">note</label>
+                <textarea id="weekly-note-input" rows="5" placeholder="Write the PM/debugger note that should be reviewed with this report context."></textarea>
+              </div>
+              <div class="weekly-feedback-actions">
+                <button type="button" class="btn secondary" id="weekly-copy-note-json">Copy JSON preview</button>
+                <button type="button" class="btn accent" id="weekly-submit-feedback">Submit PM feedback</button>
+              </div>
+              <p class="weekly-status-value" id="weekly-feedback-status">Awaiting note. Submission uses the existing authenticated feedback queue.</p>
+              <pre class="weekly-feedback-json" id="weekly-feedback-json">{}</pre>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <p class="weekly-foot">Direct URL: <a class="weekly-inline-link" href="/ops/weekly-reports/CYCLE-20260916-PM1.html">/ops/weekly-reports/CYCLE-20260916-PM1.html</a></p>
+  </div>
+
+  <script type="module" src="/toolbar-nav.js?v=20260715-toolbar-nav-menu"></script>
+  <script type="module" src="/ops/weekly-reports/weekly-report-page.js?v=20260916-pm1"></script>
+</body>
+</html>
