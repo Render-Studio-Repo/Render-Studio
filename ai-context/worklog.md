@@ -1,3 +1,12 @@
+## 2026-09-16 — Weekly agent-bus HTML report page
+
+- Added `frontend/ops/weekly-reports/CYCLE-20260916-PM1.html` as the first searchable weekly HTML report at `https://render3d.app/ops/weekly-reports/CYCLE-20260916-PM1.html`.
+- Includes the required top-of-page whitepaper link, exact `#infra-flaw` PM memo text, cycle/ref metadata, DOS baseline `46 → target ≥60`, ticket rows for `T-XR-01` / `T-DBG-01`, hire placeholders, and the one-line `/api/webhooks/x` 404 production health note.
+- Added same-page editor tooling in `frontend/ops/weekly-reports/weekly-report-page.js`: compact NE tracking + ID tracking panels, right-click ID copy (`project_id`, `path_id`, `log_id`, `tracking_id`), client-side search, image upload + markup, and wiring into the existing authenticated feedback queue plus existing project `render-region-edit` route.
+- Verified in browser via local static serving + Chrome/computer-use checks: route loads, search filters, context menu appears, uploads reveal the image editor, and the markup SVG records drawn shapes.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
