@@ -1,3 +1,12 @@
+## 2026-09-18 — Workshop agent hover card: mute + profile + real task/idle
+
+- Workshop / God Mode agent cards now expand on hover/focus with a local **Mute chatter** toggle, a profile chip, and a single current-task line.
+- Current task text now prefers explicit live task / claim fields and falls back to plain `idle` for mock agents instead of surfacing invented busywork from seeded task arrays.
+- Added `frontend/workshop-agent-cards.js`; cache-busts: `styles.css?v=20260918-agent-hover`, `workshop-mode.js?v=20260918-agent-hover`.
+- Verified in-browser with a local Playwright harness against the real card renderer and styles; mute persisted in localStorage and mock agents stayed idle.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
