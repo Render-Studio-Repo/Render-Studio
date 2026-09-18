@@ -138,4 +138,5 @@ That is a documentation and environment gap, not a hidden feature. Until it is f
 - [Architecture](architecture.md)
 - [Studio, workspaces, and XR](studio-and-xr.md)
 - [Robotics, motion, and teleop hooks](robotics-and-motion.md)
+- [Roadmap](roadmap.md)
 - [Contributing and deploy-sync notes](contributing.md)

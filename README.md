@@ -97,6 +97,7 @@ Deep dive: [docs/architecture.md](docs/architecture.md)
 - [Architecture](docs/architecture.md)
 - [Studio, workspaces, and XR](docs/studio-and-xr.md)
 - [Robotics, motion, and teleop hooks](docs/robotics-and-motion.md)
+- [Roadmap](docs/roadmap.md)
 - [Contributing and deploy-sync notes](docs/contributing.md)
 - [Docs index](docs/README.md)
 
@@ -119,15 +120,18 @@ When the app is running, these pages are part of the product:
 
 ## Roadmap
 
-The repo already ships a substantial product, but a few items are still clearly in-progress or planned:
+The repo already ships a substantial foundation. The next story is about turning that foundation into a clearer Workshop, VR, and robotics operating surface.
 
-- **Full local-machine bootstrap docs and a pinned root dependency manifest**
-- **STEP/IGES import expansion**
-- **Richer feature-tree UX around the existing parametric kernel**
-- **Broader multi-part assembly and BOM workflows**
-- **Simulation and Manufacture workspaces beyond their current disabled placeholders**
+| Status | Direction | What it means |
+|--------|-----------|---------------|
+| **In progress** | **VR-first product language** | WebXR already supports VR and AR sessions; the remaining work is making the primary product story feel consistently VR-forward. |
+| **Planned** | **Workshop as a clearer entry scene** | A more explicit spatial Workshop destination for desktop and headset users, rather than leaving it implied by today's Studio surfaces. |
+| **In progress** | **Unified editing and operations surfaces** | Bring placement, live voice prompting, project actions, queue visibility, and agent operations closer together. |
+| **Planned** | **Human-gated teleop and richer robot workflows** | Build on today's rigging, URDF/SRDF, simulator, and MoveIt2 hooks without overstating live teleoperation. |
+| **Planned** | **Shared Workshop and orchestration vision** | Grow toward shared Workshop scenes, stronger approvals, cloud compute seats, and agent-driven build/train pipelines. |
 
-See also: `frontend/roadmap.html` in the running app.
+Full roadmap: [docs/roadmap.md](docs/roadmap.md)  
+In-product roadmap: `frontend/roadmap.html` when the app is running
 
 ## Security
 

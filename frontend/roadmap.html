@@ -42,14 +42,47 @@
           <p class="info-eyebrow">Product roadmap</p>
           <h2>Where Render Studio is headed</h2>
           <p class="info-lead">
-            Render Studio is evolving from an AI-assisted mesh viewer into a full parametric CAD workflow.
-            Items below are grouped by phase — shipped capabilities first, then what comes next.
+            Render Studio already ships a serious Studio for AI CAD, XR review, robotics workflows, and in-product guidance.
+            The roadmap below focuses on the next layer: a clearer Workshop direction, stronger VR flows, and more deliberate robot operations.
           </p>
         </header>
 
         <section class="info-section">
           <h3 class="roadmap-phase shipped">Shipped</h3>
           <ul class="roadmap-list">
+            <li class="roadmap-item done">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>WebXR review and AI-in-headset controls</strong>
+                  <span class="roadmap-date">Shipped Jul 2026</span>
+                </div>
+                <p>Quest-oriented XR sessions, world-space panels, AI VR controls, screenshots, and recording already ship inside the product.</p>
+                <p class="roadmap-use">Use it: enter XR from Studio, open the floating menu, and review or capture the same project in-headset.</p>
+              </div>
+            </li>
+            <li class="roadmap-item done">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Robotics runtime and motion-ready assets</strong>
+                  <span class="roadmap-date">Shipped Jul 2026</span>
+                </div>
+                <p>Render Studio already supports rigging, URDF/SRDF workflows, robot playback, and optional MoveIt2-backed planning hooks.</p>
+                <p class="roadmap-use">Use it: switch to Robotics or Rigging, load a robot asset, and review movement inside the main viewport.</p>
+              </div>
+            </li>
+            <li class="roadmap-item done">
+              <span class="roadmap-status">Done</span>
+              <div>
+                <div class="roadmap-item-head">
+                  <strong>Project creation, approvals, and training building blocks</strong>
+                  <span class="roadmap-date">Shipped Jul 2026</span>
+                </div>
+                <p>Project creation, approval queues, guide review, and training-oriented admin surfaces are already present as building blocks.</p>
+                <p class="roadmap-use">Use it: create projects in Studio today, and use the existing admin review surfaces for approval and training workflows.</p>
+              </div>
+            </li>
             <li class="roadmap-item done" data-roadmap-show="ai-generate">
               <span class="roadmap-status">Done</span>
               <div>
@@ -225,61 +258,110 @@
         </section>
 
         <section class="info-section">
-          <h3 class="roadmap-phase next">Next up</h3>
+          <h3 class="roadmap-phase next">Near-term roadmap</h3>
           <ul class="roadmap-list">
             <li class="roadmap-item">
-              <span class="roadmap-status planned">Planned</span>
+              <span class="roadmap-status planned">In progress</span>
               <div>
-                <strong>STEP / IGES import</strong>
-                <p>B-Rep support via Open CASCADE or CadQuery for professional CAD interchange.</p>
+                <strong>Viewport language: VR first</strong>
+                <p>WebXR already supports both AR and VR sessions. The next step is making the buyer-facing product language feel consistently VR-forward instead of split between AR and VR labels.</p>
               </div>
             </li>
             <li class="roadmap-item">
               <span class="roadmap-status planned">Planned</span>
               <div>
-                <strong>Parametric feature tree</strong>
-                <p>Sketch constraints, fillets, extrudes, and revolve operations with editable history.</p>
+                <strong>Click on PC, enter Workshop</strong>
+                <p>Workshop becomes a clearer spatial destination from desktop entry points instead of remaining an implied extension of Studio and XR.</p>
               </div>
             </li>
             <li class="roadmap-item">
               <span class="roadmap-status planned">Planned</span>
               <div>
-                <strong>Multi-part assemblies</strong>
-                <p>Position multiple bodies, mate references, and export assembly GLB/STL.</p>
+                <strong>No-headset desktop Workshop</strong>
+                <p>Desktop users enter a 3D printer or workshop scene with walk, mouse look, and spatial move/place flows instead of staying limited to orbit-style navigation.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status planned">In progress</span>
+              <div>
+                <strong>Editor tab for shop placement and live voice prompts</strong>
+                <p>Placement tools, cursor-follow previews, and live voice prompting come together in a clearer editor workflow for spatial scene-building.</p>
               </div>
             </li>
             <li class="roadmap-item">
               <span class="roadmap-status planned">Planned</span>
               <div>
-                <strong>BOM export</strong>
-                <p>Bill of materials with part names, quantities, and material metadata.</p>
+                <strong>God Mode for agents and tasks</strong>
+                <p>A room-scale operating view for agents, their current jobs, and the approvals or follow-ups that need a human decision next.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status planned">In progress</span>
+              <div>
+                <strong>Project tabs for create, train, and approve</strong>
+                <p>Project creation, training workflows, and click-to-approve actions move closer to the main Studio experience instead of living in separate surfaces.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status planned">In progress</span>
+              <div>
+                <strong>Manage Render Agents, Queue, and Debug in Studio Lab</strong>
+                <p>Queue visibility, agent operations, and debugging tools converge into one cleaner operating surface for advanced teams.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status planned">Planned</span>
+              <div>
+                <strong>Human-gated teleop controls</strong>
+                <p>Teleop grows around Y-tap engage/pause, hold-Y disarm, robotics-menu priority while teleop is active, and clear session-state cues so a green state obviously means a real live session.</p>
               </div>
             </li>
           </ul>
         </section>
 
         <section class="info-section">
-          <h3 class="roadmap-phase future">Future</h3>
+          <h3 class="roadmap-phase future">Future of VR and robots</h3>
           <ul class="roadmap-list">
             <li class="roadmap-item">
-              <span class="roadmap-status future">Exploring</span>
+              <span class="roadmap-status future">Planned</span>
               <div>
-                <strong>Collaborative editing</strong>
-                <p>Shared projects, live cursors, and comment threads on geometry.</p>
+                <strong>Personal VR Workshop and shared Workshop scenes</strong>
+                <p>Workshop becomes a default entry environment for solo build sessions, public demos, and shared team review spaces.</p>
               </div>
             </li>
             <li class="roadmap-item">
-              <span class="roadmap-status future">Exploring</span>
+              <span class="roadmap-status future">Planned</span>
               <div>
-                <strong>Manufacturing outputs</strong>
-                <p>2D drawings, GD&amp;T annotations, and CAM-ready exports.</p>
+                <strong>Human-gated teleop training school</strong>
+                <p>A supervised training model for robotics workflows, centered on human approval and safety, not on claiming that AI runs physical robot arms live by default.</p>
               </div>
             </li>
             <li class="roadmap-item">
-              <span class="roadmap-status future">Exploring</span>
+              <span class="roadmap-status future">Planned</span>
               <div>
-                <strong>Plugin SDK</strong>
-                <p>Custom importers, AI tools, and post-processing scripts.</p>
+                <strong>Cloud compute seats and optional host marketplace</strong>
+                <p>Teams gain heavier build, training, and simulation capacity without assuming every workflow runs on one local machine.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status future">Planned</span>
+              <div>
+                <strong>Agent identity bridge, team chat, success loops, and receipts</strong>
+                <p>People, agents, approvals, outcomes, and visible success loops become easier to follow through one clearer shared operating loop on the Render site.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status future">Planned</span>
+              <div>
+                <strong>Sandbox IDE tabs streaming into Workshop</strong>
+                <p>Viewers, charts, cameras, and operator tools appear as first-class Workshop surfaces instead of separate flat utilities.</p>
+              </div>
+            </li>
+            <li class="roadmap-item">
+              <span class="roadmap-status future">Planned</span>
+              <div>
+                <strong>Stronger agent orchestration for build and train pipelines</strong>
+                <p>Agents prepare work, pause for approvals, and continue through clearer human gates across build, training, and review flows.</p>
               </div>
             </li>
           </ul>

@@ -96,4 +96,5 @@ These statements would overreach:
 
 - [Studio, workspaces, and XR](studio-and-xr.md)
 - [Architecture](architecture.md)
+- [Roadmap](roadmap.md)
 - [Contributing and deploy-sync notes](contributing.md)

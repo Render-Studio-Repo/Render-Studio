@@ -4,6 +4,9 @@
 - Added a new top-level `docs/` tree with focused markdown pages for Getting Started, Architecture, Studio/XR, Robotics/Motion, and contributor deploy-sync notes.
 - Added polished SVG placeholder art under `docs/assets/` so the repo has presentable screenshot/GIF stand-ins until final product media is dropped in.
 - Kept "Workshop" and "teleop" wording precise: the docs now use the shipped "Studio" / workspace model, and robotics pages clearly distinguish current URDF/MoveIt2 support from a full teleoperation stack.
+- Added `docs/roadmap.md` plus a richer README roadmap section for Workshop, VR, and robot-operations direction, with explicit Done / In progress / Planned language tied to repo evidence.
+- Refreshed `frontend/roadmap.html` so the public roadmap no longer frames already-shipped foundations as "next up" and now presents the Workshop / VR / robots roadmap in cleaner buyer-facing language.
+- Updated `ai-context/help-system.md` to reflect that Quest Book checkpoint progression now exists locally, while broader instrumentation remains incomplete.
 
 ---
 

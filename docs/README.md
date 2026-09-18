@@ -10,6 +10,7 @@ This folder is the GitHub-friendly documentation layer for Render Studio. It com
 | [Architecture](architecture.md) | Readers who want the system shape: frontend, backend, kernel, XR, docs, and integrations. |
 | [Studio, workspaces, and XR](studio-and-xr.md) | Product-minded readers who want the main user workflows and workspace model. |
 | [Robotics, motion, and teleop hooks](robotics-and-motion.md) | Teams evaluating rigging, URDF/SRDF, simulation, and motion-planning support. |
+| [Roadmap](roadmap.md) | Anyone who wants the near-term Workshop/VR/robots direction and the longer-term product vision. |
 | [Contributing and deploy-sync notes](contributing.md) | Engineers shipping changes into the live product without breaking docs or runtime assumptions. |
 
 ## Recommended reading paths
@@ -19,12 +20,14 @@ This folder is the GitHub-friendly documentation layer for Render Studio. It com
 1. [README](../README.md)
 2. [Studio, workspaces, and XR](studio-and-xr.md)
 3. [Robotics, motion, and teleop hooks](robotics-and-motion.md)
+4. [Roadmap](roadmap.md)
 
 ### If you are a new engineer
 
 1. [Getting Started](getting-started.md)
 2. [Architecture](architecture.md)
-3. [Contributing and deploy-sync notes](contributing.md)
+3. [Roadmap](roadmap.md)
+4. [Contributing and deploy-sync notes](contributing.md)
 
 ### If you are updating help content
 

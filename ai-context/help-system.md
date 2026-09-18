@@ -54,6 +54,6 @@ frontend/docs/updates/                   milestones + shipped.json + social draf
 | Location | `frontend/quest-book.js` | `TODO/quest-book/` |
 | Audience | End users (in-app, gamified learning) | Us (PM/build plan for Architect Mode) |
 | Data source | `DOC_FEATURES` | Hand-written chapter md files |
-| Status | Visual shell shipped; progression not built | Ch 1–2 done, 3–6 locked |
+| Status | Visual shell shipped; local checkpoint progression works, with broader instrumentation still incomplete | Ch 1–2 done, 3–6 locked |
 
 Details and next stages: [quest-book-roadmap.md](./quest-book-roadmap.md).

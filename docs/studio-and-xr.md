@@ -124,4 +124,5 @@ The Studio also includes:
 
 - [Architecture](architecture.md)
 - [Robotics, motion, and teleop hooks](robotics-and-motion.md)
+- [Roadmap](roadmap.md)
 - [Contributing and deploy-sync notes](contributing.md)

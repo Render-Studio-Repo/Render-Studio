@@ -148,4 +148,5 @@ That means documentation, onboarding, and guided help are product features with 
 - [Getting Started](getting-started.md)
 - [Studio, workspaces, and XR](studio-and-xr.md)
 - [Robotics, motion, and teleop hooks](robotics-and-motion.md)
+- [Roadmap](roadmap.md)
 - [Contributing and deploy-sync notes](contributing.md)
