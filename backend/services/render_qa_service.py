@@ -6,14 +6,11 @@ import hashlib
 import json
 import os
 import re
+import struct
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib import request as urllib_request
-
-from PIL import Image
-
-from backend.services import project_store
 
 RMQ_ID = "rmq-1789711555"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,8 +89,20 @@ def _relative(path: Path | None) -> str | None:
         return str(path)
 
 
+def _load_project_meta(project_path: Path) -> dict[str, Any]:
+    path = project_path / "project.json"
+    try:
+        raw = path.read_text(encoding="utf-8")
+        parsed = json.loads(raw) if raw.strip() else {}
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        parsed = {}
+    if isinstance(parsed, dict):
+        return parsed
+    return {}
+
+
 def _project_label(project_path: Path, meta: dict[str, Any] | None = None) -> str:
-    meta = meta if meta is not None else project_store.load_meta(project_path)
+    meta = meta if meta is not None else _load_project_meta(project_path)
     return str(meta.get("name") or project_path.name).strip() or project_path.name
 
 
@@ -108,16 +117,44 @@ def _file_sha256(path: Path) -> str | None:
         return None
 
 
+def _image_dimensions_from_bytes(data: bytes | None) -> tuple[int | None, int | None]:
+    if not data:
+        return None, None
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+        try:
+            width, height = struct.unpack(">II", data[16:24])
+            return int(width), int(height)
+        except struct.error:
+            return None, None
+    if data.startswith(b"\xff\xd8"):
+        offset = 2
+        size = len(data)
+        while offset + 9 < size:
+            if data[offset] != 0xFF:
+                offset += 1
+                continue
+            marker = data[offset + 1]
+            offset += 2
+            if marker in {0xD8, 0xD9}:
+                continue
+            if offset + 2 > size:
+                break
+            block_len = struct.unpack(">H", data[offset:offset + 2])[0]
+            if block_len < 2 or offset + block_len > size:
+                break
+            if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
+                if offset + 7 <= size:
+                    height, width = struct.unpack(">HH", data[offset + 3:offset + 7])
+                    return int(width), int(height)
+                break
+            offset += block_len
+    return None, None
+
+
 def _image_info_from_bytes(data: bytes | None) -> dict[str, Any]:
     if not data:
         return {"exists": False, "width": None, "height": None, "content_hash": None}
-    try:
-        from io import BytesIO
-
-        with Image.open(BytesIO(data)) as image:
-            width, height = image.size
-    except Exception:
-        width, height = (None, None)
+    width, height = _image_dimensions_from_bytes(data)
     return {
         "exists": True,
         "width": width,
@@ -130,10 +167,10 @@ def _image_info_from_path(path: Path | None) -> dict[str, Any]:
     if path is None or not path.is_file():
         return {"exists": False, "width": None, "height": None, "content_hash": None, "path": _relative(path)}
     try:
-        with Image.open(path) as image:
-            width, height = image.size
-    except Exception:
-        width, height = (None, None)
+        data = path.read_bytes()
+    except OSError:
+        data = b""
+    width, height = _image_dimensions_from_bytes(data)
     return {
         "exists": True,
         "path": _relative(path),
@@ -141,7 +178,7 @@ def _image_info_from_path(path: Path | None) -> dict[str, Any]:
         "width": width,
         "height": height,
         "size_bytes": path.stat().st_size,
-        "content_hash": _file_sha256(path),
+        "content_hash": hashlib.sha256(data).hexdigest() if data else None,
     }
 
 
@@ -533,7 +570,7 @@ def evaluate_render(
     user_signal: Any = None,
 ) -> dict[str, Any]:
     created_at = _iso()
-    meta = project_store.load_meta(project_path)
+    meta = _load_project_meta(project_path)
     project_label = _project_label(project_path, meta)
     safe_render_filename = Path(str(render_filename or "")).name
     render_path = _resolve_project_file(project_path, safe_render_filename)

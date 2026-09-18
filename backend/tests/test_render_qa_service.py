@@ -4,21 +4,30 @@ import contextlib
 import hashlib
 import json
 import os
+import struct
 import tempfile
 import unittest
-from io import BytesIO
 from pathlib import Path
 from unittest import mock
-
-from PIL import Image
+import zlib
 
 from backend.services import render_qa_service
 
 
 def _png_bytes(width: int, height: int, color: tuple[int, int, int] = (120, 140, 160)) -> bytes:
-    buf = BytesIO()
-    Image.new("RGB", (width, height), color).save(buf, format="PNG")
-    return buf.getvalue()
+    row = b"\x00" + bytes(color) * width
+    raw = row * height
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        body = tag + payload
+        return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
 
 
 @contextlib.contextmanager
