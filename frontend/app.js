@@ -3143,6 +3143,8 @@ transformControls.addEventListener("objectChange", () => {
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
 
+let viewportVideoRecorder = null;
+
 const workshopMode = createWorkshopMode({
   viewportEl: viewport,
   renderer,
@@ -28545,7 +28547,7 @@ const screenshotMarkup = createScreenshotMarkup({
   onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
 });
 
-const viewportVideoRecorder = createViewportVideoRecorder({
+viewportVideoRecorder = createViewportVideoRecorder({
   getCanvas: () => renderer?.domElement || null,
   onStatus: (ok, msg) => setEditStatus(ok ? "ok" : "error", msg),
   onMenuOpen: () => closeScreenshotMenu(),
