@@ -1,0 +1,29 @@
+{
+  "listings": [
+    {
+      "id": "fixture-ops-assistant",
+      "name": "Fixture Ops Assistant",
+      "blurb": "Public placeholder: helps teams review fixture files and handoff notes. Final listing copy TBD.",
+      "sell_price": 12900,
+      "lease_rate": 1900,
+      "tags": ["cad", "ops", "review"],
+      "owner_display": "@render-lab"
+    },
+    {
+      "id": "robot-cell-runbook-agent",
+      "name": "Robot Cell Runbook Agent",
+      "blurb": "Public placeholder: answers setup questions for a robot cell and tracks routine checks. Final listing copy TBD.",
+      "lease_rate": 2900,
+      "tags": ["robotics", "support", "maintenance"],
+      "owner_display": "@ops-floor"
+    },
+    {
+      "id": "quote-triage-agent",
+      "name": "Quote Triage Agent",
+      "blurb": "Public placeholder: sorts incoming quote requests and flags missing inputs. Final listing copy TBD.",
+      "sell_price": 9900,
+      "tags": ["sales", "intake", "workflow"],
+      "owner_display": "@studio-ops"
+    }
+  ]
+}

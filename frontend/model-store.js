@@ -27,6 +27,7 @@ let listings = [];
 let isAdmin = false;
 let activeCategory = "All";
 let searchQuery = "";
+let activeListingQuery = new URLSearchParams(window.location.search).get("q") || "";
 let droppedModelFiles = [];
 
 const DEFAULT_CATEGORIES = ["All", "Featured", "Boosted", "Free", "Paid", "View only"];
@@ -307,6 +308,11 @@ async function loadListings() {
   const data = await res.json();
   listings = data.listings || [];
   isAdmin = !!data.admin;
+  if (activeListingQuery) {
+    searchQuery = activeListingQuery;
+    if (searchEl) searchEl.value = activeListingQuery;
+    activeListingQuery = "";
+  }
   const productCount = listings.filter((item) => !isKnowledgeListing(item)).length;
   if (statusEl) statusEl.textContent = `${productCount} listing${productCount === 1 ? "" : "s"}`;
   render();

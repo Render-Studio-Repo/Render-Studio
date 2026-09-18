@@ -26,6 +26,7 @@ let listings = [];
 let isAdmin = false;
 let activeCategory = "All";
 let searchQuery = "";
+let activeListingQuery = new URLSearchParams(window.location.search).get("q") || "";
 let droppedFiles = [];
 
 const DEFAULT_CATEGORIES = ["All", "Featured", "Boosted", "Robotics", "CAD Standards", "Prompt Packs", "Support", "Free", "Paid", "View only"];
@@ -263,6 +264,11 @@ async function loadListings() {
   const data = await res.json();
   listings = data.listings || [];
   isAdmin = !!data.admin;
+  if (activeListingQuery) {
+    searchQuery = activeListingQuery;
+    if (searchEl) searchEl.value = activeListingQuery;
+    activeListingQuery = "";
+  }
   const count = listings.filter(isKnowledgeListing).length;
   if (statusEl) statusEl.textContent = `${count} knowledge base${count === 1 ? "" : "s"} available${isAdmin ? " · admin review enabled" : ""}`;
   render();

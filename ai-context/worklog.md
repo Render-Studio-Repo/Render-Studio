@@ -1,3 +1,12 @@
+## 2026-09-18 — Marketplace shell: public agent catalog sell/lease stub
+
+- Pulled the cleaned marketplace shell from PR #19 onto a new feature branch and kept the redesign structure (`frontend/marketplace.html` + `frontend/marketplace/` module/theme).
+- Added a public-only agent catalog dataset with placeholder blurbs, public owner handles, sell prices, and lease-rate placeholders.
+- Wired `marketplace.html` with a Products | Agents switch, agent listing cards, sell/lease stub actions, and a checkout-summary modal that does not capture payment.
+- Kept seller payouts on the existing README / seller panel path; real payments remain unchanged for this MVP.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
