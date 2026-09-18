@@ -1,4 +1,14 @@
 import * as THREE from "three";
+import {
+  createWorkshopConferenceScene,
+  normalizeConferenceState,
+  renderWorkshopConferencePanel,
+} from "./workshop-conference-room.js?v=20260918-workshop-conference";
+import {
+  computeTimerRemainingSeconds,
+  renderWorkshopPluginRackPanel,
+} from "./workshop-plugin-rack.js?v=20260918-workshop-conference";
+import { renderWorkshopScoreChartPanel } from "./workshop-score-chart.js?v=20260918-workshop-conference";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
@@ -53,6 +63,18 @@ function clamp(value, min, max) {
 
 function presetById(id) {
   return PLACE_PRESETS.find((entry) => entry.id === id) || PLACE_PRESETS[0];
+}
+
+function normalizePmScoreChart(input) {
+  const value = input && typeof input === "object" ? input : {};
+  const rows = Array.isArray(value.rows) ? value.rows.filter((row) => row && typeof row === "object") : [];
+  return {
+    has_rows: !!rows.length,
+    rows,
+    empty_reason: value.empty_reason ? String(value.empty_reason) : "No fleet receipt or guard fixture JSON found yet.",
+    source_note: value.source_note ? String(value.source_note) : "Uses receipt or guard JSON only.",
+    updated_at: value.updated_at ? String(value.updated_at) : null,
+  };
 }
 
 function storageKey(projectId) {
@@ -167,6 +189,11 @@ function normalizeWorkshopState(input, projectName = "Project") {
   const value = input && typeof input === "object" ? input : {};
   const projects = value.projects && typeof value.projects === "object" ? value.projects : {};
   const debug = value.debug && typeof value.debug === "object" ? value.debug : {};
+  const conference = normalizeConferenceState(value.conference, {
+    projectId: value.conference?.active_project_id || "",
+    projectName: String(value.project_label || projectName || "Project"),
+  });
+  const pmScoreChart = normalizePmScoreChart(value.pm_score_chart);
   return {
     project_label: String(value.project_label || projectName || "Project"),
     agents_source: value.agents_source === "live" ? "live" : "mock",
@@ -181,6 +208,9 @@ function normalizeWorkshopState(input, projectName = "Project") {
       hook_available: !!debug.hook_available,
       last_result: debug.last_result || null,
     },
+    conference,
+    plugin_rack: conference.plugin_modules,
+    pm_score_chart: pmScoreChart,
   };
 }
 
@@ -296,6 +326,9 @@ export function createWorkshopMode(options = {}) {
   const placedGroup = new THREE.Group();
   placedGroup.name = "workshop-placed";
   roomGroup.add(placedGroup);
+
+  const conferenceScene = createWorkshopConferenceScene(THREE);
+  roomGroup.add(conferenceScene.group);
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(18, 18),
@@ -463,9 +496,130 @@ export function createWorkshopMode(options = {}) {
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let conferenceState = normalizeConferenceState({}, {
+    projectId: String(getProjectId?.() || ""),
+    projectName: String(getProjectName?.() || "Project"),
+  });
+  let activeConferenceTab = "room";
+  let conferenceBusy = false;
+  let checkpointOpen = false;
+  let checkpointDraft = {
+    title: "",
+    experiment_goal: "",
+    safety_note: "",
+  };
+  conferenceScene.setAttendees(conferenceState.attendees);
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
+  }
+
+  function syncConferenceState(nextConference) {
+    conferenceState = normalizeConferenceState(nextConference, {
+      projectId: activeProjectId,
+      projectName: currentProjectName(),
+    });
+    workshopState.conference = conferenceState;
+    workshopState.plugin_rack = conferenceState.plugin_modules;
+    conferenceScene.setAttendees(conferenceState.attendees);
+  }
+
+  function syncWorkshopState(nextWorkshop) {
+    workshopState = normalizeWorkshopState(nextWorkshop, currentProjectName());
+    syncConferenceState(workshopState.conference);
+  }
+
+  function pointCameraAt(target) {
+    if (!target) return;
+    const dx = target.x - camera.position.x;
+    const dy = target.y - camera.position.y;
+    const dz = target.z - camera.position.z;
+    const flat = Math.max(0.0001, Math.hypot(dx, dy));
+    lookState.yaw = Math.atan2(dy, dx);
+    lookState.pitch = clamp(Math.atan2(dz, flat), -1.12, 0.7);
+    applyLook();
+    controls.target.copy(target);
+  }
+
+  function focusConferenceTarget(targetId = "room") {
+    const target = conferenceScene.focus?.[targetId];
+    if (!target?.position || !target?.lookAt) return;
+    camera.position.copy(target.position);
+    pointCameraAt(target.lookAt);
+  }
+
+  function syncConferenceTimerDisplay() {
+    const remainingEl = root.querySelector("[data-workshop-timer-remaining]");
+    if (!remainingEl) return;
+    const timer = conferenceState?.plugin_modules?.timers || {};
+    const remaining = computeTimerRemainingSeconds(timer);
+    const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
+    const seconds = String(Math.floor(remaining % 60)).padStart(2, "0");
+    remainingEl.textContent = `${minutes}:${seconds}`;
+  }
+
+  async function saveConferenceSession(statusMessage = "Conference session saved.") {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId) return;
+    if (conferenceBusy) return;
+    conferenceBusy = true;
+    try {
+      const data = await api(`/api/projects/${projectId}/workshop/conference/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: conferenceState.topic,
+          attendees: conferenceState.attendees,
+          notes_markdown: conferenceState.notes_markdown,
+          plugin_modules: conferenceState.plugin_modules,
+        }),
+      });
+      syncWorkshopState(data.workshop || {});
+      if (data.conference) syncConferenceState(data.conference);
+      checkpointDraft = {
+        title: checkpointDraft.title || "",
+        experiment_goal: checkpointDraft.experiment_goal || "",
+        safety_note: checkpointDraft.safety_note || "",
+      };
+      setStatus?.("ok", statusMessage);
+      render();
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not save the conference room state.");
+    } finally {
+      conferenceBusy = false;
+    }
+  }
+
+  async function saveConferenceCheckpoint() {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId) return;
+    if (!String(checkpointDraft.title || "").trim()) {
+      setStatus?.("error", "Add a checkpoint title first.");
+      return;
+    }
+    if (conferenceBusy) return;
+    conferenceBusy = true;
+    try {
+      const data = await api(`/api/projects/${projectId}/workshop/conference/checkpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: checkpointDraft.title,
+          experiment_goal: checkpointDraft.experiment_goal,
+          safety_note: checkpointDraft.safety_note,
+        }),
+      });
+      syncWorkshopState(data.workshop || {});
+      if (data.conference) syncConferenceState(data.conference);
+      checkpointDraft = { title: "", experiment_goal: "", safety_note: "" };
+      checkpointOpen = false;
+      setStatus?.("ok", "Sandbox checkpoint stub saved.");
+      render();
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not save the sandbox checkpoint.");
+    } finally {
+      conferenceBusy = false;
+    }
   }
 
   function updateRoute(activeRoute) {
@@ -642,7 +796,8 @@ export function createWorkshopMode(options = {}) {
     loadPlacedItems(projectId);
     rebuildPlacedScene();
     if (!projectId) {
-      workshopState = seededWorkshopState(currentProjectName());
+      workshopState = normalizeWorkshopState({}, currentProjectName());
+      syncConferenceState(workshopState.conference);
       workshopError = "Open a project to load this workshop.";
       render();
       return;
@@ -656,11 +811,12 @@ export function createWorkshopMode(options = {}) {
     try {
       const data = await api(`/api/projects/${projectId}/workshop`);
       if (token !== loadToken) return;
-      workshopState = normalizeWorkshopState(data, currentProjectName());
+      syncWorkshopState(data);
       loadedProjectId = projectId;
     } catch (err) {
       if (token !== loadToken) return;
-      workshopState = seededWorkshopState(currentProjectName());
+      workshopState = normalizeWorkshopState({}, currentProjectName());
+      syncConferenceState(workshopState.conference);
       workshopError = err?.message || "Could not load saved workshop details.";
       loadedProjectId = projectId;
     }
@@ -674,7 +830,7 @@ export function createWorkshopMode(options = {}) {
       const data = await api(`/api/projects/${projectId}/workshop/approvals/${encodeURIComponent(itemId)}/approve`, {
         method: "POST",
       });
-      workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
+      syncWorkshopState(data.workshop || data);
       setStatus?.("ok", "Approval saved.");
       render();
     } catch (err) {
@@ -696,7 +852,7 @@ export function createWorkshopMode(options = {}) {
           detail: row?.detail || "",
         }),
       });
-      workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
+      syncWorkshopState(data.workshop || data);
       lastDebugResult = data.result || null;
       setStatus?.("ok", lastDebugResult?.message || "Debug handoff queued.");
       render();
@@ -832,7 +988,34 @@ export function createWorkshopMode(options = {}) {
     `;
   }
 
+  function renderConferenceBody() {
+    if (activeConferenceTab === "rack") {
+      return renderWorkshopPluginRackPanel({
+        state: conferenceState,
+        checkpointDraft,
+        checkpointOpen,
+      });
+    }
+    if (activeConferenceTab === "score") {
+      return renderWorkshopScoreChartPanel(workshopState.pm_score_chart || {});
+    }
+    return renderWorkshopConferencePanel({ state: conferenceState });
+  }
+
   function renderBody() {
+    if (activeTopTab === "conference") {
+      return `
+        <div class="workshop-subtabs" role="tablist" aria-label="Workshop conference tabs">
+          <button type="button" class="workshop-subtab${activeConferenceTab === "room" ? " active" : ""}" data-workshop-conference-tab="room">Conference Room</button>
+          <button type="button" class="workshop-subtab${activeConferenceTab === "rack" ? " active" : ""}" data-workshop-conference-tab="rack">Plugin Rack</button>
+          <button type="button" class="workshop-subtab${activeConferenceTab === "score" ? " active" : ""}" data-workshop-conference-tab="score">PM Chart</button>
+        </div>
+        <div class="workshop-panel-scroll">
+          ${renderConferenceBody()}
+        </div>
+      `;
+    }
+
     if (activeTopTab === "projects") {
       return `
         <div class="workshop-subtabs" role="tablist" aria-label="Workshop project tabs">
@@ -918,6 +1101,12 @@ export function createWorkshopMode(options = {}) {
         render();
       });
     });
+    root.querySelectorAll("[data-workshop-conference-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeConferenceTab = btn.getAttribute("data-workshop-conference-tab") || "room";
+        render();
+      });
+    });
     root.querySelectorAll("[data-workshop-editor-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         activeEditorTab = btn.getAttribute("data-workshop-editor-tab") || "place";
@@ -967,6 +1156,101 @@ export function createWorkshopMode(options = {}) {
     root.querySelectorAll("[data-workshop-debug]").forEach((btn) => {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
     });
+    root.querySelector("[data-workshop-conference-save]")?.addEventListener("click", () => {
+      void saveConferenceSession();
+    });
+    root.querySelectorAll("[data-workshop-conference-focus]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetId = btn.getAttribute("data-workshop-conference-focus") || "room";
+        focusConferenceTarget(targetId);
+        setStatus?.("ok", targetId === "rack" ? "Plugin rack focused." : "Conference room focused.");
+      });
+    });
+    root.querySelector("#workshop-conference-topic")?.addEventListener("input", (event) => {
+      conferenceState.topic = event.target?.value || "";
+    });
+    root.querySelector("#workshop-conference-notes")?.addEventListener("input", (event) => {
+      conferenceState.notes_markdown = event.target?.value || "";
+    });
+    root.querySelectorAll("[data-workshop-toggle-attendee]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const seatId = btn.getAttribute("data-workshop-toggle-attendee") || "";
+        const next = new Set(Array.isArray(conferenceState.attendees) ? conferenceState.attendees : []);
+        if (next.has(seatId)) next.delete(seatId);
+        else next.add(seatId);
+        conferenceState.attendees = [...next];
+        conferenceScene.setAttendees(conferenceState.attendees);
+        render();
+      });
+    });
+    root.querySelectorAll("[data-workshop-plugin-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const pluginKey = btn.getAttribute("data-workshop-plugin-toggle") || "";
+        const plugin = conferenceState.plugin_modules?.[pluginKey];
+        if (!plugin || typeof plugin !== "object") return;
+        plugin.enabled = !plugin.enabled;
+        void saveConferenceSession(`${plugin.enabled ? "Enabled" : "Disabled"} ${plugin.label || pluginKey}.`);
+      });
+    });
+    root.querySelectorAll("[data-workshop-lighting-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const preset = btn.getAttribute("data-workshop-lighting-preset") || "review";
+        if (conferenceState.plugin_modules?.lighting) {
+          conferenceState.plugin_modules.lighting.preset = preset;
+        }
+        void saveConferenceSession(`Lighting preset saved: ${preset}.`);
+      });
+    });
+    root.querySelector("[data-workshop-timer-duration]")?.addEventListener("change", (event) => {
+      const nextSeconds = clamp(Number.parseInt(event.target?.value || "900", 10), 5, 86400);
+      if (conferenceState.plugin_modules?.timers) {
+        conferenceState.plugin_modules.timers.duration_seconds = nextSeconds;
+        conferenceState.plugin_modules.timers.remaining_seconds = nextSeconds;
+        conferenceState.plugin_modules.timers.running = false;
+        conferenceState.plugin_modules.timers.started_at = null;
+      }
+      void saveConferenceSession(`Timer duration saved: ${nextSeconds}s.`);
+    });
+    root.querySelector("[data-workshop-timer-start]")?.addEventListener("click", () => {
+      const timer = conferenceState.plugin_modules?.timers;
+      if (!timer) return;
+      timer.running = true;
+      timer.started_at = new Date().toISOString();
+      timer.remaining_seconds = computeTimerRemainingSeconds({ ...timer, running: false });
+      void saveConferenceSession("Conference timer started.");
+    });
+    root.querySelector("[data-workshop-timer-pause]")?.addEventListener("click", () => {
+      const timer = conferenceState.plugin_modules?.timers;
+      if (!timer) return;
+      timer.remaining_seconds = computeTimerRemainingSeconds(timer);
+      timer.running = false;
+      timer.started_at = null;
+      void saveConferenceSession("Conference timer paused.");
+    });
+    root.querySelector("[data-workshop-timer-reset]")?.addEventListener("click", () => {
+      const timer = conferenceState.plugin_modules?.timers;
+      if (!timer) return;
+      timer.remaining_seconds = Number(timer.duration_seconds) || 900;
+      timer.running = false;
+      timer.started_at = null;
+      void saveConferenceSession("Conference timer reset.");
+    });
+    root.querySelector("[data-workshop-checkpoint-open]")?.addEventListener("click", () => {
+      checkpointOpen = !checkpointOpen;
+      render();
+    });
+    root.querySelector("#workshop-checkpoint-title")?.addEventListener("input", (event) => {
+      checkpointDraft.title = event.target?.value || "";
+    });
+    root.querySelector("#workshop-checkpoint-goal")?.addEventListener("input", (event) => {
+      checkpointDraft.experiment_goal = event.target?.value || "";
+    });
+    root.querySelector("#workshop-checkpoint-safety")?.addEventListener("input", (event) => {
+      checkpointDraft.safety_note = event.target?.value || "";
+    });
+    root.querySelector("[data-workshop-checkpoint-save]")?.addEventListener("click", () => {
+      void saveConferenceCheckpoint();
+    });
     dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
       await toggleDictation?.(dictationInputId, dictationBtn);
@@ -1005,6 +1289,7 @@ export function createWorkshopMode(options = {}) {
         <div class="workshop-top-tabs" role="tablist" aria-label="Workshop">
           <button type="button" class="workshop-top-tab${activeTopTab === "editor" ? " active" : ""}" data-workshop-top-tab="editor">Editor</button>
           <button type="button" class="workshop-top-tab${activeTopTab === "projects" ? " active" : ""}" data-workshop-top-tab="projects">Project</button>
+          <button type="button" class="workshop-top-tab${activeTopTab === "conference" ? " active" : ""}" data-workshop-top-tab="conference">Conference</button>
           <button type="button" class="workshop-top-tab${activeTopTab === "lab" ? " active" : ""}" data-workshop-top-tab="lab">Studio Lab</button>
         </div>
         ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
@@ -1014,6 +1299,7 @@ export function createWorkshopMode(options = {}) {
           <span>Mouse look</span>
           <span>Click to place</span>
           <span>Drag handles to move</span>
+          <span>Conference saves to sandbox</span>
         </div>
       </div>
     `;
@@ -1073,6 +1359,20 @@ export function createWorkshopMode(options = {}) {
     }
     updatePointerFromEvent(event);
     raycaster.setFromCamera(pointerNdc, camera);
+    const conferenceHit = raycaster.intersectObjects(conferenceScene.clickables || [], true)[0];
+    if (conferenceHit?.object) {
+      let node = conferenceHit.object;
+      while (node && !node.userData?.workshopConferenceTarget) node = node.parent;
+      const targetId = node?.userData?.workshopConferenceTarget || "room";
+      activeTopTab = "conference";
+      activeConferenceTab = targetId === "rack" ? "rack" : "room";
+      focusConferenceTarget(activeConferenceTab === "rack" ? "rack" : "room");
+      setStatus?.("ok", activeConferenceTab === "rack" ? "Plugin rack ready." : "Conference room ready.");
+      render();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     const pcHit = raycaster.intersectObjects([pcMonitor, pcScreen], false)[0];
     if (pcHit) {
       activeTopTab = "editor";
@@ -1148,7 +1448,9 @@ export function createWorkshopMode(options = {}) {
     active = true;
     activeTopTab = "editor";
     activeEditorTab = "place";
+    activeConferenceTab = "room";
     lastDebugResult = null;
+    checkpointOpen = false;
     document.body.classList.add("workshop-mode-active");
     enterCameraPose();
     showWorkshopRoom();
@@ -1196,6 +1498,7 @@ export function createWorkshopMode(options = {}) {
     controls.target.copy(camera.position).add(new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0));
     raycaster.setFromCamera(pointerLocked ? new THREE.Vector2(0, 0) : pointerNdc, camera);
     updatePreviewMesh();
+    syncConferenceTimerDisplay();
   }
 
   function setProjectContext() {
@@ -1203,14 +1506,18 @@ export function createWorkshopMode(options = {}) {
     if (nextId === activeProjectId) return;
     activeProjectId = nextId;
     voiceDraft = "";
+    checkpointOpen = false;
+    checkpointDraft = { title: "", experiment_goal: "", safety_note: "" };
     loadPlacedItems(nextId);
     rebuildPlacedScene();
     if (active) {
       workshopState = normalizeWorkshopState(workshopState, currentProjectName());
+      syncConferenceState(workshopState.conference);
       loadWorkshopState(true);
     } else if (window.location.hash === WORKSHOP_HASH && nextId) {
       void enter();
     } else {
+      syncConferenceState(normalizeConferenceState({}, { projectId: nextId, projectName: currentProjectName() }));
       render();
     }
   }

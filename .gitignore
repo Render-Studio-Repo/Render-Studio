@@ -9,6 +9,12 @@ backups/
 inbox/
 backend/render3d.db
 logs/
+sandbox-sessions/workshop-conference/**
+!sandbox-sessions/workshop-conference/
+!sandbox-sessions/workshop-conference/.gitkeep
+sandbox-sessions/Winstead-Fleet-KB/conference-room/**
+!sandbox-sessions/Winstead-Fleet-KB/conference-room/
+!sandbox-sessions/Winstead-Fleet-KB/conference-room/.gitkeep
 
 # Local snapshots / backup trees (not for GitHub)
 milestones/

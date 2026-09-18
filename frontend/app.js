@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-conference";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled

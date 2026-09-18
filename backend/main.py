@@ -53,6 +53,7 @@ from backend.services import (
     ai_credit_service,
     wiring_debug_job_service,
     workshop_service,
+    workshop_conference_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -1011,6 +1012,19 @@ class WorkshopDebugRequest(BaseModel):
     row_id: str = Field(..., min_length=1, max_length=120)
     label: str | None = Field(default=None, max_length=200)
     detail: str | None = Field(default=None, max_length=1000)
+
+
+class WorkshopConferenceSessionRequest(BaseModel):
+    topic: str = Field(default="", max_length=200)
+    attendees: list[str] = Field(default_factory=list, max_length=5)
+    notes_markdown: str = Field(default="", max_length=20_000)
+    plugin_modules: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkshopConferenceCheckpointRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    experiment_goal: str = Field(default="", max_length=2_000)
+    safety_note: str = Field(default="", max_length=2_000)
 
 
 class RiggingSaveRequest(BaseModel):
@@ -17575,6 +17589,55 @@ async def run_project_workshop_debug(
     )
     return {
         "result": result,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/conference/session")
+def save_project_workshop_conference_session(
+    project_id: str,
+    body: WorkshopConferenceSessionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        conference = workshop_conference_service.update_session(
+            path,
+            topic=body.topic,
+            attendees=body.attendees,
+            notes_markdown=body.notes_markdown,
+            plugin_modules=body.plugin_modules,
+            user=user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "conference": conference,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/conference/checkpoint")
+def save_project_workshop_conference_checkpoint(
+    project_id: str,
+    body: WorkshopConferenceCheckpointRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        result = workshop_conference_service.write_checkpoint(
+            path,
+            title=body.title,
+            experiment_goal=body.experiment_goal,
+            safety_note=body.safety_note,
+            user=user,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        **result,
         "workshop": workshop_service.get_state(path),
     }
 
