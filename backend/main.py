@@ -4054,6 +4054,13 @@ def health():
     }
 
 
+@app.get("/api/oss-launch-checklist")
+def oss_launch_checklist_state():
+    from backend.services import oss_launch_service
+
+    return oss_launch_service.get_public_checklist_state()
+
+
 @app.get("/api/skills")
 def list_skills(user: dict[str, Any] | None = Depends(get_current_user_optional)):
     return skills_service.skills_manifest(user_id=(user or {}).get("id"))

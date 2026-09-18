@@ -1,3 +1,12 @@
+## 2026-09-18 — OSS first-launch checklist + fail-closed KB hygiene
+
+- Added `GET /api/oss-launch-checklist` backed by `backend/services/oss_launch_service.py` to classify KB state as `clean`, `dirty`, `half_seeded`, or fail-closed inspection error from DB + `data/knowledge/`.
+- New Studio-first-launch modal on self-hosted / non-`render3d.app` hosts: `frontend/oss-launch-checklist.js` + `oss-launch-checklist.css`, wired into `frontend/index.html` with welcome-card styling.
+- UX: clean installs show PASS; dirty or inconsistent KB state shows a clear FAIL verdict; “Ecosystem sync” is optional/off by default; store + QoL pointers link to Knowledge Store, Product Marketplace, and Tips & Tricks; no fake meters and no nag loop.
+- Added focused backend classifier tests in `backend/tests/test_oss_launch_service.py`.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

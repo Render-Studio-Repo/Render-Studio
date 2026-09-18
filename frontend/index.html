@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
+  <link rel="stylesheet" href="/oss-launch-checklist.css?v=20260918-oss-launch-v1" />
   <script type="importmap">
   {
     "imports": {
@@ -2688,6 +2689,85 @@
     </div>
   </div>
 
+  <div id="oss-launch-checklist-modal" class="auth-modal welcome-modal oss-launch-checklist-modal hidden" role="dialog" aria-modal="true" aria-labelledby="oss-launch-checklist-title">
+    <div class="auth-backdrop" data-oss-launch-close></div>
+    <div class="auth-card welcome-card oss-launch-checklist-card">
+      <button type="button" class="auth-close" data-oss-launch-close aria-label="Close">&times;</button>
+      <div class="welcome-copy oss-launch-copy">
+        <p class="info-eyebrow">OSS launch checklist</p>
+        <h2 id="oss-launch-checklist-title">Checking whether this install is safe to treat as a first launch</h2>
+        <p id="oss-launch-checklist-summary">
+          We expect an empty knowledge library on a clean OSS install. Anything dirty, half-seeded, or ambiguous stays fail-closed.
+        </p>
+      </div>
+      <div id="oss-launch-verdict" class="oss-launch-verdict" role="status" aria-live="polite">
+        <span id="oss-launch-verdict-badge" class="oss-launch-verdict-badge">Checking</span>
+        <div class="oss-launch-verdict-copy">
+          <strong id="oss-launch-verdict-title">Inspecting knowledge storage…</strong>
+          <p id="oss-launch-verdict-text">Looking at KB rows and on-disk KB files now.</p>
+        </div>
+      </div>
+      <div class="oss-launch-step-list">
+        <section class="oss-launch-step">
+          <div class="oss-launch-step-head">
+            <span class="oss-launch-step-chip oss-launch-step-chip--status" id="oss-launch-kb-chip">Step 1</span>
+            <strong>Empty KB / clean install path</strong>
+          </div>
+          <p class="muted small">A clean first launch means zero knowledge bases, zero KB files, and no leftover KB storage on disk.</p>
+          <ul id="oss-launch-kb-details" class="oss-launch-detail-list">
+            <li>Waiting for install-state results…</li>
+          </ul>
+        </section>
+
+        <section class="oss-launch-step">
+          <div class="oss-launch-step-head">
+            <span class="oss-launch-step-chip oss-launch-step-chip--optional">Optional</span>
+            <strong>Ecosystem sync</strong>
+          </div>
+          <p class="muted small">Off by default. Only turn this on if you want outside CAD/apps involved on day one.</p>
+          <label class="oss-launch-toggle">
+            <input id="oss-launch-ecosystem-sync" type="checkbox" />
+            <span>Open account setup with Fusion 360 and Onshape pre-selected</span>
+          </label>
+          <p id="oss-launch-sync-note" class="muted small oss-launch-inline-note">
+            Leave this unchecked for a simpler first launch.
+          </p>
+        </section>
+
+        <section class="oss-launch-step">
+          <div class="oss-launch-step-head">
+            <span class="oss-launch-step-chip">Step 3</span>
+            <strong>Store + QoL prompt</strong>
+          </div>
+          <p class="muted small">
+            Browse starter packs when you want examples, then use the avatar menu after sign-in for theme, mouse controls, and AI key setup.
+          </p>
+          <div class="welcome-actions oss-launch-actions">
+            <a class="welcome-action welcome-action--primary" href="/knowledge-store.html">
+              <span class="welcome-action-icon" aria-hidden="true">01</span>
+              <span><strong>Knowledge Store</strong><small>Prompt packs, manuals, and CAD context</small></span>
+            </a>
+            <a class="welcome-action" href="/marketplace.html">
+              <span class="welcome-action-icon" aria-hidden="true">02</span>
+              <span><strong>Product Marketplace</strong><small>Starter models, public examples, and tools</small></span>
+            </a>
+            <a class="welcome-action" href="/getting-started.html#tips-library">
+              <span class="welcome-action-icon" aria-hidden="true">03</span>
+              <span><strong>Tips &amp; tricks</strong><small>QoL: controls, workflow hints, and basics</small></span>
+            </a>
+          </div>
+        </section>
+      </div>
+      <p class="muted small oss-launch-footnote">
+        Self-hosted / non-render3d.app Studio hosts show this once per browser. Dismissing it will not start a nag loop.
+      </p>
+      <div class="app-dialog-actions oss-launch-footer-actions">
+        <button type="button" id="oss-launch-create-account" class="btn accent">Create account</button>
+        <button type="button" class="btn secondary" data-oss-launch-close>Continue to Studio</button>
+      </div>
+    </div>
+  </div>
+
   <div id="ai-setup-intro-modal" class="auth-modal welcome-modal ai-setup-intro-modal hidden" role="dialog" aria-modal="true" aria-labelledby="ai-setup-intro-title">
     <div class="auth-backdrop" data-ai-setup-close></div>
     <div class="auth-card welcome-card ai-setup-intro-card">
@@ -3156,6 +3236,7 @@
   <script type="module" src="/toolbar-nav.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
+  <script type="module" src="/oss-launch-checklist.js?v=20260918-oss-launch-v1"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
   <script type="module" src="/app.js?v=20260918-workshop-v1"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>

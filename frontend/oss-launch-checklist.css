@@ -1,0 +1,222 @@
+/* ── OSS first-launch checklist modal ────────────────────────────────────── */
+
+.oss-launch-checklist-modal {
+  z-index: 10115;
+}
+
+.oss-launch-checklist-card {
+  width: min(980px, calc(100vw - 28px));
+}
+
+.oss-launch-copy {
+  padding-bottom: 10px;
+}
+
+.oss-launch-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin: 0 28px 22px;
+  padding: 16px 18px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(18, 24, 38, 0.92), rgba(7, 11, 19, 0.96)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 48%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.26);
+}
+
+.oss-launch-verdict.is-pass {
+  border-color: rgba(34, 197, 94, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(34, 197, 94, 0.08);
+}
+
+.oss-launch-verdict.is-fail {
+  border-color: rgba(248, 81, 73, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(248, 81, 73, 0.1);
+}
+
+.oss-launch-verdict-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e6edf3;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.oss-launch-verdict.is-pass .oss-launch-verdict-badge {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(6, 78, 59, 0.42);
+  color: #bbf7d0;
+}
+
+.oss-launch-verdict.is-fail .oss-launch-verdict-badge {
+  border-color: rgba(248, 81, 73, 0.42);
+  background: rgba(127, 29, 29, 0.42);
+  color: #fecaca;
+}
+
+.oss-launch-verdict-copy strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.oss-launch-verdict-copy p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.oss-launch-step-list {
+  display: grid;
+  gap: 16px;
+  margin: 0 28px 10px;
+}
+
+.oss-launch-step {
+  padding: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(16, 22, 34, 0.94), rgba(8, 12, 22, 0.96)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 56%);
+}
+
+.oss-launch-step p {
+  margin: 10px 0 0;
+}
+
+.oss-launch-step-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.oss-launch-step-head strong {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.oss-launch-step-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.8);
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.oss-launch-step-chip.is-pass {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: rgba(6, 78, 59, 0.36);
+  color: #bbf7d0;
+}
+
+.oss-launch-step-chip.is-fail {
+  border-color: rgba(248, 81, 73, 0.4);
+  background: rgba(127, 29, 29, 0.36);
+  color: #fecaca;
+}
+
+.oss-launch-step-chip--optional {
+  border-color: rgba(250, 204, 21, 0.34);
+  background: rgba(120, 53, 15, 0.34);
+  color: #fde68a;
+}
+
+.oss-launch-detail-list {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  color: #dbe4ee;
+  line-height: 1.6;
+}
+
+.oss-launch-detail-list li + li {
+  margin-top: 8px;
+}
+
+.oss-launch-toggle {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e6edf3;
+  font-weight: 600;
+}
+
+.oss-launch-toggle input {
+  margin-top: 2px;
+}
+
+.oss-launch-inline-note {
+  margin-top: 10px;
+}
+
+.oss-launch-actions {
+  margin: 16px 0 0;
+}
+
+.oss-launch-actions .welcome-action {
+  min-height: 104px;
+}
+
+.oss-launch-footnote {
+  margin: 8px 28px 0;
+  line-height: 1.6;
+}
+
+.oss-launch-footer-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .oss-launch-verdict,
+  .oss-launch-step-list,
+  .oss-launch-footnote {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+
+  .oss-launch-step {
+    padding: 16px;
+  }
+
+  .oss-launch-verdict {
+    flex-direction: column;
+  }
+
+  .oss-launch-actions .welcome-action {
+    min-height: 0;
+  }
+}
