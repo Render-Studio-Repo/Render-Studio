@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from backend.config import settings
-from backend.database import DB_PATH, get_conn
+from backend.database import get_conn
 
 FIRST_PARTY_HOSTS = {
     "render3d.app",
