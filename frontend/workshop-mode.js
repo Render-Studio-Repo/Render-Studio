@@ -51,6 +51,10 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const PHONE_WORKSHOP_MAX_WIDTH = 430;
+const WORKSHOP_TOUCH_LOOK_YAW = 0.0095;
+const WORKSHOP_TOUCH_LOOK_PITCH = 0.0075;
+
 function presetById(id) {
   return PLACE_PRESETS.find((entry) => entry.id === id) || PLACE_PRESETS[0];
 }
@@ -428,8 +432,15 @@ export function createWorkshopMode(options = {}) {
   reticle.innerHTML = `<span></span>`;
   viewportEl.appendChild(reticle);
 
+  const mobileHud = document.createElement("section");
+  mobileHud.className = "workshop-mobile-hud hidden";
+  mobileHud.setAttribute("aria-label", "Workshop phone controls");
+  mobileHud.hidden = true;
+  viewportEl.appendChild(mobileHud);
+
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(0, 0);
+  const centeredPointerNdc = new THREE.Vector2(0, 0);
   const previewSurfaces = [floor, deskSurface];
   const visibleState = new Map();
   const placedMeshById = new Map();
@@ -457,12 +468,31 @@ export function createWorkshopMode(options = {}) {
   let voiceDraft = "";
   const keysDown = new Set();
   const lookState = { yaw: Math.PI / 2, pitch: -0.08 };
+  const mobileWalkState = { active: false, pointerId: null, centerX: 0, centerY: 0, radius: 1, x: 0, y: 0 };
+  const mobileLookState = { active: false, pointerId: null, lastX: 0, lastY: 0 };
   const savedCamera = {
     position: new THREE.Vector3(),
     target: new THREE.Vector3(),
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let mobileSheetOpen = true;
+
+  function isPhoneLayout() {
+    return window.innerWidth <= PHONE_WORKSHOP_MAX_WIDTH;
+  }
+
+  function isPhoneHudActive() {
+    return active && isPhoneLayout();
+  }
+
+  function usesCenteredAim() {
+    return pointerLocked || isPhoneHudActive();
+  }
+
+  function getAimPointerNdc() {
+    return usesCenteredAim() ? centeredPointerNdc : pointerNdc;
+  }
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
@@ -620,6 +650,12 @@ export function createWorkshopMode(options = {}) {
     camera.lookAt(camera.position.clone().add(dir));
   }
 
+  function nudgeLook(deltaX, deltaY) {
+    lookState.yaw -= deltaX * WORKSHOP_TOUCH_LOOK_YAW;
+    lookState.pitch = clamp(lookState.pitch - deltaY * WORKSHOP_TOUCH_LOOK_PITCH, -1.12, 0.7);
+    applyLook();
+  }
+
   function enterCameraPose() {
     savedCamera.position.copy(camera.position);
     savedCamera.target.copy(controls.target);
@@ -634,6 +670,125 @@ export function createWorkshopMode(options = {}) {
     controls.target.copy(savedCamera.target);
     camera.up.set(0, 0, 1);
     camera.lookAt(savedCamera.target);
+  }
+
+  function updateWalkStickVisual() {
+    const knob = mobileHud.querySelector("[data-workshop-stick-knob]");
+    const engaged = mobileHud.querySelector("[data-workshop-stick-engaged]");
+    if (!knob) return;
+    knob.style.transform = `translate(${Math.round(mobileWalkState.x * 28)}px, ${Math.round(mobileWalkState.y * 28)}px)`;
+    engaged?.classList.toggle("active", mobileWalkState.active || Math.hypot(mobileWalkState.x, mobileWalkState.y) > 0.08);
+  }
+
+  function resetMobileWalk() {
+    mobileWalkState.active = false;
+    mobileWalkState.pointerId = null;
+    mobileWalkState.centerX = 0;
+    mobileWalkState.centerY = 0;
+    mobileWalkState.radius = 1;
+    mobileWalkState.x = 0;
+    mobileWalkState.y = 0;
+    updateWalkStickVisual();
+  }
+
+  function resetMobileLook() {
+    mobileLookState.active = false;
+    mobileLookState.pointerId = null;
+    mobileLookState.lastX = 0;
+    mobileLookState.lastY = 0;
+  }
+
+  function updateMobileWalkVector(clientX, clientY) {
+    const radius = Math.max(24, mobileWalkState.radius || 1);
+    const rawX = (clientX - mobileWalkState.centerX) / radius;
+    const rawY = (clientY - mobileWalkState.centerY) / radius;
+    const magnitude = Math.hypot(rawX, rawY);
+    let x = rawX;
+    let y = rawY;
+    if (magnitude > 1) {
+      x /= magnitude;
+      y /= magnitude;
+    }
+    if (Math.hypot(x, y) < 0.12) {
+      x = 0;
+      y = 0;
+    }
+    mobileWalkState.x = clamp(x, -1, 1);
+    mobileWalkState.y = clamp(y, -1, 1);
+    updateWalkStickVisual();
+  }
+
+  function beginMobileWalk(event) {
+    if (!isPhoneHudActive()) return;
+    const stick = event.currentTarget;
+    const rect = stick.getBoundingClientRect();
+    mobileWalkState.active = true;
+    mobileWalkState.pointerId = event.pointerId;
+    mobileWalkState.centerX = rect.left + rect.width / 2;
+    mobileWalkState.centerY = rect.top + rect.height / 2;
+    mobileWalkState.radius = Math.min(rect.width, rect.height) * 0.34;
+    try { stick.setPointerCapture?.(event.pointerId); } catch (_) {}
+    updateMobileWalkVector(event.clientX, event.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveMobileWalk(event) {
+    if (!mobileWalkState.active || mobileWalkState.pointerId !== event.pointerId) return;
+    updateMobileWalkVector(event.clientX, event.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endMobileWalk(event) {
+    if (mobileWalkState.pointerId !== event.pointerId) return;
+    try {
+      if (event.currentTarget?.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch (_) {}
+    resetMobileWalk();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function beginMobileLook(event) {
+    if (!isPhoneHudActive()) return;
+    mobileLookState.active = true;
+    mobileLookState.pointerId = event.pointerId;
+    mobileLookState.lastX = event.clientX;
+    mobileLookState.lastY = event.clientY;
+    try { event.currentTarget?.setPointerCapture?.(event.pointerId); } catch (_) {}
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function moveMobileLook(event) {
+    if (!mobileLookState.active || mobileLookState.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - mobileLookState.lastX;
+    const deltaY = event.clientY - mobileLookState.lastY;
+    mobileLookState.lastX = event.clientX;
+    mobileLookState.lastY = event.clientY;
+    nudgeLook(deltaX, deltaY);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endMobileLook(event) {
+    if (mobileLookState.pointerId !== event.pointerId) return;
+    try {
+      if (event.currentTarget?.hasPointerCapture?.(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch (_) {}
+    resetMobileLook();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function focusPlaceMode() {
+    activeTopTab = "editor";
+    activeEditorTab = "place";
   }
 
   async function loadWorkshopState(force = false) {
@@ -716,6 +871,8 @@ export function createWorkshopMode(options = {}) {
   }
 
   function placeSelectedPreset() {
+    raycaster.setFromCamera(getAimPointerNdc(), camera);
+    updatePreviewMesh();
     if (!previewPoint) {
       setStatus?.("error", "Move the cursor onto the floor or desk first.");
       return;
@@ -882,7 +1039,9 @@ export function createWorkshopMode(options = {}) {
       </div>
       <div class="workshop-panel-scroll">
         ${activeEditorTab === "place" ? `
-          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk.</p>
+          <p class="muted small workshop-soft-note">${isPhoneHudActive()
+            ? "Walk with the left thumbstick, drag the right pad to look, and use the center reticle plus Place when you want to drop an item."
+            : "Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk."}</p>
           <div class="workshop-preset-grid">
             ${PLACE_PRESETS.map((preset) => `
               <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
@@ -978,15 +1137,75 @@ export function createWorkshopMode(options = {}) {
     root.querySelector("[data-workshop-run-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: true }));
   }
 
+  function bindMobileHudEvents() {
+    mobileHud.querySelector("[data-workshop-mobile-sheet]")?.addEventListener("click", () => {
+      mobileSheetOpen = !mobileSheetOpen;
+      render();
+    });
+    mobileHud.querySelector("[data-workshop-mobile-place]")?.addEventListener("click", () => {
+      focusPlaceMode();
+      placeSelectedPreset();
+      render();
+    });
+    mobileHud.querySelector("[data-workshop-mobile-exit]")?.addEventListener("click", () => exit());
+    const stick = mobileHud.querySelector("[data-workshop-stick]");
+    const lookZone = mobileHud.querySelector("[data-workshop-lookzone]");
+    stick?.addEventListener("pointerdown", beginMobileWalk);
+    stick?.addEventListener("pointermove", moveMobileWalk);
+    stick?.addEventListener("pointerup", endMobileWalk);
+    stick?.addEventListener("pointercancel", endMobileWalk);
+    stick?.addEventListener("lostpointercapture", () => resetMobileWalk());
+    lookZone?.addEventListener("pointerdown", beginMobileLook);
+    lookZone?.addEventListener("pointermove", moveMobileLook);
+    lookZone?.addEventListener("pointerup", endMobileLook);
+    lookZone?.addEventListener("pointercancel", endMobileLook);
+    lookZone?.addEventListener("lostpointercapture", () => resetMobileLook());
+    updateWalkStickVisual();
+  }
+
+  function renderMobileHud() {
+    const phoneHud = isPhoneHudActive();
+    mobileHud.hidden = !phoneHud;
+    mobileHud.classList.toggle("hidden", !phoneHud);
+    if (!phoneHud) {
+      mobileHud.innerHTML = "";
+      resetMobileWalk();
+      resetMobileLook();
+      return;
+    }
+    mobileHud.innerHTML = `
+      <div class="workshop-mobile-lookzone" data-workshop-lookzone role="application" aria-label="Drag to look around the workshop">
+        <span class="workshop-mobile-zone-kicker">Look</span>
+        <strong>Drag camera</strong>
+        <small>Use your right thumb to look around.</small>
+      </div>
+      <div class="workshop-mobile-stick" data-workshop-stick role="application" aria-label="Drag to walk around the workshop">
+        <span class="workshop-mobile-stick-engaged" data-workshop-stick-engaged></span>
+        <span class="workshop-mobile-stick-base"></span>
+        <span class="workshop-mobile-stick-knob" data-workshop-stick-knob></span>
+        <span class="workshop-mobile-stick-label">Walk</span>
+      </div>
+      <div class="workshop-mobile-actions" role="toolbar" aria-label="Workshop phone actions">
+        <button type="button" class="btn secondary" data-workshop-mobile-sheet>${mobileSheetOpen ? "Hide menu" : "Menu"}</button>
+        <button type="button" class="btn accent" data-workshop-mobile-place>Place</button>
+        <button type="button" class="btn secondary" data-workshop-mobile-exit>Studio</button>
+      </div>
+    `;
+    bindMobileHudEvents();
+  }
+
   function render() {
     const canOpen = !!String(getProjectId?.() || "").trim();
+    const phoneHud = isPhoneHudActive();
     launcher.hidden = active;
     launcher.disabled = !canOpen;
     launcher.title = canOpen ? "Open the Workshop desktop scene" : "Open a project first";
-    root.hidden = !active;
-    root.classList.toggle("hidden", !active);
-    reticle.hidden = !(active && pointerLocked);
-    reticle.classList.toggle("hidden", !(active && pointerLocked));
+    root.hidden = !active || (phoneHud && !mobileSheetOpen);
+    root.classList.toggle("hidden", !active || (phoneHud && !mobileSheetOpen));
+    root.classList.toggle("workshop-shell--phone", phoneHud);
+    reticle.hidden = !(active && usesCenteredAim());
+    reticle.classList.toggle("hidden", !(active && usesCenteredAim()));
+    renderMobileHud();
     if (!active) return;
     const projectName = workshopState.project_label || currentProjectName();
     root.innerHTML = `
@@ -995,10 +1214,10 @@ export function createWorkshopMode(options = {}) {
           <div>
             <span class="workshop-kicker">Workshop</span>
             <h2>${esc(projectName)}</h2>
-            <p>Desktop scene active · Route ${esc(WORKSHOP_HASH)}</p>
+            <p>${phoneHud ? "Phone walk mode active · left thumb walks, right thumb looks." : `Desktop scene active · Route ${esc(WORKSHOP_HASH)}`}</p>
           </div>
           <div class="workshop-shell-actions">
-            <button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
+            ${phoneHud ? "" : `<button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>`}
             <button type="button" class="btn secondary btn-compact" data-workshop-exit>Back to Studio</button>
           </div>
         </div>
@@ -1010,10 +1229,15 @@ export function createWorkshopMode(options = {}) {
         ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
         ${renderBody()}
         <div class="workshop-footnote">
-          <span>WASD walk</span>
-          <span>Mouse look</span>
-          <span>Click to place</span>
-          <span>Drag handles to move</span>
+          ${phoneHud
+            ? `<span>Left stick walk</span>
+               <span>Right pad look</span>
+               <span>Center reticle place</span>
+               <span>Dismissible top sheet</span>`
+            : `<span>WASD walk</span>
+               <span>Mouse look</span>
+               <span>Click to place</span>
+               <span>Drag handles to move</span>`}
         </div>
       </div>
     `;
@@ -1030,6 +1254,7 @@ export function createWorkshopMode(options = {}) {
   function handlePointerDown(event) {
     if (!active) return;
     if (event.target?.closest?.(".workshop-shell")) return;
+    if (event.target?.closest?.(".workshop-mobile-hud")) return;
     lastPointerEvent = event;
     updatePointerFromEvent(event);
     if (pointerLocked) {
@@ -1058,6 +1283,7 @@ export function createWorkshopMode(options = {}) {
       event.stopImmediatePropagation();
       return;
     }
+    if (event.target?.closest?.(".workshop-mobile-hud")) return;
     lastPointerEvent = event;
     updatePointerFromEvent(event);
   }
@@ -1065,6 +1291,7 @@ export function createWorkshopMode(options = {}) {
   function handleCanvasClick(event) {
     if (!active) return;
     if (event.target?.closest?.(".workshop-shell")) return;
+    if (event.target?.closest?.(".workshop-mobile-hud")) return;
     if (pointerLocked) {
       if (activeTopTab === "editor" && activeEditorTab === "place") placeSelectedPreset();
       event.preventDefault();
@@ -1089,7 +1316,7 @@ export function createWorkshopMode(options = {}) {
       event.stopImmediatePropagation();
       return;
     }
-    if (activeTopTab === "editor" && activeEditorTab === "place") {
+    if (!isPhoneHudActive() && activeTopTab === "editor" && activeEditorTab === "place") {
       placeSelectedPreset();
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -1149,6 +1376,7 @@ export function createWorkshopMode(options = {}) {
     activeTopTab = "editor";
     activeEditorTab = "place";
     lastDebugResult = null;
+    mobileSheetOpen = true;
     document.body.classList.add("workshop-mode-active");
     enterCameraPose();
     showWorkshopRoom();
@@ -1163,6 +1391,9 @@ export function createWorkshopMode(options = {}) {
     active = false;
     pointerLocked = false;
     keysDown.clear();
+    mobileSheetOpen = true;
+    resetMobileWalk();
+    resetMobileLook();
     document.exitPointerLock?.();
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
@@ -1181,8 +1412,10 @@ export function createWorkshopMode(options = {}) {
     const dt = lastFrameMs ? Math.min(0.05, (now - lastFrameMs) / 1000) : 0.016;
     lastFrameMs = now;
     const speed = keysDown.has("ShiftLeft") || keysDown.has("ShiftRight") ? 6.2 : 3.2;
-    const forward = (keysDown.has("KeyW") || keysDown.has("ArrowUp") ? 1 : 0) - (keysDown.has("KeyS") || keysDown.has("ArrowDown") ? 1 : 0);
-    const strafe = (keysDown.has("KeyD") || keysDown.has("ArrowRight") ? 1 : 0) - (keysDown.has("KeyA") || keysDown.has("ArrowLeft") ? 1 : 0);
+    const keyboardForward = (keysDown.has("KeyW") || keysDown.has("ArrowUp") ? 1 : 0) - (keysDown.has("KeyS") || keysDown.has("ArrowDown") ? 1 : 0);
+    const keyboardStrafe = (keysDown.has("KeyD") || keysDown.has("ArrowRight") ? 1 : 0) - (keysDown.has("KeyA") || keysDown.has("ArrowLeft") ? 1 : 0);
+    const forward = keyboardForward || clamp(-mobileWalkState.y, -1, 1);
+    const strafe = keyboardStrafe || clamp(mobileWalkState.x, -1, 1);
     if (forward || strafe) {
       const moveForward = new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0);
       const moveRight = new THREE.Vector3(-Math.sin(lookState.yaw), Math.cos(lookState.yaw), 0);
@@ -1194,7 +1427,7 @@ export function createWorkshopMode(options = {}) {
     camera.position.z = 1.72;
     applyLook();
     controls.target.copy(camera.position).add(new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0));
-    raycaster.setFromCamera(pointerLocked ? new THREE.Vector2(0, 0) : pointerNdc, camera);
+    raycaster.setFromCamera(getAimPointerNdc(), camera);
     updatePreviewMesh();
   }
 
@@ -1227,6 +1460,14 @@ export function createWorkshopMode(options = {}) {
   window.addEventListener("keyup", handleKeyUp, true);
   document.addEventListener("pointerlockchange", () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
+    render();
+  });
+  window.addEventListener("resize", () => {
+    if (!isPhoneLayout()) {
+      resetMobileWalk();
+      resetMobileLook();
+      mobileSheetOpen = true;
+    }
     render();
   });
   window.addEventListener("hashchange", () => {
