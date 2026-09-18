@@ -1,3 +1,13 @@
+## 2026-09-18 — Workshop voice picker fallback + no-talk-over default
+
+- Added a voice preferences block to Workshop → Voice Prompt with plain-English voice labels, per-project local persistence, and a default "Allow interrupting the current speaker" toggle set off.
+- When no provider voices are wired, Workshop now shows a clear **Connect voice** empty state and stays on the existing prompt handoff path instead of crashing.
+- Added an optional frontend hook (`window.__renderStudioWorkshopVoiceProviders` / `window.renderStudioWorkshopVoiceProviders`) so injected ElevenLabs/Grok voice catalogs can populate the picker without further workshop UI changes.
+- Cache-busts: `workshop-mode.js?v=20260918-workshop-voice`, `styles.css?v=20260918-workshop-voice`.
+- Verified in-browser with a local harness page covering fallback + simulated provider states; voice selection persisted across reload and the interrupt-current-speaker checkbox stayed off by default.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
