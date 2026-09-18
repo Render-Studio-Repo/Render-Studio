@@ -1,3 +1,14 @@
+## 2026-09-18 — Workshop conference room, plugin rack, and PM chart
+
+- Added `workshop_conference_service.py` for sandbox-backed conference session JSON, notes markdown, KB mirror, and free-reign checkpoint stubs.
+- Added `workshop_score_chart_service.py`; the PM chart reads only real receipt / guard JSON and stays empty when no fixture exists.
+- Added frontend modules `workshop-conference-room.js`, `workshop-plugin-rack.js`, and `workshop-score-chart.js` with thin hooks from `workshop-mode.js`.
+- Conference room seats are fixed to Projects Manager, Code Bot, CAD, Harness, and RnD; plugin rack covers TV, lighting, timers, shift/skills, notes, and sandbox checkpoints.
+- Added `ai-context/HARNESS-UPDATE-RECEIPT-WAKE.md` and cache-busted touched static assets with `?v=20260918-workshop-conference`.
+- Verified via Python compile checks, a stubbed conference-service sandbox-write smoke, and Chromium harness screenshots because this VM lacked the documented FastAPI/venv runtime.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
