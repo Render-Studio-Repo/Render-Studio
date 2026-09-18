@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import {
+  bindWorkshopAgentCardEvents,
+  loadMutedWorkshopAgentIds,
+  renderWorkshopAgentCards,
+} from "./workshop-agent-cards.js?v=20260918-agent-hover";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
@@ -463,6 +468,7 @@ export function createWorkshopMode(options = {}) {
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let mutedAgentIds = new Set();
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
@@ -639,6 +645,7 @@ export function createWorkshopMode(options = {}) {
   async function loadWorkshopState(force = false) {
     const projectId = String(getProjectId?.() || "").trim();
     activeProjectId = projectId;
+    mutedAgentIds = loadMutedWorkshopAgentIds(projectId);
     loadPlacedItems(projectId);
     rebuildPlacedScene();
     if (!projectId) {
@@ -771,24 +778,12 @@ export function createWorkshopMode(options = {}) {
     const agents = Array.isArray(workshopState.agents) ? workshopState.agents : [];
     if (!agents.length) return `<p class="muted small">No room agents online yet.</p>`;
     const note = showNote && workshopState.agents_source !== "live"
-      ? `<p class="muted small workshop-soft-note">Example room activity is shown until a live room feed is connected.</p>`
+      ? `<p class="muted small workshop-soft-note">Live room claims are not connected yet, so agents stay idle until a real current task lands.</p>`
       : "";
-    return `${note}${agents.map((agent) => `
-      <article class="workshop-card workshop-agent-card">
-        <div class="workshop-card-head">
-          <strong>${esc(agent.name || agent.id || "Agent")}</strong>
-          <span class="workshop-pill">${esc(agent.status || "Ready")}</span>
-        </div>
-        <ul class="workshop-task-list">
-          ${(Array.isArray(agent.tasks) ? agent.tasks : []).map((task) => `
-            <li>
-              <span>${esc(task.title || task.name || "Task")}</span>
-              <em>${esc(task.status || "queued")}</em>
-            </li>
-          `).join("")}
-        </ul>
-      </article>
-    `).join("")}`;
+    return `${note}${renderWorkshopAgentCards(agents, {
+      agentSource: workshopState.agents_source,
+      mutedAgentIds,
+    })}`;
   }
 
   function renderQueue() {
@@ -966,6 +961,15 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelectorAll("[data-workshop-debug]").forEach((btn) => {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
+    });
+    bindWorkshopAgentCardEvents(root, {
+      projectId: activeProjectId,
+      mutedAgentIds,
+      onMutedAgentIdsChange(nextMutedAgentIds, change) {
+        mutedAgentIds = nextMutedAgentIds;
+        setStatus?.("ok", change?.muted ? "Agent chatter muted locally." : "Agent chatter unmuted.");
+        render();
+      },
     });
     dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
