@@ -1,0 +1,27 @@
+{
+  "week_id": "2026-W38",
+  "updated_at": "2026-09-18T06:00:00Z",
+  "source": "manual",
+  "goals": [
+    {
+      "id": "g-1",
+      "title": "Lock this week's workshop ship list",
+      "owner_slug": "pm-sam",
+      "status": "doing",
+      "claim_id": "claim-2041"
+    },
+    {
+      "id": "g-2",
+      "title": "Review fixture stand handoff checklist",
+      "owner_slug": "ops-maya",
+      "status": "todo"
+    },
+    {
+      "id": "g-3",
+      "title": "Unblock the printer bay notes",
+      "owner_slug": "qa-luis",
+      "status": "blocked",
+      "claim_id": "claim-2049"
+    }
+  ]
+}

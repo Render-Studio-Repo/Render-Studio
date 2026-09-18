@@ -1,3 +1,12 @@
+## 2026-09-18 — Workshop wall Weekly Goals mirror
+
+- Added read-only Workshop Weekly Goals panel sourced from `sandbox-sessions/workshop/weekly-goals/latest.json`.
+- New backend `workshop_weekly_goals_service.py` + `/api/workshop/weekly-goals` GET route; no write-back to CURRENT in v1.
+- Workshop desktop now exposes `Project -> Weekly Goals`; God Mode mirrors the same panel for room-wide visibility.
+- Seeded `sandbox-sessions/workshop/weekly-goals/latest.json`, added `ai-context/workshop-weekly-goals.md`, and cache-busted `styles.css` / `app.js` / `workshop-mode.js` references with `?v=20260918-weekly-goals`.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

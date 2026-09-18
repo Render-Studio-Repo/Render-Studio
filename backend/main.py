@@ -53,6 +53,7 @@ from backend.services import (
     ai_credit_service,
     wiring_debug_job_service,
     workshop_service,
+    workshop_weekly_goals_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -17577,6 +17578,14 @@ async def run_project_workshop_debug(
         "result": result,
         "workshop": workshop_service.get_state(path),
     }
+
+
+@app.get("/api/workshop/weekly-goals")
+def get_workshop_weekly_goals(
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _ = user
+    return workshop_weekly_goals_service.get_state()
 
 
 @app.post("/api/projects/{project_id}/design/demo/gear-train")

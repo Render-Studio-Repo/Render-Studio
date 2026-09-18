@@ -1,5 +1,11 @@
 import * as THREE from "three";
 
+import {
+  normalizeWorkshopWeeklyGoalsState,
+  renderWorkshopWeeklyGoalsPanel,
+  seededWorkshopWeeklyGoalsState,
+} from "./workshop-weekly-goals-panel.js?v=20260918-weekly-goals";
+
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
 const PLACE_PRESETS = [
@@ -445,10 +451,12 @@ export function createWorkshopMode(options = {}) {
   let selectedPlacePreset = PLACE_PRESETS[0].id;
   let activeTopTab = "editor";
   let activeEditorTab = "place";
-  let activeProjectTab = "create";
+  let activeProjectTab = "goals";
   let activeLabTab = "agents";
   let selectedItemId = "";
   let workshopError = "";
+  let weeklyGoalsState = seededWorkshopWeeklyGoalsState();
+  let weeklyGoalsError = "";
   let previewPoint = null;
   let pointerLocked = false;
   let lastPointerEvent = null;
@@ -653,17 +661,26 @@ export function createWorkshopMode(options = {}) {
     }
     const token = ++loadToken;
     workshopError = "";
-    try {
-      const data = await api(`/api/projects/${projectId}/workshop`);
-      if (token !== loadToken) return;
-      workshopState = normalizeWorkshopState(data, currentProjectName());
-      loadedProjectId = projectId;
-    } catch (err) {
-      if (token !== loadToken) return;
+    const [workshopResult, weeklyGoalsResult] = await Promise.allSettled([
+      api(`/api/projects/${projectId}/workshop`),
+      api("/api/workshop/weekly-goals"),
+    ]);
+    if (token !== loadToken) return;
+    if (workshopResult.status === "fulfilled") {
+      workshopState = normalizeWorkshopState(workshopResult.value, currentProjectName());
+      workshopError = "";
+    } else {
       workshopState = seededWorkshopState(currentProjectName());
-      workshopError = err?.message || "Could not load saved workshop details.";
-      loadedProjectId = projectId;
+      workshopError = workshopResult.reason?.message || "Could not load saved workshop details.";
     }
+    if (weeklyGoalsResult.status === "fulfilled") {
+      weeklyGoalsState = normalizeWorkshopWeeklyGoalsState(weeklyGoalsResult.value);
+      weeklyGoalsError = "";
+    } else {
+      weeklyGoalsState = seededWorkshopWeeklyGoalsState();
+      weeklyGoalsError = weeklyGoalsResult.reason?.message || "Could not load the weekly goals mirror.";
+    }
+    loadedProjectId = projectId;
     render();
   }
 
@@ -832,15 +849,32 @@ export function createWorkshopMode(options = {}) {
     `;
   }
 
+  function renderWeeklyGoalsWall(surface = "workshop") {
+    return `
+      ${weeklyGoalsError ? `<div class="workshop-inline-error">${esc(weeklyGoalsError)}</div>` : ""}
+      ${renderWorkshopWeeklyGoalsPanel(weeklyGoalsState, { surface })}
+    `;
+  }
+
+  function renderGodModePanel() {
+    return `
+      ${renderWeeklyGoalsWall("god")}
+      <p class="muted small workshop-soft-note">Room agents stay visible here beside the read-only weekly goals wall.</p>
+      ${renderAgents(false)}
+    `;
+  }
+
   function renderBody() {
     if (activeTopTab === "projects") {
       return `
         <div class="workshop-subtabs" role="tablist" aria-label="Workshop project tabs">
+          <button type="button" class="workshop-subtab${activeProjectTab === "goals" ? " active" : ""}" data-workshop-project-tab="goals">Weekly Goals</button>
           <button type="button" class="workshop-subtab${activeProjectTab === "create" ? " active" : ""}" data-workshop-project-tab="create">Create</button>
           <button type="button" class="workshop-subtab${activeProjectTab === "train" ? " active" : ""}" data-workshop-project-tab="train">Train</button>
           <button type="button" class="workshop-subtab${activeProjectTab === "approvals" ? " active" : ""}" data-workshop-project-tab="approvals">Approvals</button>
         </div>
         <div class="workshop-panel-scroll">
+          ${activeProjectTab === "goals" ? renderWeeklyGoalsWall("workshop") : ""}
           ${activeProjectTab === "create" ? projectCards(workshopState.projects?.create || [], "create") : ""}
           ${activeProjectTab === "train" ? projectCards(workshopState.projects?.train || [], "train") : ""}
           ${activeProjectTab === "approvals" ? (workshopState.approvals || []).map((item) => `
@@ -906,7 +940,7 @@ export function createWorkshopMode(options = {}) {
             <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
           </div>
         ` : ""}
-        ${activeEditorTab === "god" ? renderAgents(true) : ""}
+        ${activeEditorTab === "god" ? renderGodModePanel() : ""}
       </div>
     `;
   }
@@ -1075,9 +1109,9 @@ export function createWorkshopMode(options = {}) {
     raycaster.setFromCamera(pointerNdc, camera);
     const pcHit = raycaster.intersectObjects([pcMonitor, pcScreen], false)[0];
     if (pcHit) {
-      activeTopTab = "editor";
-      activeEditorTab = "place";
-      setStatus?.("ok", "Workshop editor ready.");
+      activeTopTab = "projects";
+      activeProjectTab = "goals";
+      setStatus?.("ok", "Weekly Goals wall open.");
       render();
       event.preventDefault();
       event.stopImmediatePropagation();
