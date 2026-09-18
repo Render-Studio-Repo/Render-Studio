@@ -1,0 +1,29 @@
+{
+  "wake": "WAREHOUSE-MVP-INGEST",
+  "rcpt_id": "RCPT-CAD-20260918-warehouse-floor-walls",
+  "log_id": "LOG-CAD-20260918-warehouse-mvp",
+  "job_id": "JOB-WAREHOUSE-MVP-20260918",
+  "priority": "walkable_floor",
+  "units": "meters",
+  "up_axis": "y",
+  "layout_path": "sandbox-sessions/warehouse-mvp/layout.json",
+  "meshes": [
+    "warehouse_floor.glb",
+    "warehouse_shells.glb",
+    "wall_pos_x.glb",
+    "wall_neg_x.glb",
+    "wall_pos_z.glb",
+    "wall_neg_z.glb"
+  ],
+  "bays": [
+    "bay_robot_sim",
+    "bay_wiring",
+    "bay_meetings",
+    "bay_public_pods"
+  ],
+  "training_bay": "bay_wiring",
+  "public_bring_in_bay": "bay_public_pods",
+  "structural_capacity": null,
+  "updated_at": "2026-09-18T06:47:00Z",
+  "ask": "Workshop ingest + Wiring drop; public bring-in stub + 1 labeled training bay"
+}

@@ -51,6 +51,7 @@ from backend.services import (
     onboarding_email_service,
     workspace_log_service,
     ai_credit_service,
+    sandbox_sessions_service,
     wiring_debug_job_service,
     workshop_service,
 )
@@ -12084,6 +12085,17 @@ def list_projects(
 @app.get("/api/public/projects")
 def list_public_projects():
     return {"folder": _public_folder_summary(), "projects": _public_project_summaries()}
+
+
+@app.get("/api/sandbox-sessions/{session_id}/{filename:path}")
+def get_sandbox_session_asset(session_id: str, filename: str):
+    try:
+        path = sandbox_sessions_service.resolve_asset(session_id, filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path)
 
 
 def _public_prompt_entry(entry: dict[str, Any]) -> dict[str, Any] | None:

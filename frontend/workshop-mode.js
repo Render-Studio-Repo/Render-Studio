@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createWorkshopWarehouseFloor } from "./workshop-warehouse-floor.js?v=20260918-warehouse-mvp";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
@@ -279,9 +280,11 @@ export function createWorkshopMode(options = {}) {
     getProjectName,
     api,
     setStatus,
+    authHeaders,
     toggleDictation,
     setStudioPromptText,
     clearStudioSelection,
+    openWiringWorkspace,
   } = options;
 
   if (!viewportEl || !renderer || !scene || !camera || !controls || !transformControls) {
@@ -292,6 +295,12 @@ export function createWorkshopMode(options = {}) {
   roomGroup.name = "workshop-room";
   roomGroup.visible = false;
   scene.add(roomGroup);
+  const legacyRoomNodes = [];
+  const addLegacy = (node) => {
+    legacyRoomNodes.push(node);
+    roomGroup.add(node);
+    return node;
+  };
 
   const placedGroup = new THREE.Group();
   placedGroup.name = "workshop-placed";
@@ -304,28 +313,28 @@ export function createWorkshopMode(options = {}) {
   floor.name = "workshop-floor";
   floor.receiveShadow = true;
   floor.userData.workshopSurface = "floor";
-  roomGroup.add(floor);
+  addLegacy(floor);
 
   const backWall = new THREE.Mesh(
     new THREE.BoxGeometry(18, 0.24, 4.6),
     new THREE.MeshStandardMaterial({ color: 0x223047, roughness: 0.86 }),
   );
   backWall.position.set(0, 8.88, 2.3);
-  roomGroup.add(backWall);
+  addLegacy(backWall);
 
   const sideWall = new THREE.Mesh(
     new THREE.BoxGeometry(0.24, 18, 4.6),
     new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.86 }),
   );
   sideWall.position.set(-8.88, 0, 2.3);
-  roomGroup.add(sideWall);
+  addLegacy(sideWall);
 
   const desk = new THREE.Mesh(
     new THREE.BoxGeometry(3.2, 1.4, 0.12),
     new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.72 }),
   );
   desk.position.set(0.6, 5.2, 0.86);
-  roomGroup.add(desk);
+  addLegacy(desk);
 
   for (const sx of [-1, 1]) {
     for (const sy of [-1, 1]) {
@@ -334,7 +343,7 @@ export function createWorkshopMode(options = {}) {
         new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.74 }),
       );
       leg.position.set(0.6 + sx * 1.46, 5.2 + sy * 0.58, 0.41);
-      roomGroup.add(leg);
+      addLegacy(leg);
     }
   }
 
@@ -344,28 +353,28 @@ export function createWorkshopMode(options = {}) {
   );
   deskSurface.position.set(0.6, 5.2, 0.93);
   deskSurface.userData.workshopSurface = "desk";
-  roomGroup.add(deskSurface);
+  addLegacy(deskSurface);
 
   const printerBody = new THREE.Mesh(
     new THREE.BoxGeometry(0.95, 0.82, 0.78),
     new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.46, metalness: 0.18 }),
   );
   printerBody.position.set(-0.35, 5.15, 1.31);
-  roomGroup.add(printerBody);
+  addLegacy(printerBody);
 
   const printerWindow = new THREE.Mesh(
     new THREE.BoxGeometry(0.66, 0.03, 0.5),
     new THREE.MeshStandardMaterial({ color: 0x60a5fa, emissive: 0x1d4ed8, transparent: true, opacity: 0.35 }),
   );
   printerWindow.position.set(-0.35, 4.75, 1.32);
-  roomGroup.add(printerWindow);
+  addLegacy(printerWindow);
 
   const pcBase = new THREE.Mesh(
     new THREE.BoxGeometry(0.58, 0.32, 0.07),
     new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.48 }),
   );
   pcBase.position.set(1.6, 5.08, 0.97);
-  roomGroup.add(pcBase);
+  addLegacy(pcBase);
 
   const pcMonitor = new THREE.Mesh(
     new THREE.BoxGeometry(0.86, 0.08, 0.52),
@@ -373,7 +382,7 @@ export function createWorkshopMode(options = {}) {
   );
   pcMonitor.position.set(1.6, 5.02, 1.42);
   pcMonitor.userData.workshopPc = true;
-  roomGroup.add(pcMonitor);
+  addLegacy(pcMonitor);
 
   const pcScreen = new THREE.Mesh(
     new THREE.BoxGeometry(0.72, 0.02, 0.38),
@@ -381,7 +390,7 @@ export function createWorkshopMode(options = {}) {
   );
   pcScreen.position.set(1.6, 4.97, 1.42);
   pcScreen.userData.workshopPc = true;
-  roomGroup.add(pcScreen);
+  addLegacy(pcScreen);
 
   const previewMesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.5, 0.18),
@@ -404,6 +413,11 @@ export function createWorkshopMode(options = {}) {
   previewGlow.rotation.x = Math.PI / 2;
   previewGlow.visible = false;
   roomGroup.add(previewGlow);
+  const warehouseFloor = createWorkshopWarehouseFloor({
+    parent: roomGroup,
+    authHeaders,
+    setStatus,
+  });
 
   const launcher = document.createElement("button");
   launcher.type = "button";
@@ -430,7 +444,7 @@ export function createWorkshopMode(options = {}) {
 
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(0, 0);
-  const previewSurfaces = [floor, deskSurface];
+  const previewSurfaces = [];
   const visibleState = new Map();
   const placedMeshById = new Map();
   const workshopBounds = { minX: -7.5, maxX: 7.5, minY: -7.5, maxY: 7.5 };
@@ -442,12 +456,13 @@ export function createWorkshopMode(options = {}) {
   let loadToken = 0;
   let activeProjectId = "";
   let loadedProjectId = "";
-  let selectedPlacePreset = PLACE_PRESETS[0].id;
+  let selectedPlacePreset = "";
   let activeTopTab = "editor";
-  let activeEditorTab = "place";
+  let activeEditorTab = "public";
   let activeProjectTab = "create";
   let activeLabTab = "agents";
   let selectedItemId = "";
+  let selectedWarehousePropId = "";
   let workshopError = "";
   let previewPoint = null;
   let pointerLocked = false;
@@ -463,6 +478,78 @@ export function createWorkshopMode(options = {}) {
   };
   let lastDebugResult = null;
   let placedItems = [];
+
+  function setLegacyRoomVisible(visible) {
+    legacyRoomNodes.forEach((node) => {
+      node.visible = !!visible;
+    });
+  }
+
+  function selectedWarehouseProp() {
+    if (!selectedWarehousePropId) return null;
+    const mesh = warehouseFloor.getEditableMesh(selectedWarehousePropId);
+    if (!mesh) return null;
+    return {
+      id: selectedWarehousePropId,
+      label: String(mesh.userData?.workshopWarehousePropLabel || selectedWarehousePropId),
+    };
+  }
+
+  function selectedThingLabel() {
+    return selectedPlacedItem()?.label || selectedWarehouseProp()?.label || "";
+  }
+
+  function clearWorkshopSelection({ reRender = true } = {}) {
+    selectedItemId = "";
+    selectedWarehousePropId = "";
+    transformControls.detach();
+    if (reRender) render();
+  }
+
+  function setCameraLook(target) {
+    const dir = target.clone().sub(camera.position);
+    const horiz = Math.hypot(dir.x, dir.y);
+    lookState.yaw = Math.atan2(dir.y, dir.x || 0.0001);
+    lookState.pitch = clamp(Math.atan2(dir.z, Math.max(horiz, 0.0001)), -1.35, 0.7);
+    applyLook();
+    controls.target.copy(target);
+  }
+
+  function focusBay(bayId, { topDown = false } = {}) {
+    const bay = warehouseFloor.getBay(bayId);
+    if (!bay) {
+      setStatus?.("error", "Warehouse bay layout is not ready yet.");
+      return false;
+    }
+    warehouseFloor.setActiveBay(bayId);
+    const span = Math.max(bay.rect.width, bay.rect.depth);
+    if (topDown) {
+      camera.position.set(bay.rect.centerX, bay.rect.centerY - 0.001, Math.max(8, span * 1.28));
+      setCameraLook(new THREE.Vector3(bay.rect.centerX, bay.rect.centerY, 0));
+    } else {
+      camera.position.set(bay.rect.centerX, bay.rect.maxY + 3.4, 1.72);
+      setCameraLook(new THREE.Vector3(bay.rect.centerX, bay.rect.centerY, 1));
+    }
+    render();
+    return true;
+  }
+
+  async function syncWarehouseRoom() {
+    try {
+      await warehouseFloor.ensureLoaded();
+      warehouseFloor.setVisible(true);
+      previewSurfaces.splice(0, previewSurfaces.length, ...warehouseFloor.getPlacementSurfaces());
+      Object.assign(workshopBounds, warehouseFloor.getWalkBounds());
+      warehouseFloor.setActiveBay(activeEditorTab === "god" ? "bay_wiring" : "bay_public_pods");
+      setLegacyRoomVisible(false);
+      workshopError = "";
+    } catch (err) {
+      warehouseFloor.setVisible(false);
+      previewSurfaces.splice(0, previewSurfaces.length);
+      setLegacyRoomVisible(true);
+      workshopError = err?.message || "Could not load the warehouse floor pack.";
+    }
+  }
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
@@ -525,13 +612,15 @@ export function createWorkshopMode(options = {}) {
   }
 
   function syncSelectedPlacedItem() {
-    if (!selectedItemId) {
-      if (transformControls.object?.userData?.workshopItemId) transformControls.detach();
+    if (!selectedItemId && !selectedWarehousePropId) {
+      if (transformControls.object?.userData?.workshopItemId || transformControls.object?.userData?.workshopWarehousePropId) {
+        transformControls.detach();
+      }
       return;
     }
-    const mesh = placedMeshById.get(selectedItemId);
+    const mesh = placedMeshById.get(selectedItemId) || warehouseFloor.getEditableMesh(selectedWarehousePropId);
     if (!mesh) {
-      selectedItemId = "";
+      clearWorkshopSelection({ reRender: false });
       transformControls.detach();
       return;
     }
@@ -544,7 +633,7 @@ export function createWorkshopMode(options = {}) {
   }
 
   function updatePreviewMesh() {
-    if (!active || activeTopTab !== "editor" || activeEditorTab !== "place") {
+    if (!active || activeTopTab !== "editor" || activeEditorTab !== "public" || !selectedPlacePreset) {
       previewMesh.visible = false;
       previewGlow.visible = false;
       previewPoint = null;
@@ -580,6 +669,7 @@ export function createWorkshopMode(options = {}) {
 
   function showWorkshopRoom() {
     roomGroup.visible = true;
+    warehouseFloor.setVisible(true);
     const modelRoot = getMeshRoot?.();
     if (modelRoot) sceneSetVisible(modelRoot, false);
     scene.traverse((node) => {
@@ -598,6 +688,7 @@ export function createWorkshopMode(options = {}) {
 
   function hideWorkshopRoom() {
     roomGroup.visible = false;
+    warehouseFloor.setVisible(false);
     for (const [uuid, visible] of visibleState.entries()) {
       const node = scene.getObjectByProperty("uuid", uuid);
       if (node) node.visible = visible;
@@ -623,7 +714,7 @@ export function createWorkshopMode(options = {}) {
   function enterCameraPose() {
     savedCamera.position.copy(camera.position);
     savedCamera.target.copy(controls.target);
-    camera.position.set(0.25, -5.85, 1.72);
+    camera.position.set(0, -13.4, 1.72);
     lookState.yaw = Math.PI / 2;
     lookState.pitch = -0.05;
     applyLook();
@@ -715,43 +806,147 @@ export function createWorkshopMode(options = {}) {
     setStudioPromptText?.(text, { submit });
   }
 
+  function nextPublicRoomPoint(zone) {
+    const count = placedItems.filter((item) => (
+      item.position?.x >= zone.rect.minX
+      && item.position?.x <= zone.rect.maxX
+      && item.position?.y >= zone.rect.minY
+      && item.position?.y <= zone.rect.maxY
+    )).length;
+    const cols = 4;
+    const row = Math.floor(count / cols);
+    const col = count % cols;
+    const gapX = Math.max(1.8, zone.rect.width / 5.4);
+    const gapY = Math.max(1.9, zone.rect.depth / 5.2);
+    return {
+      x: clamp(zone.rect.minX + 1.3 + col * gapX, zone.rect.minX + 0.8, zone.rect.maxX - 0.8),
+      y: clamp(zone.rect.maxY - 1.3 - row * gapY, zone.rect.minY + 0.8, zone.rect.maxY - 0.8),
+      z: 0,
+    };
+  }
+
   function placeSelectedPreset() {
-    if (!previewPoint) {
-      setStatus?.("error", "Move the cursor onto the floor or desk first.");
+    if (!selectedPlacePreset) {
+      setStatus?.("error", "Choose something to bring into the public room first.");
+      return;
+    }
+    const zone = warehouseFloor.getBay("bay_public_pods");
+    if (!zone) {
+      setStatus?.("error", "Public room bay is not ready yet.");
       return;
     }
     const preset = presetById(selectedPlacePreset);
+    const spawn = previewPoint
+      ? {
+          x: clamp(previewPoint.x, zone.rect.minX + 0.6, zone.rect.maxX - 0.6),
+          y: clamp(previewPoint.y, zone.rect.minY + 0.6, zone.rect.maxY - 0.6),
+          z: Math.max(0, previewPoint.z || 0),
+        }
+      : nextPublicRoomPoint(zone);
     const next = {
       id: `placed-${Date.now()}`,
       preset_id: preset.id,
       label: preset.label,
       position: {
-        x: previewPoint.x,
-        y: previewPoint.y,
-        z: previewPoint.z + preset.height * 0.5,
+        x: spawn.x,
+        y: spawn.y,
+        z: (spawn.z || 0) + preset.height * 0.5,
       },
       rotation: { x: 0, y: 0, z: 0 },
     };
     placedItems.push(next);
     selectedItemId = next.id;
+    selectedWarehousePropId = "";
     savePlacedItems();
     rebuildPlacedScene();
     syncSelectedPlacedItem();
-    setStatus?.("ok", `Placed ${preset.label.toLowerCase()}. Drag it to move.`);
+    warehouseFloor.setActiveBay("bay_public_pods");
+    setStatus?.("ok", `Brought ${preset.label.toLowerCase()} into the public room. Drag it to move.`);
     render();
   }
 
   function selectPlacedMeshFromHit(object) {
     let node = object;
-    while (node && !node.userData?.workshopItemId) node = node.parent;
+    while (node && !node.userData?.workshopItemId && !node.userData?.workshopWarehousePropId) node = node.parent;
+    const warehousePropId = node?.userData?.workshopWarehousePropId;
+    if (warehousePropId) {
+      selectedWarehousePropId = warehousePropId;
+      selectedItemId = "";
+      clearStudioSelection?.();
+      syncSelectedPlacedItem();
+      setStatus?.("ok", `Selected ${node.userData?.workshopWarehousePropLabel || "wall shell"} — drag the handles to move it.`);
+      render();
+      return true;
+    }
     const itemId = node?.userData?.workshopItemId;
     if (!itemId) return false;
     selectedItemId = itemId;
+    selectedWarehousePropId = "";
     clearStudioSelection?.();
     syncSelectedPlacedItem();
     setStatus?.("ok", "Selected workshop item — drag the handles to move it.");
     render();
     return true;
+  }
+
+  function renderPublicRoom() {
+    return `
+      <p class="muted small workshop-soft-note">Public room bring-in is stubbed to spawn placeholder props into the real public-room zone from <code>layout.json</code>. Next hook: swap this list to live public catalog listings.</p>
+      <label class="workshop-field">
+        <span>Bring into public room</span>
+        <select class="workshop-select" data-workshop-bring-in-select>
+          <option value="">Choose something to bring in</option>
+          ${PLACE_PRESETS.map((preset) => `
+            <option value="${esc(preset.id)}"${selectedPlacePreset === preset.id ? " selected" : ""}>${esc(preset.label)} — ${esc(preset.summary)}</option>
+          `).join("")}
+        </select>
+      </label>
+      <div class="workshop-inline-actions">
+        <button type="button" class="btn accent btn-compact" data-workshop-place${selectedPlacePreset ? "" : " disabled"}>Bring into public room</button>
+        <button type="button" class="btn secondary btn-compact" data-workshop-view-public>Look at public room bay</button>
+        <button type="button" class="btn secondary btn-compact" data-workshop-clear-selection>Clear selection</button>
+      </div>
+      <p class="muted small">${selectedThingLabel() ? `${esc(selectedThingLabel())} is selected in the warehouse.` : "Choose a bring-in item, then click the floor or use the button to drop it into the public room."}</p>
+    `;
+  }
+
+  function renderGodView() {
+    const bays = warehouseFloor.listBays();
+    const props = warehouseFloor.listEditableProps();
+    return `
+      <p class="muted small workshop-soft-note">God View frames the warehouse layout from the refreshed sandbox floor pack. Wiring is the one live training bay for this MVP.</p>
+      <div class="workshop-zone-grid">
+        ${bays.map((bay) => `
+          <article class="workshop-card workshop-zone-card${bay.active ? " workshop-zone-card--active" : ""}">
+            <div class="workshop-card-head">
+              <strong>${esc(bay.label)}</strong>
+              <span class="workshop-pill">${esc(bay.purpose || bay.kind || "bay")}</span>
+            </div>
+            <p>${esc(
+              bay.id === "bay_wiring"
+                ? "Live MVP training bay. Opens the existing Wiring Simulator."
+                : bay.id === "bay_public_pods"
+                  ? "Bring-in zone for public room items."
+                  : bay.id === "bay_robot_sim"
+                    ? "Reserved for later; outlined from the refreshed layout only."
+                    : "Conference / operator space from the refreshed layout."
+            )}</p>
+            <div class="workshop-inline-actions">
+              <button type="button" class="btn secondary btn-compact" data-workshop-focus-bay="${esc(bay.id)}">Frame bay</button>
+              ${bay.id === "bay_wiring"
+                ? `<button type="button" class="btn accent btn-compact" data-workshop-open-wiring>Open Wiring Simulator</button>`
+                : ""}
+            </div>
+          </article>
+        `).join("")}
+      </div>
+      <div class="workshop-zone-meta">
+        <strong>Editable wall shells</strong>
+        <ul class="workshop-zone-list">
+          ${props.map((prop) => `<li>${esc(prop.label)}</li>`).join("")}
+        </ul>
+      </div>
+    `;
   }
 
   function projectCards(items = [], kind = "generic") {
@@ -876,27 +1071,12 @@ export function createWorkshopMode(options = {}) {
 
     return `
       <div class="workshop-subtabs" role="tablist" aria-label="Workshop editor tabs">
-        <button type="button" class="workshop-subtab${activeEditorTab === "place" ? " active" : ""}" data-workshop-editor-tab="place">Editor</button>
+        <button type="button" class="workshop-subtab${activeEditorTab === "public" ? " active" : ""}" data-workshop-editor-tab="public">Public room</button>
         <button type="button" class="workshop-subtab${activeEditorTab === "voice" ? " active" : ""}" data-workshop-editor-tab="voice">Voice Prompt</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "god" ? " active" : ""}" data-workshop-editor-tab="god">God Mode</button>
+        <button type="button" class="workshop-subtab${activeEditorTab === "god" ? " active" : ""}" data-workshop-editor-tab="god">God View</button>
       </div>
       <div class="workshop-panel-scroll">
-        ${activeEditorTab === "place" ? `
-          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk.</p>
-          <div class="workshop-preset-grid">
-            ${PLACE_PRESETS.map((preset) => `
-              <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
-                <strong>${esc(preset.label)}</strong>
-                <span>${esc(preset.summary)}</span>
-              </button>
-            `).join("")}
-          </div>
-          <div class="workshop-inline-actions">
-            <button type="button" class="btn accent btn-compact" data-workshop-place>Place here</button>
-            <button type="button" class="btn secondary btn-compact" data-workshop-clear-selection>Clear selection</button>
-          </div>
-          <p class="muted small">${selectedPlacedItem() ? `${esc(selectedPlacedItem()?.label || "Item")} is selected.` : "Click a placed item to move it with the transform handles."}</p>
-        ` : ""}
+        ${activeEditorTab === "public" ? renderPublicRoom() : ""}
         ${activeEditorTab === "voice" ? `
           <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt, so words appear here while you speak.</p>
           <textarea id="${esc(dictationInputId)}" class="workshop-voice-input" rows="5" placeholder="Describe the next workshop step or placement...">${esc(voiceDraft)}</textarea>
@@ -906,7 +1086,7 @@ export function createWorkshopMode(options = {}) {
             <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
           </div>
         ` : ""}
-        ${activeEditorTab === "god" ? renderAgents(true) : ""}
+        ${activeEditorTab === "god" ? renderGodView() : ""}
       </div>
     `;
   }
@@ -920,7 +1100,8 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelectorAll("[data-workshop-editor-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        activeEditorTab = btn.getAttribute("data-workshop-editor-tab") || "place";
+        activeEditorTab = btn.getAttribute("data-workshop-editor-tab") || "public";
+        warehouseFloor.setActiveBay(activeEditorTab === "god" ? "bay_wiring" : "bay_public_pods");
         render();
       });
     });
@@ -936,13 +1117,6 @@ export function createWorkshopMode(options = {}) {
         render();
       });
     });
-    root.querySelectorAll("[data-workshop-preset]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        selectedPlacePreset = btn.getAttribute("data-workshop-preset") || selectedPlacePreset;
-        activeEditorTab = "place";
-        render();
-      });
-    });
     root.querySelector("[data-workshop-exit]")?.addEventListener("click", () => exit());
     root.querySelector("[data-workshop-look]")?.addEventListener("click", async () => {
       if (pointerLocked) {
@@ -955,11 +1129,34 @@ export function createWorkshopMode(options = {}) {
         setStatus?.("error", "Mouse look is not available here.");
       }
     });
-    root.querySelector("[data-workshop-place]")?.addEventListener("click", () => placeSelectedPreset());
-    root.querySelector("[data-workshop-clear-selection]")?.addEventListener("click", () => {
-      selectedItemId = "";
-      transformControls.detach();
+    root.querySelector("[data-workshop-bring-in-select]")?.addEventListener("change", (event) => {
+      selectedPlacePreset = String(event.target?.value || "");
+      warehouseFloor.setActiveBay("bay_public_pods");
       render();
+    });
+    root.querySelector("[data-workshop-place]")?.addEventListener("click", () => placeSelectedPreset());
+    root.querySelector("[data-workshop-view-public]")?.addEventListener("click", () => {
+      if (focusBay("bay_public_pods")) {
+        setStatus?.("ok", "Focused the public room bring-in zone.");
+      }
+    });
+    root.querySelector("[data-workshop-clear-selection]")?.addEventListener("click", () => {
+      clearWorkshopSelection();
+    });
+    root.querySelectorAll("[data-workshop-focus-bay]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const bayId = btn.getAttribute("data-workshop-focus-bay") || "";
+        if (focusBay(bayId, { topDown: true })) {
+          setStatus?.("ok", "God View framed the selected bay.");
+        }
+      });
+    });
+    root.querySelector("[data-workshop-open-wiring]")?.addEventListener("click", async () => {
+      try {
+        await openWiringWorkspace?.();
+      } catch (err) {
+        setStatus?.("error", err?.message || "Could not open the Wiring Simulator.");
+      }
     });
     root.querySelectorAll("[data-workshop-approve]").forEach((btn) => {
       btn.addEventListener("click", () => approveItem(btn.getAttribute("data-workshop-approve")));
@@ -995,7 +1192,7 @@ export function createWorkshopMode(options = {}) {
           <div>
             <span class="workshop-kicker">Workshop</span>
             <h2>${esc(projectName)}</h2>
-            <p>Desktop scene active · Route ${esc(WORKSHOP_HASH)}</p>
+            <p>Warehouse MVP active · public bring-in + one wiring training bay · Route ${esc(WORKSHOP_HASH)}</p>
           </div>
           <div class="workshop-shell-actions">
             <button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
@@ -1012,8 +1209,9 @@ export function createWorkshopMode(options = {}) {
         <div class="workshop-footnote">
           <span>WASD walk</span>
           <span>Mouse look</span>
-          <span>Click to place</span>
-          <span>Drag handles to move</span>
+          <span>Public room bring-in</span>
+          <span>Wiring training bay</span>
+          <span>Drag walls/items to move</span>
         </div>
       </div>
     `;
@@ -1037,14 +1235,15 @@ export function createWorkshopMode(options = {}) {
       event.stopImmediatePropagation();
       return;
     }
-    if (activeTopTab === "editor" && activeEditorTab === "place") {
-      raycaster.setFromCamera(pointerNdc, camera);
-      const placedHits = raycaster.intersectObjects([...placedGroup.children], true);
-      if (placedHits[0]?.object && selectPlacedMeshFromHit(placedHits[0].object)) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
+    raycaster.setFromCamera(pointerNdc, camera);
+    const sceneHits = raycaster.intersectObjects([
+      ...placedGroup.children,
+      ...warehouseFloor.listEditableProps().map((entry) => warehouseFloor.getEditableMesh(entry.id)).filter(Boolean),
+    ], true);
+    if (sceneHits[0]?.object && selectPlacedMeshFromHit(sceneHits[0].object)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
     }
   }
 
@@ -1066,7 +1265,7 @@ export function createWorkshopMode(options = {}) {
     if (!active) return;
     if (event.target?.closest?.(".workshop-shell")) return;
     if (pointerLocked) {
-      if (activeTopTab === "editor" && activeEditorTab === "place") placeSelectedPreset();
+      if (activeTopTab === "editor" && activeEditorTab === "public") placeSelectedPreset();
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
@@ -1076,20 +1275,23 @@ export function createWorkshopMode(options = {}) {
     const pcHit = raycaster.intersectObjects([pcMonitor, pcScreen], false)[0];
     if (pcHit) {
       activeTopTab = "editor";
-      activeEditorTab = "place";
+      activeEditorTab = "public";
       setStatus?.("ok", "Workshop editor ready.");
       render();
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
-    const placedHits = raycaster.intersectObjects([...placedGroup.children], true);
-    if (placedHits[0]?.object && selectPlacedMeshFromHit(placedHits[0].object)) {
+    const sceneHits = raycaster.intersectObjects([
+      ...placedGroup.children,
+      ...warehouseFloor.listEditableProps().map((entry) => warehouseFloor.getEditableMesh(entry.id)).filter(Boolean),
+    ], true);
+    if (sceneHits[0]?.object && selectPlacedMeshFromHit(sceneHits[0].object)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
-    if (activeTopTab === "editor" && activeEditorTab === "place") {
+    if (activeTopTab === "editor" && activeEditorTab === "public") {
       placeSelectedPreset();
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -1129,7 +1331,12 @@ export function createWorkshopMode(options = {}) {
 
   function syncTransformSelection() {
     const obj = transformControls.object;
-    if (!active || !obj?.userData?.workshopItemId) return;
+    if (!active || !obj) return;
+    if (obj.userData?.workshopWarehousePropId) {
+      warehouseFloor.syncEditableTransform(obj);
+      return;
+    }
+    if (!obj.userData?.workshopItemId) return;
     const item = placedItems.find((entry) => entry.id === obj.userData.workshopItemId);
     if (!item) return;
     item.position = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
@@ -1147,14 +1354,17 @@ export function createWorkshopMode(options = {}) {
     controls.enabled = false;
     active = true;
     activeTopTab = "editor";
-    activeEditorTab = "place";
+    activeEditorTab = "public";
+    selectedPlacePreset = "";
     lastDebugResult = null;
     document.body.classList.add("workshop-mode-active");
     enterCameraPose();
     showWorkshopRoom();
+    await syncWarehouseRoom();
     await loadWorkshopState(true);
+    focusBay("bay_public_pods");
     updateRoute(true);
-    setStatus?.("ok", "Workshop desktop mode active.");
+    setStatus?.("ok", "Workshop warehouse MVP active.");
     render();
   }
 
@@ -1167,6 +1377,7 @@ export function createWorkshopMode(options = {}) {
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
     selectedItemId = "";
+    selectedWarehousePropId = "";
     controls.enabled = true;
     hideWorkshopRoom();
     restoreCameraPose();
@@ -1207,6 +1418,7 @@ export function createWorkshopMode(options = {}) {
     rebuildPlacedScene();
     if (active) {
       workshopState = normalizeWorkshopState(workshopState, currentProjectName());
+      void syncWarehouseRoom();
       loadWorkshopState(true);
     } else if (window.location.hash === WORKSHOP_HASH && nextId) {
       void enter();

@@ -1,0 +1,117 @@
+{
+  "project_id": "WAREHOUSE-MVP-20260918",
+  "units": "meters",
+  "up_axis": "y",
+  "walkable_floor": {
+    "mesh": "warehouse_floor.glb",
+    "size_m": [
+      20.0,
+      30.0
+    ],
+    "top_y": 0.0,
+    "sha256": "175f38c961a041f0dc309a208519ec9deea5e43ecb9ea3ebbb0ffafa489e13c3"
+  },
+  "wall_shells": [
+    {
+      "id": "wall_pos_z",
+      "mesh": "wall_pos_z.glb",
+      "editable_vr": true,
+      "sha256": "b701b3460f7deb6fb245fbfe77a3224f99b3c598a66f86eb13f3cdd7ef3e1269",
+      "note": "shell only \u2014 no structural capacity claimed"
+    },
+    {
+      "id": "wall_neg_z",
+      "mesh": "wall_neg_z.glb",
+      "editable_vr": true,
+      "sha256": "7e3512c35323d07ce4fcda738b1f7cf37a0e5be9e312fbe82bf30dfa1b414766",
+      "note": "shell only \u2014 no structural capacity claimed"
+    },
+    {
+      "id": "wall_pos_x",
+      "mesh": "wall_pos_x.glb",
+      "editable_vr": true,
+      "sha256": "f2a812710611fe8263ee81efefca68b8e7c74b9b6d84eba167d3a572e82b7aae",
+      "note": "shell only \u2014 no structural capacity claimed"
+    },
+    {
+      "id": "wall_neg_x",
+      "mesh": "wall_neg_x.glb",
+      "editable_vr": true,
+      "sha256": "2fea6fbe002f5fa0575fd7bb4c794b3b80c3a2797b87b281e4b1672be4169158",
+      "note": "shell only \u2014 no structural capacity claimed"
+    }
+  ],
+  "combined": {
+    "mesh": "warehouse_shells.glb",
+    "sha256": "037471dba333c3dd930efe9149c1c0a9284679031ff988f62901c024bbdf9148"
+  },
+  "bays": [
+    {
+      "id": "bay_robot_sim",
+      "kind": "robot-sim",
+      "label": "Robot sim reserve",
+      "purpose": "training",
+      "rect_m": {
+        "x": [
+          -9.0,
+          -1.0
+        ],
+        "z": [
+          5.0,
+          14.0
+        ]
+      }
+    },
+    {
+      "id": "bay_wiring",
+      "kind": "wiring",
+      "label": "Wiring training bay",
+      "purpose": "training",
+      "rect_m": {
+        "x": [
+          1.0,
+          9.0
+        ],
+        "z": [
+          5.0,
+          14.0
+        ]
+      }
+    },
+    {
+      "id": "bay_meetings",
+      "kind": "meetings",
+      "label": "Meetings bay",
+      "purpose": "conference",
+      "rect_m": {
+        "x": [
+          -9.0,
+          9.0
+        ],
+        "z": [
+          -2.0,
+          4.0
+        ]
+      }
+    },
+    {
+      "id": "bay_public_pods",
+      "kind": "public-room-pods",
+      "label": "Public room bring-in",
+      "purpose": "bring-in",
+      "rect_m": {
+        "x": [
+          -9.0,
+          9.0
+        ],
+        "z": [
+          -14.0,
+          -3.0
+        ]
+      }
+    }
+  ],
+  "priority": "walkable_floor",
+  "structural_capacity": null,
+  "pe_flag": false
+}

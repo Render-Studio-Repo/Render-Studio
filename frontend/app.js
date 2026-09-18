@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-warehouse-mvp";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3166,6 +3166,7 @@ const workshopMode = createWorkshopMode({
   },
   api,
   setStatus: setEditStatus,
+  authHeaders: () => authHeaders(),
   toggleDictation: (targetId, btn) => togglePromptDictation(targetId, btn),
   setStudioPromptText: (text, { submit = false } = {}) => {
     const input = document.getElementById("prompt-input");
@@ -3190,6 +3191,13 @@ const workshopMode = createWorkshopMode({
       transformControls.detach();
       gizmoPanel?.hide?.();
     } catch (_) {}
+  },
+  openWiringWorkspace: async () => {
+    workspaceModes?.setMode?.("wiring");
+    applyWorkspaceMode("wiring");
+    await wiringSim.load?.();
+    setRightTab("wiring");
+    setEditStatus("ok", "Opened the Wiring Simulator from the warehouse training bay.");
   },
 });
 
