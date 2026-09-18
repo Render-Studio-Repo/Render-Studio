@@ -1,3 +1,12 @@
+## 2026-09-18 — README and docs refresh for founders and engineers
+
+- Replaced the thin root `README.md` with a stronger product-facing overview: positioning, who it is for, shipped capabilities, architecture summary, roadmap boundaries, and a repaired Quick Start that no longer points to a missing root `requirements.txt`.
+- Added a new top-level `docs/` tree with focused markdown pages for Getting Started, Architecture, Studio/XR, Robotics/Motion, and contributor deploy-sync notes.
+- Added polished SVG placeholder art under `docs/assets/` so the repo has presentable screenshot/GIF stand-ins until final product media is dropped in.
+- Kept "Workshop" and "teleop" wording precise: the docs now use the shipped "Studio" / workspace model, and robotics pages clearly distinguish current URDF/MoveIt2 support from a full teleoperation stack.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

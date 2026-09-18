@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
+  <title id="title">Studio overview placeholder</title>
+  <desc id="desc">Placeholder image for a Render Studio screenshot.</desc>
+  <rect width="960" height="540" rx="24" fill="#0f172a"/>
+  <rect x="24" y="24" width="912" height="492" rx="18" fill="#111827" stroke="#334155"/>
+  <rect x="48" y="48" width="864" height="40" rx="10" fill="#1f2937"/>
+  <text x="68" y="74" fill="#e5e7eb" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">Studio overview placeholder</text>
+
+  <rect x="48" y="108" width="188" height="368" rx="14" fill="#0b1220" stroke="#334155"/>
+  <text x="68" y="142" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="600">Project explorer</text>
+  <rect x="68" y="164" width="128" height="16" rx="8" fill="#1e293b"/>
+  <rect x="68" y="194" width="112" height="16" rx="8" fill="#1e293b"/>
+  <rect x="68" y="224" width="136" height="16" rx="8" fill="#1e293b"/>
+  <rect x="68" y="266" width="96" height="28" rx="8" fill="#082f49"/>
+  <text x="86" y="285" fill="#67e8f9" font-family="Inter, Arial, sans-serif" font-size="13">Files</text>
+
+  <rect x="256" y="108" width="436" height="368" rx="14" fill="#0b1324" stroke="#334155"/>
+  <circle cx="474" cy="294" r="112" fill="none" stroke="#60a5fa" stroke-width="4"/>
+  <path d="M388 336 L452 220 L560 248 L534 364 Z" fill="#2563eb" fill-opacity="0.2" stroke="#93c5fd" stroke-width="3"/>
+  <path d="M430 358 L516 196 L592 314" fill="none" stroke="#c084fc" stroke-width="4"/>
+  <text x="342" y="432" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18">Viewport with model, history, and picks</text>
+
+  <rect x="712" y="108" width="200" height="368" rx="14" fill="#0b1220" stroke="#334155"/>
+  <text x="732" y="142" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="600">AI compose</text>
+  <rect x="732" y="166" width="148" height="18" rx="9" fill="#1e293b"/>
+  <rect x="732" y="198" width="156" height="18" rx="9" fill="#1e293b"/>
+  <rect x="732" y="230" width="138" height="18" rx="9" fill="#1e293b"/>
+  <rect x="732" y="276" width="160" height="88" rx="12" fill="#111827" stroke="#374151"/>
+  <rect x="732" y="388" width="104" height="34" rx="10" fill="#1d4ed8"/>
+  <text x="758" y="410" fill="#eff6ff" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="600">Generate</text>
+</svg>
