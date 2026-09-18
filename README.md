@@ -59,6 +59,11 @@ Open **http://127.0.0.1:8001** (default port; set `PORT` in `.env` if needed).
 
 In-app documentation is available at **http://127.0.0.1:8001/docs.html**.
 
+## Workshop layout units
+
+Workshop room layouts are stored in real-world **meters** for future passthrough and AR loading.
+Within Workshop-authored space, **1 Three.js unit = 1 meter**, and exported layout JSON stores `pose.x`, `pose.y`, `pose.z` in meters with `pose.yaw` in radians.
+
 ## Configuration
 
 | Variable | Default | Description |

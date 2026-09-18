@@ -1,42 +1,23 @@
 import * as THREE from "three";
+import {
+  WORKSHOP_AGENT_SEATS,
+  WORKSHOP_ANGLE_UNIT,
+  WORKSHOP_DIMENSIONS_M,
+  WORKSHOP_LAYOUT_VERSION,
+  WORKSHOP_LINEAR_UNIT,
+  WORKSHOP_PARTNER_OPTIONS,
+  WORKSHOP_PLACE_PRESETS,
+  buildDefaultWorkshopIde,
+  buildDefaultWorkshopLayout,
+  createWorkshopObject,
+  exportWorkshopLayout,
+  nextWorkshopObjectId,
+  normalizeWorkshopIde,
+  normalizeWorkshopLayout,
+  presetById,
+} from "./workshop-scale.js?v=20260918-workshop-v2";
 
 const WORKSHOP_HASH = "#workshop";
-const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
-const PLACE_PRESETS = [
-  {
-    id: "part-bin",
-    label: "Part bin",
-    summary: "Small tray for staged parts",
-    width: 0.58,
-    depth: 0.42,
-    height: 0.2,
-    color: 0x5b8cff,
-    accent: 0xbdd7ff,
-    shape: "bin",
-  },
-  {
-    id: "print-cart",
-    label: "Print cart",
-    summary: "Mobile surface for printer jobs",
-    width: 0.9,
-    depth: 0.58,
-    height: 0.78,
-    color: 0x64748b,
-    accent: 0xf8fafc,
-    shape: "cart",
-  },
-  {
-    id: "fixture-stand",
-    label: "Fixture stand",
-    summary: "Pedestal for checking placement",
-    width: 0.48,
-    depth: 0.48,
-    height: 0.86,
-    color: 0xf59e0b,
-    accent: 0xfde68a,
-    shape: "stand",
-  },
-];
 
 function esc(value) {
   return String(value ?? "")
@@ -51,219 +32,115 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function presetById(id) {
-  return PLACE_PRESETS.find((entry) => entry.id === id) || PLACE_PRESETS[0];
-}
-
-function storageKey(projectId) {
-  return `${PLACED_LS_PREFIX}${projectId || "none"}`;
-}
-
 function seededWorkshopState(projectName = "Project") {
   return {
     project_label: projectName,
     agents_source: "mock",
-    agents: [
-      {
-        id: "floor-lead",
-        name: "Floor lead",
-        status: "In room",
-        tasks: [
-          { id: "prep-bay", title: "Stage the print bay", status: "active" },
-          { id: "material-check", title: "Check incoming materials", status: "queued" },
-        ],
-      },
-      {
-        id: "printer-tech",
-        name: "Printer tech",
-        status: "Watching",
-        tasks: [
-          { id: "watch-queue", title: "Watch overnight print queue", status: "active" },
-          { id: "plate-swap", title: "Prepare next plate swap", status: "queued" },
-        ],
-      },
-      {
-        id: "review-assistant",
-        name: "Review assistant",
-        status: "Ready",
-        tasks: [
-          { id: "qa-handoff", title: "Collect approval notes", status: "ready" },
-        ],
-      },
-    ],
-    projects: {
-      create: [
-        {
-          id: "create-layout",
-          title: `${projectName} setup`,
-          summary: "Lay out the printer bay, prep cart, and handoff area for this build.",
-          status: "upcoming",
-        },
-        {
-          id: "create-fixture",
-          title: "Fixture check",
-          summary: "Place a simple fixture stand beside the active workbench for fast test fits.",
-          status: "queued",
-        },
-      ],
-      train: [
-        {
-          id: "train-ops",
-          title: "Operator walkthrough",
-          summary: "Train the room on first article checks and next-step handoff language.",
-          status: "upcoming",
-        },
-        {
-          id: "train-review",
-          title: "Review flow",
-          summary: "Teach the room which jobs can ship and which need a second look.",
-          status: "planned",
-        },
-      ],
+    partner_options: WORKSHOP_PARTNER_OPTIONS,
+    selected_partner: { id: "", label: "", kind: "", summary: "" },
+    bridge: {
+      live_configured: false,
+      status: "not_connected",
+      label: "Not connected",
+      detail: "Choose a workshop partner to start the room session.",
     },
-    approvals: [
-      {
-        id: "approve-voice-station",
-        title: "Voice prompt station",
-        summary: "Approve the live prompt desk so spoken requests can flow into the editor.",
-        status: "pending",
-      },
-      {
-        id: "approve-first-article",
-        title: "First article review",
-        summary: "Sign off the first workshop placement and motion check before the queue moves on.",
-        status: "pending",
-      },
-    ],
-    queue: [
-      {
-        id: "queue-plate-a",
-        label: "Plate A · enclosure shells",
-        status: "waiting",
-        detail: "Waiting for the next open printer.",
-      },
-      {
-        id: "queue-brackets",
-        label: "Bracket print check",
-        status: "pass",
-        detail: "Recent placement and clearances passed.",
-      },
-      {
-        id: "queue-cable-guide",
-        label: "Cable guide fit",
-        status: "fail",
-        detail: "Needs a second review before release.",
-      },
-    ],
-    debug: {
-      hook_available: false,
-      last_result: null,
-    },
+    agent_seats: WORKSHOP_AGENT_SEATS,
+    agents: [],
+    projects: { create: [], train: [] },
+    approvals: [],
+    queue: [],
+    debug: { hook_available: false, last_result: null },
+    layout: buildDefaultWorkshopLayout(),
+    ide: buildDefaultWorkshopIde(),
   };
 }
 
 function normalizeWorkshopState(input, projectName = "Project") {
   const seed = seededWorkshopState(projectName);
   const value = input && typeof input === "object" ? input : {};
-  const projects = value.projects && typeof value.projects === "object" ? value.projects : {};
-  const debug = value.debug && typeof value.debug === "object" ? value.debug : {};
   return {
+    ...seed,
+    ...value,
     project_label: String(value.project_label || projectName || "Project"),
-    agents_source: value.agents_source === "live" ? "live" : "mock",
-    agents: Array.isArray(value.agents) && value.agents.length ? value.agents : seed.agents,
-    projects: {
-      create: Array.isArray(projects.create) && projects.create.length ? projects.create : seed.projects.create,
-      train: Array.isArray(projects.train) && projects.train.length ? projects.train : seed.projects.train,
-    },
-    approvals: Array.isArray(value.approvals) && value.approvals.length ? value.approvals : seed.approvals,
-    queue: Array.isArray(value.queue) && value.queue.length ? value.queue : seed.queue,
-    debug: {
-      hook_available: !!debug.hook_available,
-      last_result: debug.last_result || null,
-    },
+    partner_options: Array.isArray(value.partner_options) && value.partner_options.length ? value.partner_options : seed.partner_options,
+    selected_partner: value.selected_partner && typeof value.selected_partner === "object" ? value.selected_partner : seed.selected_partner,
+    bridge: value.bridge && typeof value.bridge === "object" ? { ...seed.bridge, ...value.bridge } : seed.bridge,
+    agent_seats: Array.isArray(value.agent_seats) && value.agent_seats.length ? value.agent_seats : seed.agent_seats,
+    agents: Array.isArray(value.agents) ? value.agents : seed.agents,
+    projects: value.projects && typeof value.projects === "object" ? value.projects : seed.projects,
+    approvals: Array.isArray(value.approvals) ? value.approvals : seed.approvals,
+    queue: Array.isArray(value.queue) ? value.queue : seed.queue,
+    debug: value.debug && typeof value.debug === "object" ? { ...seed.debug, ...value.debug } : seed.debug,
+    layout: normalizeWorkshopLayout(value.layout),
+    ide: normalizeWorkshopIde(value.ide),
   };
 }
 
-function buildWorkshopItemMesh(item, preset) {
-  const root = new THREE.Group();
-  root.name = `workshop-item-${item.id}`;
-  root.userData.workshopItemId = item.id;
-  root.userData.workshopPresetId = preset.id;
-
-  if (preset.shape === "cart") {
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(preset.width, preset.depth, preset.height * 0.72),
-      new THREE.MeshStandardMaterial({ color: preset.color, roughness: 0.72, metalness: 0.18 }),
-    );
-    body.position.z = preset.height * 0.36;
-    root.add(body);
-    const top = new THREE.Mesh(
-      new THREE.BoxGeometry(preset.width * 0.96, preset.depth * 0.94, 0.05),
-      new THREE.MeshStandardMaterial({ color: preset.accent, roughness: 0.48, metalness: 0.08 }),
-    );
-    top.position.z = preset.height - 0.025;
-    root.add(top);
-    for (const sx of [-1, 1]) {
-      for (const sy of [-1, 1]) {
-        const wheel = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.055, 0.055, 0.04, 16),
-          new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.78 }),
-        );
-        wheel.rotation.x = Math.PI / 2;
-        wheel.position.set(sx * (preset.width * 0.38), sy * (preset.depth * 0.36), 0.055);
-        root.add(wheel);
-      }
-    }
-  } else if (preset.shape === "stand") {
-    const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.09, 0.12, preset.height * 0.82, 18),
-      new THREE.MeshStandardMaterial({ color: preset.color, roughness: 0.62, metalness: 0.16 }),
-    );
-    stem.position.z = preset.height * 0.41;
-    root.add(stem);
-    const top = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.22, 0.05, 24),
-      new THREE.MeshStandardMaterial({ color: preset.accent, roughness: 0.4, metalness: 0.08 }),
-    );
-    top.position.z = preset.height - 0.025;
-    root.add(top);
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2, 0.24, 0.06, 24),
-      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.75 }),
-    );
-    base.position.z = 0.03;
-    root.add(base);
-  } else {
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(preset.width, preset.depth, preset.height),
-      new THREE.MeshStandardMaterial({ color: preset.color, roughness: 0.62, metalness: 0.08 }),
-    );
-    body.position.z = preset.height * 0.5;
-    root.add(body);
-    const lip = new THREE.Mesh(
-      new THREE.BoxGeometry(preset.width * 0.9, preset.depth * 0.82, 0.03),
-      new THREE.MeshStandardMaterial({ color: preset.accent, roughness: 0.36, metalness: 0.08 }),
-    );
-    lip.position.z = preset.height - 0.02;
-    root.add(lip);
-  }
-
-  root.position.set(
-    Number(item.position?.x) || 0,
-    Number(item.position?.y) || 0,
-    Number(item.position?.z) || 0,
-  );
-  root.rotation.set(
-    Number(item.rotation?.x) || 0,
-    Number(item.rotation?.y) || 0,
-    Number(item.rotation?.z) || 0,
-  );
-  root.traverse((child) => {
-    child.castShadow = true;
-    child.receiveShadow = true;
-    child.userData.workshopItemId = item.id;
+function makeTextMaterial(text, { width = 512, height = 192, bg = "rgba(8,17,29,0.76)", fg = "#f8fafc", accent = "#60a5fa", font = "700 44px Inter, sans-serif" } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = bg;
+  ctx.strokeStyle = "rgba(148,163,184,0.55)";
+  ctx.lineWidth = 6;
+  const radius = 22;
+  ctx.beginPath();
+  ctx.moveTo(radius, 0);
+  ctx.lineTo(width - radius, 0);
+  ctx.quadraticCurveTo(width, 0, width, radius);
+  ctx.lineTo(width, height - radius);
+  ctx.quadraticCurveTo(width, height, width - radius, height);
+  ctx.lineTo(radius, height);
+  ctx.quadraticCurveTo(0, height, 0, height - radius);
+  ctx.lineTo(0, radius);
+  ctx.quadraticCurveTo(0, 0, radius, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = accent;
+  ctx.font = "700 22px Inter, sans-serif";
+  ctx.fillText("Workshop", 28, 38);
+  ctx.fillStyle = fg;
+  ctx.font = font;
+  const lines = String(text || "").split("\n").slice(0, 3);
+  lines.forEach((line, index) => {
+    ctx.fillText(line, 28, 92 + (index * 46));
   });
-  return root;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+}
+
+function createLabelPlane(text, { w = 1.3, h = 0.42 } = {}) {
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), makeTextMaterial(text));
+  plane.rotation.x = Math.PI / 2;
+  plane.renderOrder = 4;
+  plane.userData.isWorkshopLabel = true;
+  return plane;
+}
+
+function createRingMarker(width, depth, color) {
+  const marker = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.16, side: THREE.DoubleSide }),
+  );
+  marker.position.z = 0.011;
+  marker.receiveShadow = true;
+  return marker;
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
 }
 
 export function createWorkshopMode(options = {}) {
@@ -282,6 +159,9 @@ export function createWorkshopMode(options = {}) {
     toggleDictation,
     setStudioPromptText,
     clearStudioSelection,
+    showWiringWorkspace,
+    hideWiringWorkspace,
+    syncWorkspaceMode,
   } = options;
 
   if (!viewportEl || !renderer || !scene || !camera || !controls || !transformControls) {
@@ -297,111 +177,85 @@ export function createWorkshopMode(options = {}) {
   placedGroup.name = "workshop-placed";
   roomGroup.add(placedGroup);
 
+  const warehouse = WORKSHOP_DIMENSIONS_M.warehouse;
+  const warehouseBounds = {
+    minX: -(warehouse.width / 2) + 0.45,
+    maxX: warehouse.width / 2 - 0.45,
+    minY: -(warehouse.depth / 2) + 0.45,
+    maxY: warehouse.depth / 2 - 0.45,
+  };
+
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(18, 18),
-    new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.95, metalness: 0.03 }),
+    new THREE.PlaneGeometry(warehouse.width, warehouse.depth),
+    new THREE.MeshStandardMaterial({ color: 0x0b1220, roughness: 0.96, metalness: 0.02 }),
   );
   floor.name = "workshop-floor";
   floor.receiveShadow = true;
   floor.userData.workshopSurface = "floor";
   roomGroup.add(floor);
 
-  const backWall = new THREE.Mesh(
-    new THREE.BoxGeometry(18, 0.24, 4.6),
-    new THREE.MeshStandardMaterial({ color: 0x223047, roughness: 0.86 }),
+  const apron = new THREE.Mesh(
+    new THREE.PlaneGeometry(warehouse.width + 6, warehouse.depth + 6),
+    new THREE.MeshStandardMaterial({ color: 0x060b12, roughness: 1, metalness: 0 }),
   );
-  backWall.position.set(0, 8.88, 2.3);
-  roomGroup.add(backWall);
+  apron.position.z = -0.01;
+  roomGroup.add(apron);
 
-  const sideWall = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 18, 4.6),
-    new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.86 }),
-  );
-  sideWall.position.set(-8.88, 0, 2.3);
-  roomGroup.add(sideWall);
+  const grid = new THREE.GridHelper(warehouse.width, warehouse.width, 0x60a5fa, 0x1e293b);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.z = 0.02;
+  roomGroup.add(grid);
 
-  const desk = new THREE.Mesh(
-    new THREE.BoxGeometry(3.2, 1.4, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.72 }),
-  );
-  desk.position.set(0.6, 5.2, 0.86);
-  roomGroup.add(desk);
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.9, metalness: 0.02, transparent: true, opacity: 0.88 });
+  const northWall = new THREE.Mesh(new THREE.BoxGeometry(warehouse.width, warehouse.wallThickness, warehouse.height), wallMat);
+  northWall.position.set(0, warehouse.depth / 2, warehouse.height / 2);
+  roomGroup.add(northWall);
+  const southWall = northWall.clone();
+  southWall.position.set(0, -warehouse.depth / 2, warehouse.height / 2);
+  roomGroup.add(southWall);
+  const eastWall = new THREE.Mesh(new THREE.BoxGeometry(warehouse.wallThickness, warehouse.depth, warehouse.height), wallMat);
+  eastWall.position.set(warehouse.width / 2, 0, warehouse.height / 2);
+  roomGroup.add(eastWall);
+  const westWall = eastWall.clone();
+  westWall.position.set(-warehouse.width / 2, 0, warehouse.height / 2);
+  roomGroup.add(westWall);
 
-  for (const sx of [-1, 1]) {
-    for (const sy of [-1, 1]) {
-      const leg = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.08, 0.82),
-        new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.74 }),
-      );
-      leg.position.set(0.6 + sx * 1.46, 5.2 + sy * 0.58, 0.41);
-      roomGroup.add(leg);
-    }
-  }
-
-  const deskSurface = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.1, 1.34),
-    new THREE.MeshBasicMaterial({ visible: false }),
-  );
-  deskSurface.position.set(0.6, 5.2, 0.93);
-  deskSurface.userData.workshopSurface = "desk";
-  roomGroup.add(deskSurface);
-
-  const printerBody = new THREE.Mesh(
-    new THREE.BoxGeometry(0.95, 0.82, 0.78),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.46, metalness: 0.18 }),
-  );
-  printerBody.position.set(-0.35, 5.15, 1.31);
-  roomGroup.add(printerBody);
-
-  const printerWindow = new THREE.Mesh(
-    new THREE.BoxGeometry(0.66, 0.03, 0.5),
-    new THREE.MeshStandardMaterial({ color: 0x60a5fa, emissive: 0x1d4ed8, transparent: true, opacity: 0.35 }),
-  );
-  printerWindow.position.set(-0.35, 4.75, 1.32);
-  roomGroup.add(printerWindow);
-
-  const pcBase = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.32, 0.07),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.48 }),
-  );
-  pcBase.position.set(1.6, 5.08, 0.97);
-  roomGroup.add(pcBase);
-
-  const pcMonitor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.86, 0.08, 0.52),
-    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.42 }),
-  );
-  pcMonitor.position.set(1.6, 5.02, 1.42);
-  pcMonitor.userData.workshopPc = true;
-  roomGroup.add(pcMonitor);
-
-  const pcScreen = new THREE.Mesh(
-    new THREE.BoxGeometry(0.72, 0.02, 0.38),
-    new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x14532d, roughness: 0.25 }),
-  );
-  pcScreen.position.set(1.6, 4.97, 1.42);
-  pcScreen.userData.workshopPc = true;
-  roomGroup.add(pcScreen);
+  const columnPositions = [
+    [-warehouse.width / 2, -warehouse.depth / 2],
+    [0, -warehouse.depth / 2],
+    [warehouse.width / 2, -warehouse.depth / 2],
+    [-warehouse.width / 2, 0],
+    [warehouse.width / 2, 0],
+    [-warehouse.width / 2, warehouse.depth / 2],
+    [0, warehouse.depth / 2],
+    [warehouse.width / 2, warehouse.depth / 2],
+  ];
+  columnPositions.forEach(([x, y]) => {
+    const column = new THREE.Mesh(
+      new THREE.BoxGeometry(warehouse.columnSize, warehouse.columnSize, warehouse.height),
+      new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.72, metalness: 0.12 }),
+    );
+    column.position.set(x, y, warehouse.height / 2);
+    roomGroup.add(column);
+  });
 
   const previewMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.18),
+    new THREE.BoxGeometry(1, 1, 0.2),
     new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.32,
       emissive: 0x0f766e,
-      roughness: 0.4,
+      roughness: 0.42,
     }),
   );
   previewMesh.visible = false;
-  previewMesh.userData.workshopPreview = true;
   roomGroup.add(previewMesh);
 
   const previewGlow = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.36, 0.36, 0.015, 32),
-    new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.18 }),
+    new THREE.RingGeometry(0.25, 0.42, 32),
+    new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
   );
-  previewGlow.rotation.x = Math.PI / 2;
   previewGlow.visible = false;
   roomGroup.add(previewGlow);
 
@@ -409,119 +263,322 @@ export function createWorkshopMode(options = {}) {
   launcher.type = "button";
   launcher.className = "workshop-enter-affordance";
   launcher.innerHTML = `
-    <span class="workshop-enter-affordance-icon">PC</span>
+    <span class="workshop-enter-affordance-icon">WS</span>
     <span class="workshop-enter-affordance-copy">
       <strong>Workshop</strong>
-      <small>Desktop scene</small>
+      <small>God view + editor</small>
     </span>
   `;
   viewportEl.appendChild(launcher);
 
   const root = document.createElement("section");
   root.className = "workshop-shell hidden";
-  root.setAttribute("aria-label", "Workshop");
   root.hidden = true;
   viewportEl.appendChild(root);
 
-  const reticle = document.createElement("div");
-  reticle.className = "workshop-reticle hidden";
-  reticle.innerHTML = `<span></span>`;
-  viewportEl.appendChild(reticle);
-
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(0, 0);
-  const previewSurfaces = [floor, deskSurface];
   const visibleState = new Map();
+  const tvScreenById = new Map();
   const placedMeshById = new Map();
-  const workshopBounds = { minX: -7.5, maxX: 7.5, minY: -7.5, maxY: 7.5 };
-  const sceneBgStack = [];
-
-  let active = false;
-  let lastFrameMs = 0;
-  let workshopState = seededWorkshopState("Project");
-  let loadToken = 0;
-  let activeProjectId = "";
-  let loadedProjectId = "";
-  let selectedPlacePreset = PLACE_PRESETS[0].id;
-  let activeTopTab = "editor";
-  let activeEditorTab = "place";
-  let activeProjectTab = "create";
-  let activeLabTab = "agents";
-  let selectedItemId = "";
-  let workshopError = "";
-  let previewPoint = null;
-  let pointerLocked = false;
-  let lastPointerEvent = null;
-  let dictationBtn = null;
-  let dictationInputId = "workshop-voice-input";
-  let voiceDraft = "";
-  const keysDown = new Set();
-  const lookState = { yaw: Math.PI / 2, pitch: -0.08 };
   const savedCamera = {
     position: new THREE.Vector3(),
     target: new THREE.Vector3(),
   };
+
+  let active = false;
+  let activeProjectId = "";
+  let loadToken = 0;
+  let selectedPlacePreset = WORKSHOP_PLACE_PRESETS[0].id;
+  let selectedItemId = "";
+  let activeSurface = "god";
+  let transformMode = "translate";
+  let previewPoint = null;
+  let lastPointerEvent = null;
+  let workshopError = "";
+  let workshopState = seededWorkshopState("Project");
+  let layoutState = buildDefaultWorkshopLayout();
+  let ideState = buildDefaultWorkshopIde();
+  let partnerModalOpen = false;
+  let voiceDraft = "";
+  let persistLayoutTimer = 0;
+  let persistIdeTimer = 0;
+  let lastTelemetryPaintAt = 0;
   let lastDebugResult = null;
-  let placedItems = [];
+  let priorSceneBackground = null;
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
   }
 
-  function updateRoute(activeRoute) {
+  function activePartner() {
+    return workshopState.selected_partner || { id: "", label: "", kind: "", summary: "" };
+  }
+
+  function currentBridge() {
+    return workshopState.bridge || { status: "not_connected", label: "Not connected", detail: "" };
+  }
+
+  function updateRoute(on) {
     const url = new URL(window.location.href);
-    const next = activeRoute
-      ? `${url.pathname}${url.search}${WORKSHOP_HASH}`
-      : `${url.pathname}${url.search}`;
-    if (activeRoute && url.hash === WORKSHOP_HASH) return;
-    if (!activeRoute && !url.hash) return;
-    window.history[activeRoute ? "pushState" : "replaceState"]({}, "", next || "/");
+    const next = on ? `${url.pathname}${url.search}${WORKSHOP_HASH}` : `${url.pathname}${url.search}`;
+    if (on && url.hash === WORKSHOP_HASH) return;
+    if (!on && !url.hash) return;
+    window.history[on ? "pushState" : "replaceState"]({}, "", next || "/");
   }
 
-  function loadPlacedItems(projectId) {
-    if (!projectId) {
-      placedItems = [];
-      return;
+  function setSceneVisibility(node, visible) {
+    if (!node) return;
+    visibleState.set(node.uuid, node.visible);
+    node.visible = visible;
+  }
+
+  function showWorkshopScene() {
+    roomGroup.visible = activeSurface !== "wiring";
+    const modelRoot = getMeshRoot?.();
+    if (modelRoot) setSceneVisibility(modelRoot, false);
+    scene.traverse((node) => {
+      if (!node || node === roomGroup || roomGroup.children.includes(node)) return;
+      if (node === transformControls.getHelper()) return;
+      if (node.userData?.isFloor || node.userData?.isShadowFloor || node.userData?.isArchitectBay || node.userData?.isArchitectGrid) {
+        setSceneVisibility(node, false);
+      }
+      if (node.isGridHelper || node.type === "GridHelper" || node.name === "large-grid-axes" || node.name === "grid-dots") {
+        setSceneVisibility(node, false);
+      }
+    });
+    priorSceneBackground = scene.background?.clone?.() || null;
+    scene.background = new THREE.Color(0x07101a);
+  }
+
+  function hideWorkshopScene() {
+    roomGroup.visible = false;
+    previewMesh.visible = false;
+    previewGlow.visible = false;
+    for (const [uuid, visible] of visibleState.entries()) {
+      const node = scene.getObjectByProperty("uuid", uuid);
+      if (node) node.visible = visible;
     }
+    visibleState.clear();
+    scene.background = priorSceneBackground;
+  }
+
+  function applyCameraPose(surface = activeSurface) {
+    camera.up.set(0, 0, 1);
+    if (surface === "god") {
+      camera.position.set(0, -0.05, 16.2);
+      controls.target.set(0, 0, 0.4);
+    } else {
+      camera.position.set(10.5, -10.8, 7.2);
+      controls.target.set(0, 0.8, 1.0);
+    }
+    camera.lookAt(controls.target);
+    controls.update();
+  }
+
+  function rememberCameraPose() {
+    savedCamera.position.copy(camera.position);
+    savedCamera.target.copy(controls.target);
+  }
+
+  function restoreCameraPose() {
+    camera.position.copy(savedCamera.position);
+    controls.target.copy(savedCamera.target);
+    camera.up.set(0, 0, 1);
+    camera.lookAt(savedCamera.target);
+    controls.update();
+  }
+
+  function activeFile() {
+    return ideState.files.find((file) => file.id === ideState.activeFileId) || ideState.files[0] || null;
+  }
+
+  function updateActiveFileContent(content = "") {
+    const next = ideState.files.map((file) => (
+      file.id === ideState.activeFileId ? { ...file, content } : file
+    ));
+    ideState = { ...ideState, files: next };
+    scheduleIdeSave();
+  }
+
+  async function saveWorkshopPatch({ savePartner = false, saveLayout = false, saveIde = false, quiet = false } = {}) {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId) return null;
+    const payload = {};
+    if (savePartner) payload.selected_partner_id = activePartner().id || "";
+    if (saveLayout) payload.layout = layoutState;
+    if (saveIde) payload.ide = ideState;
+    if (!Object.keys(payload).length) return null;
     try {
-      const raw = localStorage.getItem(storageKey(projectId));
-      const parsed = raw ? JSON.parse(raw) : [];
-      placedItems = Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object") : [];
-    } catch {
-      placedItems = [];
+      const next = await api(`/api/projects/${projectId}/workshop`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      workshopState = normalizeWorkshopState(next, currentProjectName());
+      if (next?.layout) layoutState = normalizeWorkshopLayout(next.layout);
+      if (next?.ide) ideState = normalizeWorkshopIde(next.ide);
+      if (!quiet) render();
+      return next;
+    } catch (err) {
+      if (!quiet) setStatus?.("error", err?.message || "Could not save Workshop changes.");
+      return null;
     }
   }
 
-  function savePlacedItems() {
-    if (!activeProjectId) return;
-    try {
-      localStorage.setItem(storageKey(activeProjectId), JSON.stringify(placedItems));
-    } catch {
-      /* optional */
+  function scheduleLayoutSave() {
+    window.clearTimeout(persistLayoutTimer);
+    persistLayoutTimer = window.setTimeout(() => {
+      persistLayoutTimer = 0;
+      void saveWorkshopPatch({ saveLayout: true, quiet: true });
+    }, 450);
+  }
+
+  function scheduleIdeSave() {
+    window.clearTimeout(persistIdeTimer);
+    persistIdeTimer = window.setTimeout(() => {
+      persistIdeTimer = 0;
+      void saveWorkshopPatch({ saveIde: true, quiet: true });
+    }, 350);
+  }
+
+  function objectForSelection() {
+    return layoutState.objects.find((item) => item.id === selectedItemId) || null;
+  }
+
+  function disposeObject3d(object) {
+    object?.traverse?.((child) => {
+      if (child.geometry) child.geometry.dispose?.();
+      const material = child.material;
+      if (Array.isArray(material)) material.forEach((entry) => entry?.dispose?.());
+      else material?.dispose?.();
+    });
+  }
+
+  function registerTvScreen(item, plane) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1024;
+    canvas.height = 576;
+    const ctx = canvas.getContext("2d");
+    const texture = new THREE.CanvasTexture(canvas);
+    plane.rotation.x = Math.PI / 2;
+    plane.material = new THREE.MeshBasicMaterial({ map: texture });
+    plane.material.toneMapped = false;
+    tvScreenById.set(item.id, { canvas, ctx, texture, slot: item.streamSlot || "", label: item.label || "TV" });
+  }
+
+  function buildItemMesh(item) {
+    const dims = item.dimensions || {};
+    const rootMesh = new THREE.Group();
+    rootMesh.name = `workshop-item-${item.id}`;
+    rootMesh.userData.workshopItemId = item.id;
+    rootMesh.userData.workshopItemType = item.type;
+
+    if (item.type === "desk") {
+      const top = new THREE.Mesh(
+        new THREE.BoxGeometry(dims.width || 1.6, dims.depth || 0.8, WORKSHOP_DIMENSIONS_M.desk.topThickness),
+        new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.78, metalness: 0.04 }),
+      );
+      top.position.z = (dims.height || 0.74) - (WORKSHOP_DIMENSIONS_M.desk.topThickness / 2);
+      rootMesh.add(top);
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const leg = new THREE.Mesh(
+            new THREE.BoxGeometry(WORKSHOP_DIMENSIONS_M.desk.legSize, WORKSHOP_DIMENSIONS_M.desk.legSize, (dims.height || 0.74) - WORKSHOP_DIMENSIONS_M.desk.topThickness),
+            new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.68, metalness: 0.16 }),
+          );
+          leg.position.set(
+            sx * ((dims.width || 1.6) / 2 - 0.12),
+            sy * ((dims.depth || 0.8) / 2 - 0.12),
+            ((dims.height || 0.74) - WORKSHOP_DIMENSIONS_M.desk.topThickness) / 2,
+          );
+          rootMesh.add(leg);
+        }
+      }
+      const seatLabel = item.metadata?.seatLabel || item.label;
+      const label = createLabelPlane(seatLabel, { w: 1.4, h: 0.34 });
+      label.position.set(0, 0, (dims.height || 0.74) + 0.48);
+      rootMesh.add(label);
+    } else if (item.type === "tv") {
+      const stand = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.06, item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight, 18),
+        new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.6, metalness: 0.2 }),
+      );
+      stand.position.z = (item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight) / 2;
+      rootMesh.add(stand);
+      const bezel = new THREE.Mesh(
+        new THREE.BoxGeometry((dims.width || 1.4) + 0.08, dims.depth || 0.12, (dims.height || 0.86) + 0.08),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.32, metalness: 0.18 }),
+      );
+      bezel.position.z = item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight;
+      rootMesh.add(bezel);
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(dims.width || 1.4, dims.height || 0.86),
+        new THREE.MeshBasicMaterial({ color: 0x0f172a }),
+      );
+      screen.position.set(0, -((dims.depth || 0.12) / 2 + 0.005), item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight);
+      rootMesh.add(screen);
+      registerTvScreen(item, screen);
+      const label = createLabelPlane(item.label || "TV", { w: 1.3, h: 0.34 });
+      label.position.set(0, 0.16, (item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight) + (dims.height || 0.86) / 2 + 0.34);
+      rootMesh.add(label);
+    } else if (item.type === "robot-bay") {
+      const marker = createRingMarker(dims.width || 4.2, dims.depth || 3.0, 0x3b82f6);
+      rootMesh.add(marker);
+      const border = new THREE.Mesh(
+        new THREE.RingGeometry(1.05, 1.24, 32),
+        new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.32, side: THREE.DoubleSide }),
+      );
+      border.position.z = 0.018;
+      rootMesh.add(border);
+      const label = createLabelPlane("Robotics sim bay\nOpenArm · MuJoCo · Isaac", { w: 1.8, h: 0.54 });
+      label.position.set(0, 0, 0.9);
+      rootMesh.add(label);
+    } else if (item.type === "wiring-bay") {
+      const marker = createRingMarker(dims.width || 2.6, dims.depth || 1.6, 0xf59e0b);
+      rootMesh.add(marker);
+      const label = createLabelPlane("Wiring bay", { w: 1.2, h: 0.34 });
+      label.position.set(0, 0, 0.72);
+      rootMesh.add(label);
+    } else if (item.type === "dj-zone") {
+      const marker = new THREE.Mesh(
+        new THREE.CircleGeometry(Math.max(dims.width || 2.2, dims.depth || 1.8) / 2, 40),
+        new THREE.MeshStandardMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
+      );
+      rootMesh.add(marker);
+      const label = createLabelPlane('DJ handoff zone\nSay "Hey DJ"', { w: 1.55, h: 0.48 });
+      label.position.set(0, 0, 0.72);
+      rootMesh.add(label);
     }
+
+    rootMesh.position.set(Number(item.pose?.x) || 0, Number(item.pose?.y) || 0, Number(item.pose?.z) || 0);
+    rootMesh.rotation.z = Number(item.pose?.yaw) || 0;
+    rootMesh.traverse((child) => {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.userData.workshopItemId = item.id;
+    });
+    return rootMesh;
   }
 
   function clearPlacedScene() {
+    tvScreenById.forEach((entry) => entry.texture?.dispose?.());
+    tvScreenById.clear();
     for (const child of [...placedGroup.children]) {
       placedGroup.remove(child);
-      child.traverse((node) => {
-        if (node.geometry) node.geometry.dispose?.();
-        const material = node.material;
-        if (Array.isArray(material)) material.forEach((entry) => entry?.dispose?.());
-        else material?.dispose?.();
-      });
+      disposeObject3d(child);
     }
     placedMeshById.clear();
   }
 
   function rebuildPlacedScene() {
     clearPlacedScene();
-    for (const item of placedItems) {
-      const preset = presetById(item.preset_id);
-      const mesh = buildWorkshopItemMesh(item, preset);
+    layoutState.objects.forEach((item) => {
+      const mesh = buildItemMesh(item);
       placedMeshById.set(item.id, mesh);
       placedGroup.add(mesh);
-    }
+    });
+    syncSelectedPlacedItem();
   }
 
   function syncSelectedPlacedItem() {
@@ -536,118 +593,143 @@ export function createWorkshopMode(options = {}) {
       return;
     }
     transformControls.attach(mesh);
-    transformControls.setMode("translate");
-  }
-
-  function selectedPlacedItem() {
-    return placedItems.find((item) => item.id === selectedItemId) || null;
+    transformControls.setMode(transformMode);
   }
 
   function updatePreviewMesh() {
-    if (!active || activeTopTab !== "editor" || activeEditorTab !== "place") {
+    if (!active || activeSurface !== "editor") {
       previewMesh.visible = false;
       previewGlow.visible = false;
       previewPoint = null;
       return;
     }
     const preset = presetById(selectedPlacePreset);
-    previewMesh.scale.set(
-      preset.width / 0.5,
-      preset.depth / 0.5,
-      Math.max(0.08, preset.height) / 0.18,
-    );
-    const hit = raycaster.intersectObjects(previewSurfaces, false)[0];
+    if (!preset) return;
+    const dims = preset.dimensions || {};
+    raycaster.setFromCamera(pointerNdc, camera);
+    const hit = raycaster.intersectObjects([floor], false)[0];
     if (!hit?.point) {
       previewMesh.visible = false;
       previewGlow.visible = false;
       previewPoint = null;
       return;
     }
-    const point = hit.point.clone();
-    point.z = Math.max(point.z, 0);
-    previewPoint = point;
-    previewMesh.position.set(point.x, point.y, point.z + preset.height * 0.5);
-    previewGlow.position.set(point.x, point.y, point.z + 0.01);
+    const x = clamp(hit.point.x, warehouseBounds.minX, warehouseBounds.maxX);
+    const y = clamp(hit.point.y, warehouseBounds.minY, warehouseBounds.maxY);
+    const z = (dims.height || dims.markerHeight || 0.1) / 2;
+    previewPoint = new THREE.Vector3(x, y, 0);
+    previewMesh.scale.set(
+      dims.width || 1,
+      dims.depth || 1,
+      Math.max((dims.height || dims.markerHeight || 0.1) / 0.2, 0.4),
+    );
+    previewMesh.position.set(x, y, z);
+    previewGlow.position.set(x, y, 0.02);
     previewMesh.visible = true;
     previewGlow.visible = true;
   }
 
-  function sceneSetVisible(node, visible) {
-    if (!node) return;
-    visibleState.set(node.uuid, node.visible);
-    node.visible = visible;
+  function selectPlacedMeshFromHit(object) {
+    let node = object;
+    while (node && !node.userData?.workshopItemId) node = node.parent;
+    const itemId = node?.userData?.workshopItemId;
+    if (!itemId) return false;
+    selectedItemId = itemId;
+    clearStudioSelection?.();
+    syncSelectedPlacedItem();
+    render();
+    return true;
   }
 
-  function showWorkshopRoom() {
-    roomGroup.visible = true;
-    const modelRoot = getMeshRoot?.();
-    if (modelRoot) sceneSetVisible(modelRoot, false);
-    scene.traverse((node) => {
-      if (!node || node === roomGroup || roomGroup.children.includes(node)) return;
-      if (node === transformControls.getHelper()) return;
-      if (node.userData?.isFloor || node.userData?.isShadowFloor || node.userData?.isArchitectBay || node.userData?.isArchitectGrid) {
-        sceneSetVisible(node, false);
-      }
-      if (node.isGridHelper || node.type === "GridHelper" || node.name === "large-grid-axes" || node.name === "grid-dots") {
-        sceneSetVisible(node, false);
-      }
+  function updatePointerFromEvent(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNdc.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+  }
+
+  function selectedPlaceLabel() {
+    return presetById(selectedPlacePreset)?.label || "Item";
+  }
+
+  function addPlacedItemFromPreview() {
+    if (!previewPoint) {
+      setStatus?.("error", "Move the cursor onto the warehouse floor first.");
+      return;
+    }
+    const preset = presetById(selectedPlacePreset);
+    const existing = layoutState.objects || [];
+    const dims = preset.dimensions || {};
+    const next = createWorkshopObject({
+      id: nextWorkshopObjectId(preset.type, existing),
+      type: preset.type,
+      label: preset.label,
+      pose: {
+        x: previewPoint.x,
+        y: previewPoint.y,
+        z: (dims.height || dims.markerHeight || 0.1) / 2,
+        yaw: 0,
+      },
+      dimensions: {
+        width: dims.width,
+        depth: dims.depth,
+        height: dims.height || dims.markerHeight || 0.1,
+      },
+      streamSlot: preset.streamSlot || "",
     });
-    if (scene.background?.getHex) sceneBgStack.push(scene.background.getHex());
-    scene.background = new THREE.Color(0x08111d);
+    layoutState = { ...layoutState, objects: [...existing, next] };
+    selectedItemId = next.id;
+    rebuildPlacedScene();
+    scheduleLayoutSave();
+    setStatus?.("ok", `Placed ${preset.label.toLowerCase()} in meters.`);
+    render();
   }
 
-  function hideWorkshopRoom() {
-    roomGroup.visible = false;
-    for (const [uuid, visible] of visibleState.entries()) {
-      const node = scene.getObjectByProperty("uuid", uuid);
-      if (node) node.visible = visible;
-    }
-    visibleState.clear();
-    if (sceneBgStack.length) {
-      scene.background = new THREE.Color(sceneBgStack.pop());
-    }
-    previewMesh.visible = false;
-    previewGlow.visible = false;
+  function deleteSelectedItem() {
+    if (!selectedItemId) return;
+    layoutState = { ...layoutState, objects: layoutState.objects.filter((item) => item.id !== selectedItemId) };
+    selectedItemId = "";
+    transformControls.detach();
+    rebuildPlacedScene();
+    scheduleLayoutSave();
+    render();
   }
 
-  function applyLook() {
-    const dir = new THREE.Vector3(
-      Math.cos(lookState.pitch) * Math.cos(lookState.yaw),
-      Math.cos(lookState.pitch) * Math.sin(lookState.yaw),
-      Math.sin(lookState.pitch),
-    );
-    camera.up.set(0, 0, 1);
-    camera.lookAt(camera.position.clone().add(dir));
-  }
-
-  function enterCameraPose() {
-    savedCamera.position.copy(camera.position);
-    savedCamera.target.copy(controls.target);
-    camera.position.set(0.25, -5.85, 1.72);
-    lookState.yaw = Math.PI / 2;
-    lookState.pitch = -0.05;
-    applyLook();
-  }
-
-  function restoreCameraPose() {
-    camera.position.copy(savedCamera.position);
-    controls.target.copy(savedCamera.target);
-    camera.up.set(0, 0, 1);
-    camera.lookAt(savedCamera.target);
+  function syncTransformSelection() {
+    const obj = transformControls.object;
+    if (!active || !obj?.userData?.workshopItemId) return;
+    layoutState = {
+      ...layoutState,
+      objects: layoutState.objects.map((item) => (
+        item.id === obj.userData.workshopItemId
+          ? {
+            ...item,
+            pose: {
+              ...item.pose,
+              x: Number(obj.position.x.toFixed(4)),
+              y: Number(obj.position.y.toFixed(4)),
+              z: Number(obj.position.z.toFixed(4)),
+              yaw: Number(obj.rotation.z.toFixed(6)),
+            },
+          }
+          : item
+      )),
+    };
+    scheduleLayoutSave();
   }
 
   async function loadWorkshopState(force = false) {
     const projectId = String(getProjectId?.() || "").trim();
     activeProjectId = projectId;
-    loadPlacedItems(projectId);
-    rebuildPlacedScene();
     if (!projectId) {
       workshopState = seededWorkshopState(currentProjectName());
+      layoutState = buildDefaultWorkshopLayout();
+      ideState = buildDefaultWorkshopIde();
       workshopError = "Open a project to load this workshop.";
       render();
       return;
     }
-    if (!force && loadedProjectId === projectId && workshopState.project_label === currentProjectName()) {
+    if (!force && projectId === activeProjectId && workshopState.project_label === currentProjectName()) {
       render();
       return;
     }
@@ -657,12 +739,20 @@ export function createWorkshopMode(options = {}) {
       const data = await api(`/api/projects/${projectId}/workshop`);
       if (token !== loadToken) return;
       workshopState = normalizeWorkshopState(data, currentProjectName());
-      loadedProjectId = projectId;
+      layoutState = normalizeWorkshopLayout(workshopState.layout);
+      ideState = normalizeWorkshopIde(workshopState.ide);
+      partnerModalOpen = !activePartner().id;
+      rebuildPlacedScene();
+      if (!Array.isArray(data?.layout?.objects) || !data.layout.objects.length) {
+        void saveWorkshopPatch({ saveLayout: true, quiet: true });
+      }
     } catch (err) {
       if (token !== loadToken) return;
       workshopState = seededWorkshopState(currentProjectName());
+      layoutState = buildDefaultWorkshopLayout();
+      ideState = buildDefaultWorkshopIde();
       workshopError = err?.message || "Could not load saved workshop details.";
-      loadedProjectId = projectId;
+      rebuildPlacedScene();
     }
     render();
   }
@@ -678,7 +768,7 @@ export function createWorkshopMode(options = {}) {
       setStatus?.("ok", "Approval saved.");
       render();
     } catch (err) {
-      setStatus?.("error", err?.message || "Could not approve this item.");
+      setStatus?.("error", err?.message || "Could not approve this Workshop item.");
     }
   }
 
@@ -698,97 +788,139 @@ export function createWorkshopMode(options = {}) {
       });
       workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
       lastDebugResult = data.result || null;
-      setStatus?.("ok", lastDebugResult?.message || "Debug handoff queued.");
+      setStatus?.("ok", lastDebugResult?.message || "Debug handoff saved.");
       render();
     } catch (err) {
-      setStatus?.("error", err?.message || "Could not send this row to debug.");
+      setStatus?.("error", err?.message || "Could not send this row to Debug.");
     }
   }
 
+  function setSurface(next = "god") {
+    if (!active) return;
+    activeSurface = next;
+    if (activeSurface === "wiring") {
+      roomGroup.visible = false;
+      previewMesh.visible = false;
+      previewGlow.visible = false;
+      transformControls.detach();
+      controls.enabled = false;
+      showWiringWorkspace?.();
+    } else {
+      hideWiringWorkspace?.();
+      roomGroup.visible = true;
+      controls.enabled = true;
+      syncSelectedPlacedItem();
+      applyCameraPose(activeSurface);
+    }
+    render();
+  }
+
+  function selectPartner(partnerId) {
+    const match = (workshopState.partner_options || []).find((item) => item.id === partnerId)
+      || WORKSHOP_PARTNER_OPTIONS.find((item) => item.id === partnerId);
+    if (!match) return;
+    workshopState = normalizeWorkshopState({ ...workshopState, selected_partner: match }, currentProjectName());
+    partnerModalOpen = false;
+    void saveWorkshopPatch({ savePartner: true, quiet: true });
+    render();
+    setStatus?.("ok", `${match.label} is now selected for this Workshop session.`);
+  }
+
   function copyVoicePrompt({ submit = false } = {}) {
-    const input = root.querySelector(`#${CSS.escape(dictationInputId)}`);
-    const text = String(input?.value || "").trim();
+    const text = String(root.querySelector("[data-workshop-voice-input]")?.value || voiceDraft || "").trim();
     if (!text) {
-      setStatus?.("error", "Say or enter a prompt first.");
+      setStatus?.("error", "Say or enter a Workshop prompt first.");
       return;
     }
     setStudioPromptText?.(text, { submit });
   }
 
-  function placeSelectedPreset() {
-    if (!previewPoint) {
-      setStatus?.("error", "Move the cursor onto the floor or desk first.");
+  function appendPartnerUpdate() {
+    const partner = activePartner();
+    if (!partner.id) {
+      partnerModalOpen = true;
+      render();
       return;
     }
-    const preset = presetById(selectedPlacePreset);
-    const next = {
-      id: `placed-${Date.now()}`,
-      preset_id: preset.id,
-      label: preset.label,
-      position: {
-        x: previewPoint.x,
-        y: previewPoint.y,
-        z: previewPoint.z + preset.height * 0.5,
+    const selected = objectForSelection();
+    const timestamp = new Date().toLocaleTimeString();
+    const message = `\n[${timestamp}] ${partner.label}: ${selected ? `Watching ${selected.label} at x=${selected.pose.x} m, y=${selected.pose.y} m.` : "Watching the room layout."} ${currentBridge().status === "connected_live" ? "Live bridge connected." : "Live bridge stubbed; update generated in mock mode."}\n`;
+    const file = activeFile();
+    if (!file) return;
+    updateActiveFileContent(`${file.content || ""}${message}`);
+    setStatus?.("ok", "Added a partner update to the collab editor.");
+    render();
+  }
+
+  function exportLayout() {
+    const payload = exportWorkshopLayout(layoutState, {
+      project_id: activeProjectId || undefined,
+      project_label: workshopState.project_label || currentProjectName(),
+      selected_partner: activePartner().id || undefined,
+      notes: {
+        scale: `All Workshop placements are stored in ${WORKSHOP_LINEAR_UNIT} with ${WORKSHOP_ANGLE_UNIT} yaw.`,
       },
-      rotation: { x: 0, y: 0, z: 0 },
-    };
-    placedItems.push(next);
-    selectedItemId = next.id;
-    savePlacedItems();
-    rebuildPlacedScene();
-    syncSelectedPlacedItem();
-    setStatus?.("ok", `Placed ${preset.label.toLowerCase()}. Drag it to move.`);
-    render();
+    });
+    const safeProject = String(activeProjectId || "workshop").replace(/[^a-z0-9_-]+/gi, "-");
+    downloadJson(`${safeProject}-workshop-layout-meters.json`, payload);
+    setStatus?.("ok", "Exported Workshop layout in meters.");
   }
 
-  function selectPlacedMeshFromHit(object) {
-    let node = object;
-    while (node && !node.userData?.workshopItemId) node = node.parent;
-    const itemId = node?.userData?.workshopItemId;
-    if (!itemId) return false;
-    selectedItemId = itemId;
-    clearStudioSelection?.();
-    syncSelectedPlacedItem();
-    setStatus?.("ok", "Selected workshop item — drag the handles to move it.");
-    render();
-    return true;
+  function paintTvScreens(now = performance.now()) {
+    if (now - lastTelemetryPaintAt < 700) return;
+    lastTelemetryPaintAt = now;
+    const queueCount = (workshopState.queue || []).length;
+    const pendingApprovals = (workshopState.approvals || []).filter((item) => String(item.status || "").toLowerCase() !== "approved").length;
+    tvScreenById.forEach((entry) => {
+      const { canvas, ctx, texture, slot, label } = entry;
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#04111d";
+      ctx.fillRect(0, 0, w, h);
+      const gradient = ctx.createLinearGradient(0, 0, w, h);
+      gradient.addColorStop(0, "#0f172a");
+      gradient.addColorStop(1, slot === "openarm-telemetry" ? "#082f49" : "#1e1b4b");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(18, 18, w - 36, h - 36);
+      ctx.fillStyle = "#93c5fd";
+      ctx.font = "700 36px Inter, sans-serif";
+      ctx.fillText(label, 46, 72);
+      ctx.fillStyle = "#e2e8f0";
+      ctx.font = "600 26px Inter, sans-serif";
+      if (slot === "openarm-telemetry") {
+        const sweep = (Math.sin(now / 1200) * 18 + 42).toFixed(1);
+        const load = (Math.cos(now / 1500) * 8 + 54).toFixed(1);
+        const fps = (29 + ((now / 100) % 4)).toFixed(0);
+        ctx.fillText(`Joint sweep: ${sweep}°`, 52, 170);
+        ctx.fillText(`Servo load: ${load}%`, 52, 214);
+        ctx.fillText(`Camera heartbeat: ${fps} fps`, 52, 258);
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(52, 314, 360, 18);
+      } else {
+        ctx.fillText(`Queue rows: ${queueCount}`, 52, 170);
+        ctx.fillText(`Open approvals: ${pendingApprovals}`, 52, 214);
+        ctx.fillText(`Selected partner: ${activePartner().label || "None"}`, 52, 258);
+        ctx.fillStyle = "#f59e0b";
+        ctx.fillRect(52, 314, 300, 18);
+      }
+      ctx.strokeStyle = "rgba(148,163,184,0.38)";
+      ctx.strokeRect(40, 120, w - 80, h - 160);
+      texture.needsUpdate = true;
+    });
   }
 
-  function projectCards(items = [], kind = "generic") {
-    if (!items.length) return `<p class="muted small">No ${kind} items queued right now.</p>`;
-    return items.map((item) => `
+  function renderAgents() {
+    const seats = Array.isArray(workshopState.agent_seats) ? workshopState.agent_seats : WORKSHOP_AGENT_SEATS;
+    return seats.map((seat) => `
       <article class="workshop-card">
         <div class="workshop-card-head">
-          <strong>${esc(item.title || item.label || "Untitled")}</strong>
-          ${item.status ? `<span class="workshop-pill">${esc(item.status)}</span>` : ""}
+          <strong>${esc(seat.deskLabel || seat.label || seat.id)}</strong>
+          <span class="workshop-pill">${esc(seat.status || seat.role || "Ready")}</span>
         </div>
-        <p>${esc(item.summary || item.detail || "")}</p>
+        <p>${esc(seat.label || seat.id)} · ${esc(seat.role || "seat")}</p>
       </article>
     `).join("");
-  }
-
-  function renderAgents(showNote = false) {
-    const agents = Array.isArray(workshopState.agents) ? workshopState.agents : [];
-    if (!agents.length) return `<p class="muted small">No room agents online yet.</p>`;
-    const note = showNote && workshopState.agents_source !== "live"
-      ? `<p class="muted small workshop-soft-note">Example room activity is shown until a live room feed is connected.</p>`
-      : "";
-    return `${note}${agents.map((agent) => `
-      <article class="workshop-card workshop-agent-card">
-        <div class="workshop-card-head">
-          <strong>${esc(agent.name || agent.id || "Agent")}</strong>
-          <span class="workshop-pill">${esc(agent.status || "Ready")}</span>
-        </div>
-        <ul class="workshop-task-list">
-          ${(Array.isArray(agent.tasks) ? agent.tasks : []).map((task) => `
-            <li>
-              <span>${esc(task.title || task.name || "Task")}</span>
-              <em>${esc(task.status || "queued")}</em>
-            </li>
-          `).join("")}
-        </ul>
-      </article>
-    `).join("")}`;
   }
 
   function renderQueue() {
@@ -797,7 +929,7 @@ export function createWorkshopMode(options = {}) {
     return queue.map((row) => `
       <article class="workshop-card workshop-queue-card workshop-queue-card--${esc(String(row.status || "waiting").toLowerCase())}">
         <div class="workshop-card-head">
-          <strong>${esc(row.label || row.title || row.id || "Queue item")}</strong>
+          <strong>${esc(row.label || row.id || "Queue row")}</strong>
           <span class="workshop-pill workshop-pill--${esc(String(row.status || "waiting").toLowerCase())}">${esc(row.status || "waiting")}</span>
         </div>
         <p>${esc(row.detail || "")}</p>
@@ -815,9 +947,6 @@ export function createWorkshopMode(options = {}) {
           <span>${esc(result.message || "Latest debug handoff saved.")}</span>
         </div>
       ` : ""}
-      ${workshopState.debug?.hook_available
-        ? `<p class="muted small">Live debug handoff is connected for this room.</p>`
-        : `<p class="muted small">No live debug harness is connected, so requests are saved here for the next run.</p>`}
       <div class="workshop-debug-list">
         ${queue.map((row) => `
           <article class="workshop-card workshop-debug-card">
@@ -832,265 +961,324 @@ export function createWorkshopMode(options = {}) {
     `;
   }
 
-  function renderBody() {
-    if (activeTopTab === "projects") {
-      return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop project tabs">
-          <button type="button" class="workshop-subtab${activeProjectTab === "create" ? " active" : ""}" data-workshop-project-tab="create">Create</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "train" ? " active" : ""}" data-workshop-project-tab="train">Train</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "approvals" ? " active" : ""}" data-workshop-project-tab="approvals">Approvals</button>
+  function renderApprovals() {
+    const approvals = Array.isArray(workshopState.approvals) ? workshopState.approvals : [];
+    return approvals.map((item) => `
+      <article class="workshop-card">
+        <div class="workshop-card-head">
+          <strong>${esc(item.title || item.id || "Approval")}</strong>
+          <span class="workshop-pill workshop-pill--${esc(String(item.status || "pending").toLowerCase())}">${esc(item.status || "pending")}</span>
         </div>
-        <div class="workshop-panel-scroll">
-          ${activeProjectTab === "create" ? projectCards(workshopState.projects?.create || [], "create") : ""}
-          ${activeProjectTab === "train" ? projectCards(workshopState.projects?.train || [], "train") : ""}
-          ${activeProjectTab === "approvals" ? (workshopState.approvals || []).map((item) => `
-            <article class="workshop-card">
-              <div class="workshop-card-head">
-                <strong>${esc(item.title || item.id || "Approval")}</strong>
-                <span class="workshop-pill workshop-pill--${esc(String(item.status || "pending").toLowerCase())}">${esc(item.status || "pending")}</span>
-              </div>
-              <p>${esc(item.summary || "")}</p>
-              ${String(item.status || "").toLowerCase() === "approved"
-                ? `<span class="workshop-inline-ok">Approved</span>`
-                : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}">Approve</button>`}
-            </article>
-          `).join("") : ""}
-        </div>
-      `;
-    }
+        <p>${esc(item.summary || "")}</p>
+        ${String(item.status || "").toLowerCase() === "approved"
+          ? `<span class="workshop-inline-ok">Approved</span>`
+          : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}">Approve</button>`}
+      </article>
+    `).join("");
+  }
 
-    if (activeTopTab === "lab") {
-      return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop lab tabs">
-          <button type="button" class="workshop-subtab${activeLabTab === "agents" ? " active" : ""}" data-workshop-lab-tab="agents">Manage Agents</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "queue" ? " active" : ""}" data-workshop-lab-tab="queue">Queue</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "debug" ? " active" : ""}" data-workshop-lab-tab="debug">Debug</button>
+  function renderMonitorList() {
+    const monitors = layoutState.objects.filter((item) => item.type === "tv");
+    return monitors.map((item) => `
+      <article class="workshop-card">
+        <div class="workshop-card-head">
+          <strong>${esc(item.label)}</strong>
+          <span class="workshop-pill">${esc(item.streamSlot || "stream")}</span>
         </div>
-        <div class="workshop-panel-scroll">
-          ${activeLabTab === "agents" ? renderAgents(true) : ""}
-          ${activeLabTab === "queue" ? renderQueue() : ""}
-          ${activeLabTab === "debug" ? renderDebugRows() : ""}
-        </div>
-      `;
-    }
+        <p>${esc(item.streamSlot === "openarm-telemetry" ? "Mock OpenArm telemetry feed." : "Queue and room activity feed.")}</p>
+      </article>
+    `).join("");
+  }
 
+  function renderPartnerModal() {
+    const bridge = currentBridge();
+    const options = workshopState.partner_options || WORKSHOP_PARTNER_OPTIONS;
     return `
-      <div class="workshop-subtabs" role="tablist" aria-label="Workshop editor tabs">
-        <button type="button" class="workshop-subtab${activeEditorTab === "place" ? " active" : ""}" data-workshop-editor-tab="place">Editor</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "voice" ? " active" : ""}" data-workshop-editor-tab="voice">Voice Prompt</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "god" ? " active" : ""}" data-workshop-editor-tab="god">God Mode</button>
-      </div>
-      <div class="workshop-panel-scroll">
-        ${activeEditorTab === "place" ? `
-          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk.</p>
-          <div class="workshop-preset-grid">
-            ${PLACE_PRESETS.map((preset) => `
-              <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
-                <strong>${esc(preset.label)}</strong>
-                <span>${esc(preset.summary)}</span>
+      <div class="workshop-entry-modal">
+        <div class="workshop-entry-backdrop" data-workshop-close-partner></div>
+        <div class="workshop-entry-card">
+          <div class="workshop-entry-head">
+            <div>
+              <span class="workshop-kicker">Workshop entry</span>
+              <h3>Select a room partner</h3>
+            </div>
+            <button type="button" class="btn secondary btn-compact" data-workshop-close-partner>Close</button>
+          </div>
+          <p class="muted small">Choose the voice or agent partner for this project. The room keeps working even when live bridge credentials are missing.</p>
+          <div class="workshop-partner-grid">
+            ${options.map((item) => `
+              <button type="button" class="workshop-partner-option${activePartner().id === item.id ? " active" : ""}" data-workshop-partner="${esc(item.id)}">
+                <strong>${esc(item.label)}</strong>
+                <span>${esc(item.summary || item.kind || "")}</span>
               </button>
             `).join("")}
           </div>
-          <div class="workshop-inline-actions">
-            <button type="button" class="btn accent btn-compact" data-workshop-place>Place here</button>
-            <button type="button" class="btn secondary btn-compact" data-workshop-clear-selection>Clear selection</button>
+          <div class="workshop-inline-banner workshop-inline-banner--bridge">
+            <strong>${esc(bridge.label || "Not connected")}</strong>
+            <span>${esc(bridge.detail || "")}</span>
           </div>
-          <p class="muted small">${selectedPlacedItem() ? `${esc(selectedPlacedItem()?.label || "Item")} is selected.` : "Click a placed item to move it with the transform handles."}</p>
-        ` : ""}
-        ${activeEditorTab === "voice" ? `
-          <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt, so words appear here while you speak.</p>
-          <textarea id="${esc(dictationInputId)}" class="workshop-voice-input" rows="5" placeholder="Describe the next workshop step or placement...">${esc(voiceDraft)}</textarea>
-          <div class="workshop-inline-actions">
-            <button type="button" class="btn secondary btn-compact${pointerLocked ? " hidden" : ""}" data-workshop-dictate>Mic</button>
-            <button type="button" class="btn secondary btn-compact" data-workshop-copy-prompt>Use in AI prompt</button>
-            <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
-          </div>
-        ` : ""}
-        ${activeEditorTab === "god" ? renderAgents(true) : ""}
+        </div>
       </div>
     `;
   }
 
+  function renderGodPanel() {
+    return `
+      <div class="workshop-panel-scroll">
+        <div class="workshop-inline-banner">
+          <strong>True-scale meters</strong>
+          <span>Workshop props use 1 world unit = 1 meter. Exported layout stores meters and yaw for passthrough.</span>
+        </div>
+        <div class="workshop-preset-grid">
+          ${WORKSHOP_PLACE_PRESETS.map((preset) => `
+            <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
+              <strong>${esc(preset.label)}</strong>
+              <span>${esc(preset.summary)}</span>
+            </button>
+          `).join("")}
+        </div>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn accent btn-compact" data-workshop-set-surface="editor">Open editor</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-export>Export layout (meters)</button>
+        </div>
+        <h3 class="workshop-section-title">Agent desks</h3>
+        ${renderAgents()}
+        <h3 class="workshop-section-title">Monitors</h3>
+        ${renderMonitorList()}
+        <h3 class="workshop-section-title">Approvals</h3>
+        ${renderApprovals()}
+        <h3 class="workshop-section-title">Queue</h3>
+        ${renderQueue()}
+      </div>
+    `;
+  }
+
+  function renderEditorPanel() {
+    const selected = objectForSelection();
+    const file = activeFile();
+    return `
+      <div class="workshop-panel-scroll">
+        <div class="workshop-inline-banner workshop-inline-banner--bridge">
+          <strong>${esc(activePartner().label || "No partner selected")}</strong>
+          <span>${esc(currentBridge().label)} · ${esc(currentBridge().detail || "Choose a partner to watch the room.")}</span>
+        </div>
+        <p class="muted small workshop-soft-note">Move the camera like the main viewport. In Editor, the placement preview follows the mouse across the room floor.</p>
+        <div class="workshop-preset-grid">
+          ${WORKSHOP_PLACE_PRESETS.map((preset) => `
+            <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
+              <strong>${esc(preset.label)}</strong>
+              <span>${esc(preset.summary)}</span>
+            </button>
+          `).join("")}
+        </div>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn accent btn-compact" data-workshop-place>Place ${esc(selectedPlaceLabel())}</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-transform="translate">Move</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-transform="rotate">Rotate</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-delete-selection ${selected ? "" : "disabled"}>Delete</button>
+        </div>
+        <p class="muted small">${selected ? `${esc(selected.label)} · x ${selected.pose.x} m · y ${selected.pose.y} m · yaw ${selected.pose.yaw.toFixed(2)} rad` : "Click a placed item to move or rotate it."}</p>
+        <h3 class="workshop-section-title">Voice prompt</h3>
+        <textarea id="workshop-voice-input" class="workshop-voice-input" rows="5" data-workshop-voice-input placeholder="Describe what you are moving or building in the room...">${esc(voiceDraft)}</textarea>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn secondary btn-compact" data-workshop-dictate>Mic</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-copy-prompt>Use in AI prompt</button>
+          <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
+        </div>
+        <h3 class="workshop-section-title">Collab editor</h3>
+        <div class="workshop-ide">
+          <aside class="workshop-ide-files">
+            ${ideState.files.map((ideFile) => `
+              <button type="button" class="workshop-ide-file${ideState.activeFileId === ideFile.id ? " active" : ""}" data-workshop-file="${esc(ideFile.id)}">${esc(ideFile.label)}</button>
+            `).join("")}
+            <button type="button" class="btn secondary btn-compact workshop-ide-stub-btn" data-workshop-partner-modal>Choose partner</button>
+            <button type="button" class="btn accent btn-compact workshop-ide-stub-btn" data-workshop-agent-update>Insert partner update</button>
+          </aside>
+          <div class="workshop-ide-editor">
+            <div class="workshop-ide-filebar">${esc(file?.label || "No file selected")}</div>
+            <textarea class="workshop-ide-textarea" rows="12" data-workshop-ide-text>${esc(file?.content || "")}</textarea>
+          </div>
+        </div>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn secondary btn-compact" data-workshop-export>Export layout (meters)</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-dj>DJ handoff stub</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderWiringPanel() {
+    return `
+      <div class="workshop-panel-scroll">
+        <div class="workshop-inline-banner">
+          <strong>Workshop wiring sim</strong>
+          <span>This view reuses the existing wiring workspace so Sam can click a Workshop tab and keep working in the same project.</span>
+        </div>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn secondary btn-compact" data-workshop-set-surface="god">Back to God View</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-set-surface="editor">Back to Editor</button>
+        </div>
+        <article class="workshop-card">
+          <div class="workshop-card-head">
+            <strong>Wiring bay shell</strong>
+            <span class="workshop-pill">Stub + live canvas</span>
+          </div>
+          <p>The dedicated Workshop wiring surface is ready and hands off to the existing simulator canvas underneath.</p>
+        </article>
+        <h3 class="workshop-section-title">Debug</h3>
+        ${renderDebugRows()}
+      </div>
+    `;
+  }
+
+  function renderBody() {
+    if (activeSurface === "editor") return renderEditorPanel();
+    if (activeSurface === "wiring") return renderWiringPanel();
+    return renderGodPanel();
+  }
+
   function bindRootEvents() {
-    root.querySelectorAll("[data-workshop-top-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeTopTab = btn.getAttribute("data-workshop-top-tab") || "editor";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-editor-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeEditorTab = btn.getAttribute("data-workshop-editor-tab") || "place";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-project-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeProjectTab = btn.getAttribute("data-workshop-project-tab") || "create";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-lab-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeLabTab = btn.getAttribute("data-workshop-lab-tab") || "agents";
-        render();
-      });
+    root.querySelectorAll("[data-workshop-set-surface]").forEach((btn) => {
+      btn.addEventListener("click", () => setSurface(btn.getAttribute("data-workshop-set-surface") || "god"));
     });
     root.querySelectorAll("[data-workshop-preset]").forEach((btn) => {
       btn.addEventListener("click", () => {
         selectedPlacePreset = btn.getAttribute("data-workshop-preset") || selectedPlacePreset;
-        activeEditorTab = "place";
         render();
       });
     });
     root.querySelector("[data-workshop-exit]")?.addEventListener("click", () => exit());
-    root.querySelector("[data-workshop-look]")?.addEventListener("click", async () => {
-      if (pointerLocked) {
-        document.exitPointerLock?.();
-        return;
-      }
-      try {
-        await renderer.domElement.requestPointerLock?.();
-      } catch {
-        setStatus?.("error", "Mouse look is not available here.");
-      }
+    root.querySelectorAll("[data-workshop-export]").forEach((btn) => {
+      btn.addEventListener("click", () => exportLayout());
     });
-    root.querySelector("[data-workshop-place]")?.addEventListener("click", () => placeSelectedPreset());
-    root.querySelector("[data-workshop-clear-selection]")?.addEventListener("click", () => {
-      selectedItemId = "";
-      transformControls.detach();
-      render();
+    root.querySelector("[data-workshop-place]")?.addEventListener("click", () => addPlacedItemFromPreview());
+    root.querySelectorAll("[data-workshop-transform]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        transformMode = btn.getAttribute("data-workshop-transform") || "translate";
+        syncSelectedPlacedItem();
+      });
     });
+    root.querySelector("[data-workshop-delete-selection]")?.addEventListener("click", () => deleteSelectedItem());
     root.querySelectorAll("[data-workshop-approve]").forEach((btn) => {
       btn.addEventListener("click", () => approveItem(btn.getAttribute("data-workshop-approve")));
     });
     root.querySelectorAll("[data-workshop-debug]").forEach((btn) => {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
     });
-    dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
-      await toggleDictation?.(dictationInputId, dictationBtn);
-    });
-    root.querySelector(`#${CSS.escape(dictationInputId)}`)?.addEventListener("input", (event) => {
-      voiceDraft = event.target?.value || "";
+      await toggleDictation?.("workshop-voice-input", root.querySelector("[data-workshop-dictate]"));
     });
     root.querySelector("[data-workshop-copy-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: false }));
     root.querySelector("[data-workshop-run-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: true }));
+    root.querySelector("[data-workshop-voice-input]")?.addEventListener("input", (event) => {
+      voiceDraft = event.target?.value || "";
+    });
+    root.querySelectorAll("[data-workshop-file]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        ideState = { ...ideState, activeFileId: btn.getAttribute("data-workshop-file") || ideState.activeFileId };
+        render();
+      });
+    });
+    root.querySelector("[data-workshop-ide-text]")?.addEventListener("input", (event) => {
+      updateActiveFileContent(event.target?.value || "");
+    });
+    root.querySelector("[data-workshop-agent-update]")?.addEventListener("click", () => appendPartnerUpdate());
+    root.querySelectorAll("[data-workshop-partner-modal]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        partnerModalOpen = true;
+        render();
+      });
+    });
+    root.querySelector("[data-workshop-dj]")?.addEventListener("click", () => {
+      setStatus?.("ok", "DJ handoff stub: this would call the Spotify / DJ agent when a live bridge is configured.");
+    });
+    root.querySelectorAll("[data-workshop-partner]").forEach((btn) => {
+      btn.addEventListener("click", () => selectPartner(btn.getAttribute("data-workshop-partner")));
+    });
+    root.querySelectorAll("[data-workshop-close-partner]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        partnerModalOpen = false;
+        render();
+      });
+    });
   }
 
   function render() {
     const canOpen = !!String(getProjectId?.() || "").trim();
     launcher.hidden = active;
     launcher.disabled = !canOpen;
-    launcher.title = canOpen ? "Open the Workshop desktop scene" : "Open a project first";
+    launcher.title = canOpen ? "Open Workshop" : "Open a project first";
     root.hidden = !active;
     root.classList.toggle("hidden", !active);
-    reticle.hidden = !(active && pointerLocked);
-    reticle.classList.toggle("hidden", !(active && pointerLocked));
+    root.classList.toggle("workshop-shell--wiring", activeSurface === "wiring");
     if (!active) return;
-    const projectName = workshopState.project_label || currentProjectName();
+    const partner = activePartner();
+    const bridge = currentBridge();
     root.innerHTML = `
-      <div class="workshop-shell-card">
+      <div class="workshop-shell-card workshop-shell-card--wide">
         <div class="workshop-shell-head">
           <div>
             <span class="workshop-kicker">Workshop</span>
-            <h2>${esc(projectName)}</h2>
-            <p>Desktop scene active · Route ${esc(WORKSHOP_HASH)}</p>
+            <h2>${esc(workshopState.project_label || currentProjectName())}</h2>
+            <p>God view warehouse · full editor · wiring sim · ${WORKSHOP_LINEAR_UNIT} layout export</p>
           </div>
           <div class="workshop-shell-actions">
-            <button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
+            <button type="button" class="btn secondary btn-compact" data-workshop-partner-modal>${partner.id ? "Switch partner" : "Choose partner"}</button>
+            <button type="button" class="btn secondary btn-compact" data-workshop-export>Export layout (meters)</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-exit>Back to Studio</button>
           </div>
         </div>
-        <div class="workshop-top-tabs" role="tablist" aria-label="Workshop">
-          <button type="button" class="workshop-top-tab${activeTopTab === "editor" ? " active" : ""}" data-workshop-top-tab="editor">Editor</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "projects" ? " active" : ""}" data-workshop-top-tab="projects">Project</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "lab" ? " active" : ""}" data-workshop-top-tab="lab">Studio Lab</button>
+        <div class="workshop-mode-tabs" role="tablist" aria-label="Workshop view">
+          <button type="button" class="workshop-top-tab${activeSurface === "god" ? " active" : ""}" data-workshop-set-surface="god">God View</button>
+          <button type="button" class="workshop-top-tab${activeSurface === "editor" ? " active" : ""}" data-workshop-set-surface="editor">Editor</button>
+          <button type="button" class="workshop-top-tab${activeSurface === "wiring" ? " active" : ""}" data-workshop-set-surface="wiring">Wiring Sim</button>
+          <span class="workshop-pill workshop-pill--${esc(String(bridge.status || "not_connected").toLowerCase())}">${esc(bridge.label || "Not connected")}</span>
         </div>
         ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
         ${renderBody()}
         <div class="workshop-footnote">
-          <span>WASD walk</span>
-          <span>Mouse look</span>
-          <span>Click to place</span>
-          <span>Drag handles to move</span>
+          <span>1 unit = 1 meter</span>
+          <span>Click placed items to move or rotate</span>
+          <span>PM wrap monitor + Sales monitor are live shell surfaces</span>
+          <span>Route ${esc(WORKSHOP_HASH)}</span>
         </div>
       </div>
+      ${partnerModalOpen ? renderPartnerModal() : ""}
     `;
     bindRootEvents();
   }
 
-  function updatePointerFromEvent(event) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointerNdc.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-  }
-
   function handlePointerDown(event) {
-    if (!active) return;
+    if (!active || activeSurface === "wiring") return;
     if (event.target?.closest?.(".workshop-shell")) return;
-    lastPointerEvent = event;
     updatePointerFromEvent(event);
-    if (pointerLocked) {
+    raycaster.setFromCamera(pointerNdc, camera);
+    const placedHits = raycaster.intersectObjects([...placedGroup.children], true);
+    if (placedHits[0]?.object && selectPlacedMeshFromHit(placedHits[0].object)) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      return;
-    }
-    if (activeTopTab === "editor" && activeEditorTab === "place") {
-      raycaster.setFromCamera(pointerNdc, camera);
-      const placedHits = raycaster.intersectObjects([...placedGroup.children], true);
-      if (placedHits[0]?.object && selectPlacedMeshFromHit(placedHits[0].object)) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
     }
   }
 
   function handlePointerMove(event) {
-    if (!active) return;
-    if (pointerLocked) {
-      lookState.yaw -= (event.movementX || 0) * 0.0028;
-      lookState.pitch = clamp(lookState.pitch - (event.movementY || 0) * 0.0022, -1.12, 0.7);
-      applyLook();
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
+    if (!active || activeSurface === "wiring") return;
     lastPointerEvent = event;
     updatePointerFromEvent(event);
   }
 
   function handleCanvasClick(event) {
-    if (!active) return;
+    if (!active || activeSurface === "wiring") return;
     if (event.target?.closest?.(".workshop-shell")) return;
-    if (pointerLocked) {
-      if (activeTopTab === "editor" && activeEditorTab === "place") placeSelectedPreset();
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
     updatePointerFromEvent(event);
     raycaster.setFromCamera(pointerNdc, camera);
-    const pcHit = raycaster.intersectObjects([pcMonitor, pcScreen], false)[0];
-    if (pcHit) {
-      activeTopTab = "editor";
-      activeEditorTab = "place";
-      setStatus?.("ok", "Workshop editor ready.");
-      render();
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
     const placedHits = raycaster.intersectObjects([...placedGroup.children], true);
     if (placedHits[0]?.object && selectPlacedMeshFromHit(placedHits[0].object)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
-    if (activeTopTab === "editor" && activeEditorTab === "place") {
-      placeSelectedPreset();
+    if (activeSurface === "editor") {
+      addPlacedItemFromPreview();
       event.preventDefault();
       event.stopImmediatePropagation();
     }
@@ -1098,116 +1286,75 @@ export function createWorkshopMode(options = {}) {
 
   function handleKeyDown(event) {
     if (!active) return;
-    const tag = String(event.target?.tagName || "").toLowerCase();
-    const inField = tag === "input" || tag === "textarea" || tag === "select" || event.target?.isContentEditable;
-    if (event.key === "Escape" && pointerLocked) {
-      document.exitPointerLock?.();
+    if (event.key === "Escape" && partnerModalOpen) {
+      partnerModalOpen = false;
+      render();
       event.preventDefault();
-      event.stopImmediatePropagation();
       return;
     }
-    if (!inField) {
-      keysDown.add(event.code);
-      if (event.code === "KeyL") {
-        try { renderer.domElement.requestPointerLock?.(); } catch (_) {}
-      }
-    }
-    if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyL", "Escape"].includes(event.code)) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+    if ((event.key === "Delete" || event.key === "Backspace") && !event.target?.closest?.("textarea,input")) {
+      deleteSelectedItem();
     }
   }
 
-  function handleKeyUp(event) {
-    if (!active) return;
-    keysDown.delete(event.code);
-    if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
-  }
-
-  function syncTransformSelection() {
-    const obj = transformControls.object;
-    if (!active || !obj?.userData?.workshopItemId) return;
-    const item = placedItems.find((entry) => entry.id === obj.userData.workshopItemId);
-    if (!item) return;
-    item.position = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
-    item.rotation = { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z };
-    savePlacedItems();
-  }
-
-  async function enter() {
+  async function enter({ syncMode = true } = {}) {
     if (active) return;
     if (!String(getProjectId?.() || "").trim()) {
       setStatus?.("error", "Open a project before entering the Workshop.");
       return;
     }
     clearStudioSelection?.();
-    controls.enabled = false;
     active = true;
-    activeTopTab = "editor";
-    activeEditorTab = "place";
-    lastDebugResult = null;
+    activeSurface = "god";
+    selectedItemId = "";
+    transformMode = "translate";
+    voiceDraft = "";
     document.body.classList.add("workshop-mode-active");
-    enterCameraPose();
-    showWorkshopRoom();
+    rememberCameraPose();
+    showWorkshopScene();
+    controls.enabled = true;
+    applyCameraPose("god");
     await loadWorkshopState(true);
     updateRoute(true);
-    setStatus?.("ok", "Workshop desktop mode active.");
+    if (syncMode) syncWorkspaceMode?.("workshop");
     render();
+    setStatus?.("ok", "Workshop is active.");
   }
 
-  function exit({ keepRoute = false } = {}) {
+  function exit({ keepRoute = false, syncMode = true } = {}) {
     if (!active) return;
     active = false;
-    pointerLocked = false;
-    keysDown.clear();
-    document.exitPointerLock?.();
+    window.clearTimeout(persistLayoutTimer);
+    window.clearTimeout(persistIdeTimer);
+    persistLayoutTimer = 0;
+    persistIdeTimer = 0;
+    hideWiringWorkspace?.();
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
-    selectedItemId = "";
-    controls.enabled = true;
-    hideWorkshopRoom();
+    hideWorkshopScene();
     restoreCameraPose();
+    controls.enabled = true;
     if (!keepRoute) updateRoute(false);
+    if (syncMode) syncWorkspaceMode?.("design");
     render();
     setStatus?.("ok", "Back in Studio view.");
   }
 
   function update() {
     if (!active) return;
-    const now = performance.now();
-    const dt = lastFrameMs ? Math.min(0.05, (now - lastFrameMs) / 1000) : 0.016;
-    lastFrameMs = now;
-    const speed = keysDown.has("ShiftLeft") || keysDown.has("ShiftRight") ? 6.2 : 3.2;
-    const forward = (keysDown.has("KeyW") || keysDown.has("ArrowUp") ? 1 : 0) - (keysDown.has("KeyS") || keysDown.has("ArrowDown") ? 1 : 0);
-    const strafe = (keysDown.has("KeyD") || keysDown.has("ArrowRight") ? 1 : 0) - (keysDown.has("KeyA") || keysDown.has("ArrowLeft") ? 1 : 0);
-    if (forward || strafe) {
-      const moveForward = new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0);
-      const moveRight = new THREE.Vector3(-Math.sin(lookState.yaw), Math.cos(lookState.yaw), 0);
-      camera.position.addScaledVector(moveForward, forward * speed * dt);
-      camera.position.addScaledVector(moveRight, strafe * speed * dt);
-      camera.position.x = clamp(camera.position.x, workshopBounds.minX, workshopBounds.maxX);
-      camera.position.y = clamp(camera.position.y, workshopBounds.minY, workshopBounds.maxY);
+    if (activeSurface !== "wiring") {
+      controls.update();
+      if (lastPointerEvent) updatePreviewMesh();
+      paintTvScreens();
     }
-    camera.position.z = 1.72;
-    applyLook();
-    controls.target.copy(camera.position).add(new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0));
-    raycaster.setFromCamera(pointerLocked ? new THREE.Vector2(0, 0) : pointerNdc, camera);
-    updatePreviewMesh();
   }
 
   function setProjectContext() {
     const nextId = String(getProjectId?.() || "").trim();
     if (nextId === activeProjectId) return;
     activeProjectId = nextId;
-    voiceDraft = "";
-    loadPlacedItems(nextId);
-    rebuildPlacedScene();
     if (active) {
-      workshopState = normalizeWorkshopState(workshopState, currentProjectName());
-      loadWorkshopState(true);
+      void loadWorkshopState(true);
     } else if (window.location.hash === WORKSHOP_HASH && nextId) {
       void enter();
     } else {
@@ -1216,31 +1363,24 @@ export function createWorkshopMode(options = {}) {
   }
 
   launcher.addEventListener("click", () => {
-    if (active) return;
-    void enter();
+    if (!active) void enter();
   });
-
   renderer.domElement.addEventListener("pointerdown", handlePointerDown, true);
   renderer.domElement.addEventListener("pointermove", handlePointerMove, true);
   renderer.domElement.addEventListener("click", handleCanvasClick, true);
   window.addEventListener("keydown", handleKeyDown, true);
-  window.addEventListener("keyup", handleKeyUp, true);
-  document.addEventListener("pointerlockchange", () => {
-    pointerLocked = document.pointerLockElement === renderer.domElement;
-    render();
-  });
   window.addEventListener("hashchange", () => {
     if (window.location.hash === WORKSHOP_HASH) {
       if (!active) void enter();
       return;
     }
-    if (active) exit({ keepRoute: true });
+    if (active) exit({ keepRoute: true, syncMode: true });
   });
   transformControls.addEventListener("objectChange", syncTransformSelection);
 
   render();
   if (window.location.hash === WORKSHOP_HASH && String(getProjectId?.() || "").trim()) {
-    void enter();
+    void enter({ syncMode: false });
   }
 
   return {
@@ -1251,5 +1391,6 @@ export function createWorkshopMode(options = {}) {
     },
     update,
     setProjectContext,
+    setSurface,
   };
 }

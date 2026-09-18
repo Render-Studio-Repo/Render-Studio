@@ -4,6 +4,7 @@ export const WORKSPACE_MODES = [
   { id: "design", label: "Design", icon: "◧", enabled: true },
   { id: "simulation", label: "Simulation", icon: "◎", enabled: false },
   { id: "manufacture", label: "Manufacture", icon: "⚙", enabled: false },
+  { id: "workshop", label: "Workshop", icon: "▣", enabled: true },
   { id: "architect", label: "Architect", icon: "⌂", enabled: true },
   { id: "wiring", label: "Wiring Simulator", icon: "⎍", enabled: true },
 ];

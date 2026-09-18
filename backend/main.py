@@ -1013,6 +1013,12 @@ class WorkshopDebugRequest(BaseModel):
     detail: str | None = Field(default=None, max_length=1000)
 
 
+class WorkshopUpdateRequest(BaseModel):
+    selected_partner_id: str | None = Field(default=None, max_length=120)
+    layout: dict[str, Any] | None = None
+    ide: dict[str, Any] | None = None
+
+
 class RiggingSaveRequest(BaseModel):
     bones: list[dict[str, Any]] = Field(default_factory=list)
     animations: list[dict[str, Any]] = Field(default_factory=list)
@@ -17544,6 +17550,21 @@ def get_project_workshop_state(
 ):
     path = _require_project_read(user, project_id)
     return workshop_service.get_state(path)
+
+
+@app.put("/api/projects/{project_id}/workshop")
+def update_project_workshop_state(
+    project_id: str,
+    body: WorkshopUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    return workshop_service.update_state(
+        path,
+        selected_partner_id=body.selected_partner_id,
+        layout=body.layout,
+        ide=body.ide,
+    )
 
 
 @app.post("/api/projects/{project_id}/workshop/approvals/{item_id}/approve")

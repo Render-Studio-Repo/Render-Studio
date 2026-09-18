@@ -120,7 +120,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260730-ref-share";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260725-bright-cad";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260918-workshop-v2";
 import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v2";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3143,6 +3143,8 @@ transformControls.addEventListener("objectChange", () => {
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
 
+let workshopModeSyncWorkspaceMode = () => {};
+
 const workshopMode = createWorkshopMode({
   viewportEl: viewport,
   renderer,
@@ -3191,6 +3193,19 @@ const workshopMode = createWorkshopMode({
       gizmoPanel?.hide?.();
     } catch (_) {}
   },
+  showWiringWorkspace: () => {
+    document.getElementById("wiring-workspace")?.classList.remove("hidden");
+    setRightTab("wiring");
+    wiringPromptHistory.setTab("compose");
+    enterWiringMode();
+    wiringSim?.show?.();
+    window.dispatchEvent(new Event("resize"));
+  },
+  hideWiringWorkspace: () => {
+    document.getElementById("wiring-workspace")?.classList.add("hidden");
+    wiringSim?.hide?.();
+  },
+  syncWorkspaceMode: (mode) => workshopModeSyncWorkspaceMode(mode),
 });
 
 /** XR Folders tab: personal + shared folder roots, then projects inside a folder. */
@@ -23006,6 +23021,7 @@ function applyWorkspaceMode(mode) {
   app?.classList.toggle("wiring-mode", mode === "wiring");
   document.body.classList.toggle("wiring-mode", mode === "wiring");
   if (mode === "wiring") {
+    if (workshopMode?.isActive?.()) workshopMode.exit({ syncMode: false });
     exitSketchMode();
     exitRiggingMode();
     exitArchitectMode();
@@ -23016,7 +23032,21 @@ function applyWorkspaceMode(mode) {
     enterWiringMode();
     wiringSim.show();
     window.dispatchEvent(new Event("resize"));
+  } else if (mode === "workshop") {
+    exitSketchMode();
+    exitRiggingMode();
+    exitArchitectMode();
+    exitCanvasTab();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    mcmasterInsert?.close?.();
+    closeElectronicsPopover();
+    wiringWorkspace?.classList.add("hidden");
+    wiringSim.hide();
+    void workshopMode.enter({ syncMode: false });
+    window.dispatchEvent(new Event("resize"));
   } else {
+    if (workshopMode?.isActive?.()) workshopMode.exit({ syncMode: false });
     catalogPanel?.close?.();
     texturePanel?.close?.();
     wiringWorkspace?.classList.add("hidden");
@@ -23058,8 +23088,12 @@ const workspaceModes = createWorkspaceModes({
   onDesignTabChange: (tab) => handleDesignTabChange(tab),
   onWiringTabChange: (tab) => handleWiringTabChange(tab),
 });
+workshopModeSyncWorkspaceMode = (mode) => workspaceModes?.setMode?.(mode);
 // Default SOLID tab must apply body/app classes (setDesignTab no-ops when already SOLID).
 workspaceModes.setDesignTab("SOLID", { force: true });
+if (window.location.hash === "#workshop") {
+  workspaceModes.setMode("workshop");
+}
 
 document.getElementById("canvas-gen-view-solid")?.addEventListener("click", () => {
   workspaceModes?.setDesignTab?.("SOLID");
