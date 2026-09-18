@@ -1250,3 +1250,11 @@ Shipped the first real gameplay loop — not full instrumentation of every featu
 - Finished the Quest Book modal begun in a disconnected session: added the full modal CSS block to `frontend/styles.css`.
 - Fixed first-node tooltip clipping; gold menu button + Studio walkthrough already landed.
 - Plan `.cursor/plans/quest_book_menu_entry_b3ec02ac.plan.md` marked complete.
+
+## 2026-09-18 — Workshop film capture + DJ rack stubs
+
+- Added a Workshop **Film Capture** lane limited to **Office desk** and **Feature wall** scopes; warehouse is explicitly blocked/out of scope in both frontend state and backend validation.
+- Backend: extended `backend/services/workshop_service.py` with capture state, start/stop helpers, stub clip/receipt writes under `data/sandbox-sessions/film-captures/`, and `latest.json` wake-file updates; added matching routes in `backend/main.py`.
+- Frontend: extended `frontend/workshop-mode.js` with Film Capture and DJ Rack lab tabs, monitor-adjacent DJ rack meshes in the room, feature-wall shortcut targeting capture, and stub play/pause/next controls that stay independent from capture.
+- App wiring: bumped Workshop JS + global stylesheet cache-busts (`20260918-workshop-v2`) everywhere referenced.
+- Verification: parser-level checks passed (`python3 -m py_compile` for Python; `node --experimental-default-type=module --check` for `frontend/workshop-mode.js` and `frontend/app.js`), but full browser/live-server verification was blocked on this Cloud snapshot because the expected Python app runtime was missing (`pydantic`, `fastapi`, Playwright, and no local server listening on :8001).
