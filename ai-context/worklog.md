@@ -1,3 +1,12 @@
+## 2026-09-18 — Marketplace storefront cleanup
+
+- Rebuilt `frontend/marketplace.html` into a single storefront shell backed by new `frontend/marketplace/marketplace-app.js` and `frontend/marketplace/marketplace-theme.css`.
+- Marketplace now aggregates existing `model-listings` + `agent-apps` APIs with stronger header contrast, wrapped category pills, search/access/sort controls, featured shelf, readable dark cards, and generated thumbnail fallbacks when listings have no art.
+- Added `?q=` deep-link support to `frontend/model-store.js` and `frontend/knowledge-store.js` so marketplace cards can hand off into the existing store pages without backend changes.
+- Browser-smoke verified on desktop and ~390px mobile through a local static preview that proxied the live marketplace APIs; click-through to the model store worked and no redesign console errors were observed.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
