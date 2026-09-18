@@ -3,6 +3,8 @@
 import * as THREE from "three";
 
 const ENV_KEY = "render3d:robotSimEnv:v1";
+const VIEW_KEY = "render3d:roboticsView:v1";
+const MODE_KEY = "render3d:roboticsMode:v1";
 
 const CATALOG = [
   {
@@ -66,6 +68,40 @@ function readEnv() {
     return ENVIRONMENTS.some((e) => e.id === id) ? id : "empty";
   } catch {
     return "empty";
+  }
+}
+
+function readView() {
+  try {
+    const id = localStorage.getItem(VIEW_KEY) || "viser";
+    return id === "simulator" ? "simulator" : "viser";
+  } catch {
+    return "viser";
+  }
+}
+
+function writeView(id) {
+  try {
+    localStorage.setItem(VIEW_KEY, id === "simulator" ? "simulator" : "viser");
+  } catch {
+    /* ignore */
+  }
+}
+
+function readMode() {
+  try {
+    const id = localStorage.getItem(MODE_KEY) || "teleop";
+    return id === "simulation" ? "simulation" : "teleop";
+  } catch {
+    return "teleop";
+  }
+}
+
+function writeMode(id) {
+  try {
+    localStorage.setItem(MODE_KEY, id === "simulation" ? "simulation" : "teleop");
+  } catch {
+    /* ignore */
   }
 }
 
@@ -230,15 +266,22 @@ export function createRoboticSimulator(options = {}) {
   } = options;
 
   let envId = readEnv();
+  let viewId = readView();
+  let modeId = readMode();
   let envRoot = null;
   let bound = false;
 
   function els() {
     return {
       panel: document.getElementById("robotics-panel"),
+      viewTabs: document.querySelectorAll("[data-robotics-view-tab]"),
+      viewSections: document.querySelectorAll("[data-robotics-view-section]"),
       catalog: document.getElementById("robotics-catalog-list"),
       artifacts: document.getElementById("robotics-artifact-list"),
       envChoices: document.getElementById("robotics-env-choices"),
+      modeTabs: document.querySelectorAll("[data-robotics-mode-tab]"),
+      modePanes: document.querySelectorAll("[data-robotics-mode-pane]"),
+      teleopStatus: document.getElementById("robotics-teleop-status"),
       status: document.getElementById("robotics-sim-status"),
       playBtn: document.getElementById("btn-robotics-play"),
       loadBtn: document.getElementById("btn-robotics-load-scene"),
@@ -252,6 +295,53 @@ export function createRoboticSimulator(options = {}) {
   function setPanelStatus(msg) {
     const { status } = els();
     if (status) status.textContent = msg || "";
+  }
+
+  function setTeleopStatus(msg) {
+    const { teleopStatus } = els();
+    if (teleopStatus) teleopStatus.textContent = msg || "";
+  }
+
+  function setView(next, { syncMode = true } = {}) {
+    viewId = next === "simulator" ? "simulator" : "viser";
+    writeView(viewId);
+    if (syncMode) setMode(viewId === "simulator" ? "simulation" : "teleop", { persistOnly: false });
+    syncViewUi();
+  }
+
+  function setMode(next, { persistOnly = false } = {}) {
+    modeId = next === "simulation" ? "simulation" : "teleop";
+    writeMode(modeId);
+    if (!persistOnly) syncModeUi();
+  }
+
+  function syncViewUi() {
+    const { viewTabs, viewSections } = els();
+    viewTabs?.forEach((btn) => {
+      const active = btn.dataset.roboticsViewTab === viewId;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    viewSections?.forEach((section) => {
+      const show = (section.dataset.roboticsViewSection || "viser") === viewId;
+      section.classList.toggle("hidden", !show);
+      section.hidden = !show;
+    });
+  }
+
+  function syncModeUi() {
+    const { modeTabs, modePanes } = els();
+    modeTabs?.forEach((btn) => {
+      const active = btn.dataset.roboticsModeTab === modeId;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    modePanes?.forEach((pane) => {
+      const show = (pane.dataset.roboticsModePane || "teleop") === modeId;
+      pane.classList.toggle("hidden", !show);
+      pane.classList.toggle("active", show);
+      pane.hidden = !show;
+    });
   }
 
   function clearEnvironment() {
@@ -369,10 +459,16 @@ export function createRoboticSimulator(options = {}) {
     const state = getRobotState?.();
     if (state?.loaded) {
       setPanelStatus(`Robot loaded · ${state.urdfFile || "URDF"}`);
+      setTeleopStatus(`Teleop ready · ${state.urdfFile || "URDF"}`);
     } else if (!quiet) {
       setPanelStatus("Ready — load a catalog arm or your URDF to simulate.");
+      setTeleopStatus("Ready — open the joint playground after you load a robot.");
+    } else if (!state?.loaded) {
+      setTeleopStatus("Load a robot to open teleop controls.");
     }
     syncPlayButton();
+    syncViewUi();
+    syncModeUi();
     return data;
   }
 
@@ -401,11 +497,15 @@ export function createRoboticSimulator(options = {}) {
         if (pid && openProject) await openProject(pid);
         await refreshPanel({ quiet: true });
         await loadRobotScene?.({ force: true });
+        setView("viser");
+        setMode("teleop");
         openPlayground?.({ forceRigging: false });
         setPanelStatus("Demo arm ready — play a work cycle or open the joint playground.");
+        setTeleopStatus("Teleop ready — joint playground open.");
         onStatus?.(true, "Industrial robot arm loaded into the simulator.");
       } catch (err) {
         setPanelStatus(err?.message || "Could not load demo arm.");
+        setTeleopStatus(err?.message || "Could not open teleop controls.");
         onStatus?.(false, err?.message || "Could not load demo arm.");
       }
     }
@@ -429,11 +529,15 @@ export function createRoboticSimulator(options = {}) {
       await uploadFiles?.(robotFiles);
       await refreshPanel({ quiet: true });
       await loadRobotScene?.({ force: true });
+      setView("viser");
+      setMode("teleop");
       openPlayground?.({ forceRigging: false });
       setPanelStatus("Upload complete — robot loaded in the work cell.");
+      setTeleopStatus("Teleop ready — joint playground open.");
       onStatus?.(true, `Uploaded ${robotFiles.length} robot file(s).`);
     } catch (err) {
       setPanelStatus(err?.message || "Upload failed.");
+      setTeleopStatus(err?.message || "Upload failed.");
       onStatus?.(false, err?.message || "Upload failed.");
     } finally {
       const input = els().uploadInput;
@@ -446,6 +550,8 @@ export function createRoboticSimulator(options = {}) {
     if (!panel) return;
     // Do not inject props into the CAD viewport until the user picks a cell.
     clearEnvironment();
+    syncViewUi();
+    syncModeUi();
     syncEnvUi();
     await refreshPanel({ quiet: true });
     onStatus?.(true, "Robotic Simulator — shop catalog arms, upload URDF, simulate in a work cell.");
@@ -467,11 +573,15 @@ export function createRoboticSimulator(options = {}) {
     renderEnvironments();
     // Critical: never add work-cell props on boot — that pollutes Design viewport.
     clearEnvironment();
+    syncViewUi();
+    syncModeUi();
     syncEnvUi();
 
     const {
       catalog,
       envChoices,
+      viewTabs,
+      modeTabs,
       playBtn,
       loadBtn,
       playgroundBtn,
@@ -487,14 +597,36 @@ export function createRoboticSimulator(options = {}) {
       void handleCatalogAction(btn.dataset.robotCatalogAction);
     });
 
+    viewTabs?.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setView(btn.dataset.roboticsViewTab || "viser");
+        onStatus?.(true, (btn.dataset.roboticsViewTab || "viser") === "simulator"
+          ? "Simulator surface ready."
+          : "Viser surface ready.");
+      });
+    });
+
+    modeTabs?.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        setMode(btn.dataset.roboticsModeTab || "teleop");
+        onStatus?.(true, (btn.dataset.roboticsModeTab || "teleop") === "simulation"
+          ? "Simulation controls ready."
+          : "Teleop controls ready.");
+      });
+    });
+
     envChoices?.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-robot-env]");
       if (!btn) return;
+      setView("simulator", { syncMode: false });
+      setMode("simulation");
       applyEnvironment(btn.dataset.robotEnv);
       onStatus?.(true, `Work environment: ${ENVIRONMENTS.find((x) => x.id === envId)?.label || envId}`);
     });
 
     playBtn?.addEventListener("click", () => {
+      setView("simulator", { syncMode: false });
+      setMode("simulation");
       const started = togglePlay?.();
       syncPlayButton();
       setPanelStatus(started ? "Playing work-cycle motion…" : "Motion stopped.");
@@ -502,20 +634,27 @@ export function createRoboticSimulator(options = {}) {
     });
 
     loadBtn?.addEventListener("click", async () => {
+      setView("simulator", { syncMode: false });
+      setMode("simulation");
       await refreshPanel({ quiet: true });
       const state = await loadRobotScene?.({ force: true });
       if (state?.loaded) {
         setPanelStatus(`Loaded ${state.urdfFile}`);
+        setTeleopStatus(`Teleop ready · ${state.urdfFile}`);
         onStatus?.(true, `Loaded robot from ${state.urdfFile}`);
       } else {
         setPanelStatus("No usable URDF in this project yet.");
+        setTeleopStatus("Load a robot to open teleop controls.");
         onStatus?.(false, "No usable URDF found — pick a catalog arm or upload one.");
       }
       syncPlayButton();
     });
 
     playgroundBtn?.addEventListener("click", () => {
+      setView("viser", { syncMode: false });
+      setMode("teleop");
       openPlayground?.({ forceRigging: false });
+      setTeleopStatus("Joint playground open.");
       onStatus?.(true, "Joint playground open in the viewport.");
     });
 

@@ -42011,6 +42011,48 @@ body.theme-light .folder-workspace-tag {
   gap: 6px;
 }
 
+.robotics-panel .robotics-view-tabs,
+.robotics-panel .robotics-mode-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.robotics-panel .robotics-view-tab,
+.robotics-panel .robotics-mode-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid rgba(139, 148, 158, 0.26);
+  border-radius: 999px;
+  background: rgba(22, 27, 34, 0.58);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.robotics-panel .robotics-view-tab.active,
+.robotics-panel .robotics-mode-tab.active,
+.robotics-panel .robotics-view-tab:hover,
+.robotics-panel .robotics-mode-tab:hover {
+  border-color: rgba(88, 166, 255, 0.42);
+  background: rgba(88, 166, 255, 0.14);
+  color: var(--text);
+}
+
+.robotics-panel .robotics-mode-pane.hidden {
+  display: none !important;
+}
+
+.robotics-panel .robotics-mode-note {
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
 .robotics-sim-status {
   margin: 8px 0 0;
   min-height: 1.2em;
@@ -42019,10 +42061,6 @@ body.theme-light .folder-workspace-tag {
 #app.robotics-design-tab .robotics-mode-tab,
 body.robotics-design-tab .robotics-mode-tab {
   display: inline-flex;
-}
-
-.robotics-mode-tab {
-  /* always available like Electronics */
 }
 
 /* ── Getting Started: laptop / mid-width layout (MacBook ~1280–1440) ─────── */

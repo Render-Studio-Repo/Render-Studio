@@ -27,7 +27,7 @@
   <link rel="shortcut icon" href="/favicon.ico?v=20260715-new-logo" />
   <link rel="icon" type="image/png" href="/favicon-32.png?v=20260715-new-logo" sizes="32x32" />
   <link rel="apple-touch-icon" href="/favicon-180.png?v=20260715-new-logo" />
-  <link rel="stylesheet" href="/styles.css?v=20260918-workshop-v1" />
+  <link rel="stylesheet" href="/styles.css?v=20260918-robotics-tabs" />
   <link rel="stylesheet" href="/mobile-app-chrome.css?v=20260727-mobile-chrome" />
   <link rel="stylesheet" href="/popup-boot-modern.css?v=20260715-metal-title-arm" />
   <link rel="stylesheet" href="/fusion-unlink-howto.css?v=20260725-break" />
@@ -2004,8 +2004,12 @@
           <button type="button" id="btn-robotics-refresh" class="btn secondary btn-compact" title="Refresh robot artifacts">Refresh</button>
         </div>
         <p class="muted small robotics-panel-lead">Shop a catalog arm or upload your URDF/SRDF package, drop it into a work cell, and simulate motion in the viewport.</p>
+        <div class="robotics-view-tabs" role="tablist" aria-label="Robotics surface">
+          <button type="button" class="robotics-view-tab active" data-robotics-view-tab="viser">Viser</button>
+          <button type="button" class="robotics-view-tab" data-robotics-view-tab="simulator">Simulator</button>
+        </div>
 
-        <div class="robotics-panel-section">
+        <div class="robotics-panel-section" data-robotics-view-section="viser">
           <div class="robotics-section-head">
             <strong>Arm catalog</strong>
             <span class="muted small">Demo · store · yours</span>
@@ -2013,7 +2017,7 @@
           <div id="robotics-catalog-list" class="robotics-catalog-list"></div>
         </div>
 
-        <div class="robotics-panel-section">
+        <div class="robotics-panel-section" data-robotics-view-section="viser">
           <div class="robotics-section-head">
             <strong>Upload package</strong>
             <span class="muted small">.urdf · .srdf · meshes</span>
@@ -2023,7 +2027,7 @@
           <p class="muted small robotics-upload-hint">Drag files onto this panel, or upload a folder’s worth of meshes next to your URDF.</p>
         </div>
 
-        <div class="robotics-panel-section">
+        <div class="robotics-panel-section" data-robotics-view-section="simulator">
           <div class="robotics-section-head">
             <strong>Work environment</strong>
             <span class="muted small">Real-world cell</span>
@@ -2039,12 +2043,25 @@
           <div id="robotics-artifact-list" class="robotics-artifact-list" aria-live="polite">
             <div class="object-iteration-empty">Select a project to list robot files.</div>
           </div>
-          <div class="robotics-sim-actions">
-            <button type="button" class="btn accent full" id="btn-robotics-load-scene">Load robot in viewport</button>
-            <button type="button" class="btn secondary full" id="btn-robotics-play" aria-pressed="false">Play work cycle</button>
-            <button type="button" class="btn secondary full" id="btn-robotics-playground">Open joint playground</button>
+          <div class="robotics-mode-tabs" role="tablist" aria-label="Robot controls">
+            <button type="button" class="robotics-mode-tab active" data-robotics-mode-tab="teleop">Teleop</button>
+            <button type="button" class="robotics-mode-tab" data-robotics-mode-tab="simulation">Simulation</button>
           </div>
-          <p id="robotics-sim-status" class="muted small robotics-sim-status" aria-live="polite"></p>
+          <div id="robotics-teleop-pane" class="robotics-mode-pane active" data-robotics-mode-pane="teleop">
+            <p class="muted small robotics-mode-note">Use the joint playground as the current teleop hook for this robot. A dedicated teleop surface can plug into this slot later.</p>
+            <div class="robotics-sim-actions">
+              <button type="button" class="btn secondary full" id="btn-robotics-playground">Open joint playground</button>
+            </div>
+            <p id="robotics-teleop-status" class="muted small robotics-sim-status" aria-live="polite"></p>
+          </div>
+          <div id="robotics-simulation-pane" class="robotics-mode-pane hidden" data-robotics-mode-pane="simulation">
+            <p class="muted small robotics-mode-note">Load the project robot into the viewport and play its work cycle using the current simulation hooks.</p>
+            <div class="robotics-sim-actions">
+              <button type="button" class="btn accent full" id="btn-robotics-load-scene">Load robot in viewport</button>
+              <button type="button" class="btn secondary full" id="btn-robotics-play" aria-pressed="false">Play work cycle</button>
+            </div>
+            <p id="robotics-sim-status" class="muted small robotics-sim-status" aria-live="polite"></p>
+          </div>
         </div>
       </section>
 
@@ -3157,7 +3174,7 @@
   <script type="module" src="/mobile-app-chrome.js?v=20260727-mobile-chrome"></script>
   <script type="module" src="/browser-swipe-guard.js?v=20260715-studio-only-swipe-guard"></script>
   <script type="module" src="/welcome-modal.js?v=20260715-logo-signup"></script>
-  <script type="module" src="/app.js?v=20260918-workshop-v1"></script>
+  <script type="module" src="/app.js?v=20260918-robotics-tabs"></script>
   <script type="module" src="/engineering-panel.js?v=20260617-hide-empty-engineering"></script>
   <script type="module" src="/panel-collapse.js?v=20260801-dock-tl"></script>
   <!-- ribbon.js is imported inside app.js -->
