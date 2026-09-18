@@ -1,3 +1,13 @@
+## 2026-09-18 — Workshop training capture receipts + KB mirror
+
+- Added `backend/services/workshop_training_capture_service.py` plus thin `/api/projects/{id}/workshop/training-capture/start|stop` routes in `backend/main.py`.
+- Workshop state now exposes `training_capture`; the Train tab renders a new `frontend/workshop-training-capture.js` card for start/stop, status, receipt id, and artifact pointers.
+- Sandbox writes now land under `sandbox-sessions/training-captures/`, `sandbox-sessions/receipts/`, and `sandbox-sessions/Winstead-Fleet-KB/` with fleet-compatible `RCPT-TRAIN-*` payloads and `latest.json`.
+- Added `tools/receipts/update-receipt.js`, `ai-context/TRAINING-CAPTURE-WAKE.md`, and a committed example receipt for PM/harness reference.
+- Verified with `python3 -m py_compile backend/services/workshop_training_capture_service.py backend/services/workshop_service.py backend/main.py`, `node tools/receipts/update-receipt.js --input sandbox-sessions/receipts/examples/RCPT-TRAIN-20260918-wiring-demo.json --latest-only`, a stubbed service smoke that emitted real sandbox files, and a headless Chrome harness screenshot of the Train-tab card start/stop receipt flow.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

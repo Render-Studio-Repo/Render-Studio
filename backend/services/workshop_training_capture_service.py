@@ -349,7 +349,8 @@ def stop_capture(project_path: Path, *, user: dict[str, Any] | None = None) -> d
         raise FileNotFoundError("Training capture session folder is missing.")
 
     started_at = str(state.get("started_at") or _iso())
-    stopped_at = _iso()
+    stop_dt = _now()
+    stopped_at = _iso(stop_dt)
     project_label = _project_label(project_path, meta)
     who = _who_payload(user)
     previous_receipt_id = _latest_receipt_id()
@@ -401,7 +402,8 @@ def stop_capture(project_path: Path, *, user: dict[str, Any] | None = None) -> d
     }
     _write_json(action_log_path, action_log)
 
-    receipt_id = f"RCPT-TRAIN-{_now().strftime('%Y%m%d')}-{_slugify(f'{project_label}-wiring-demo-{session_id[-6:]}', max_length=56)}"
+    receipt_suffix = stop_dt.strftime("%H%M%S").lower()
+    receipt_id = f"RCPT-TRAIN-{stop_dt.strftime('%Y%m%d')}-{_slugify(f'{project_label}-wiring-demo-{receipt_suffix}', max_length=56)}"
     what = "Workshop wiring demo training capture"
     receipt = {
         "receipt_id": receipt_id,

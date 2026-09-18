@@ -54,6 +54,10 @@ function ensureReceiptShape(value) {
     throw new Error("Receipt payload must be a JSON object.");
   }
   const receiptId = String(value.receipt_id || "").trim();
+  const prNumberRaw = value.pr_number;
+  const prNumber = prNumberRaw === null || prNumberRaw === undefined || prNumberRaw === ""
+    ? null
+    : (Number.isFinite(Number(prNumberRaw)) ? Number(prNumberRaw) : null);
   if (!/^RCPT-[A-Za-z0-9-]+$/.test(receiptId)) {
     throw new Error("receipt_id must start with RCPT-.");
   }
@@ -61,7 +65,7 @@ function ensureReceiptShape(value) {
     receipt_id: receiptId,
     log_id: String(value.log_id || "").trim(),
     pr_url: value.pr_url ? String(value.pr_url).trim() : null,
-    pr_number: Number.isFinite(Number(value.pr_number)) ? Number(value.pr_number) : null,
+    pr_number: prNumber,
     color: String(value.color || "unset").trim().toLowerCase(),
     guard_note: String(value.guard_note || ""),
     mule_hop: String(value.mule_hop || ""),
