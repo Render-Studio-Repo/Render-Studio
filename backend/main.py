@@ -1013,6 +1013,14 @@ class WorkshopDebugRequest(BaseModel):
     detail: str | None = Field(default=None, max_length=1000)
 
 
+class WorkshopCaptureStartRequest(BaseModel):
+    scope: str = Field(..., min_length=1, max_length=40, description="office | features")
+
+
+class WorkshopDjActionRequest(BaseModel):
+    action: str = Field(..., min_length=1, max_length=40, description="play | pause | next")
+
+
 class RiggingSaveRequest(BaseModel):
     bones: list[dict[str, Any]] = Field(default_factory=list)
     animations: list[dict[str, Any]] = Field(default_factory=list)
@@ -17575,6 +17583,60 @@ async def run_project_workshop_debug(
     )
     return {
         "result": result,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/capture/start")
+def start_project_workshop_capture(
+    project_id: str,
+    body: WorkshopCaptureStartRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        capture = workshop_service.start_capture(path, body.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "capture": capture,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/capture/stop")
+def stop_project_workshop_capture(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        capture = workshop_service.stop_capture(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "capture": capture,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/dj")
+def update_project_workshop_dj(
+    project_id: str,
+    body: WorkshopDjActionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        dj = workshop_service.dj_action(path, body.action)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "dj": dj,
         "workshop": workshop_service.get_state(path),
     }
 

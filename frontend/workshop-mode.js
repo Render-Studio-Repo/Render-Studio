@@ -2,6 +2,15 @@ import * as THREE from "three";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
+const CAPTURE_SCOPE_OPTIONS = [
+  { id: "office", label: "Office desk" },
+  { id: "features", label: "Feature wall" },
+];
+const BLOCKED_CAPTURE_SCOPE = {
+  id: "warehouse",
+  label: "Warehouse floor",
+  reason: "Film capture is limited to office and feature spaces.",
+};
 const PLACE_PRESETS = [
   {
     id: "part-bin",
@@ -155,6 +164,39 @@ function seededWorkshopState(projectName = "Project") {
         detail: "Needs a second review before release.",
       },
     ],
+    capture: {
+      supported: false,
+      transport: "stub",
+      active: false,
+      scope: "office",
+      scope_label: "Office desk",
+      allowed_scopes: CAPTURE_SCOPE_OPTIONS.map((entry) => ({ ...entry })),
+      disallowed_scopes: [{ ...BLOCKED_CAPTURE_SCOPE }],
+      lane_label: "Film capture",
+      lane_path: "",
+      note: "Film capture is not supported in this environment.",
+      session_id: "",
+      session_dir: "",
+      started_at: null,
+      stopped_at: null,
+      receipt_path: "",
+      clip_stub_path: "",
+      latest_path: "",
+      last_receipt: null,
+    },
+    dj: {
+      supported: true,
+      provider: "stub",
+      provider_label: "Stub deck",
+      connected: false,
+      playing: false,
+      track_index: 0,
+      track_title: "Desk check groove",
+      track_artist: "Workshop placeholder",
+      surface_label: "Monitor rack",
+      note: "Spotify is not connected here, so the monitor rack stays on labeled stub controls.",
+      last_action_at: null,
+    },
     debug: {
       hook_available: false,
       last_result: null,
@@ -166,7 +208,23 @@ function normalizeWorkshopState(input, projectName = "Project") {
   const seed = seededWorkshopState(projectName);
   const value = input && typeof input === "object" ? input : {};
   const projects = value.projects && typeof value.projects === "object" ? value.projects : {};
+  const capture = value.capture && typeof value.capture === "object" ? value.capture : {};
+  const dj = value.dj && typeof value.dj === "object" ? value.dj : {};
   const debug = value.debug && typeof value.debug === "object" ? value.debug : {};
+  const allowedScopes = Array.isArray(capture.allowed_scopes) && capture.allowed_scopes.length
+    ? capture.allowed_scopes
+      .filter((entry) => entry && typeof entry === "object" && entry.id)
+      .map((entry) => ({
+        id: String(entry.id || ""),
+        label: String(entry.label || entry.id || ""),
+      }))
+    : seed.capture.allowed_scopes;
+  const allowedScopeIds = new Set(allowedScopes.map((entry) => entry.id));
+  const captureScope = allowedScopeIds.has(String(capture.scope || ""))
+    ? String(capture.scope)
+    : seed.capture.scope;
+  const scopeMatch = allowedScopes.find((entry) => entry.id === captureScope) || seed.capture.allowed_scopes[0];
+  const lastReceipt = capture.last_receipt && typeof capture.last_receipt === "object" ? capture.last_receipt : null;
   return {
     project_label: String(value.project_label || projectName || "Project"),
     agents_source: value.agents_source === "live" ? "live" : "mock",
@@ -177,6 +235,49 @@ function normalizeWorkshopState(input, projectName = "Project") {
     },
     approvals: Array.isArray(value.approvals) && value.approvals.length ? value.approvals : seed.approvals,
     queue: Array.isArray(value.queue) && value.queue.length ? value.queue : seed.queue,
+    capture: {
+      ...seed.capture,
+      supported: !!capture.supported,
+      transport: String(capture.transport || seed.capture.transport),
+      active: !!capture.active,
+      scope: captureScope,
+      scope_label: String(capture.scope_label || scopeMatch.label || seed.capture.scope_label),
+      allowed_scopes: allowedScopes,
+      disallowed_scopes: Array.isArray(capture.disallowed_scopes) && capture.disallowed_scopes.length
+        ? capture.disallowed_scopes
+          .filter((entry) => entry && typeof entry === "object" && entry.id)
+          .map((entry) => ({
+            id: String(entry.id || ""),
+            label: String(entry.label || entry.id || ""),
+            reason: String(entry.reason || ""),
+          }))
+        : seed.capture.disallowed_scopes,
+      lane_label: String(capture.lane_label || seed.capture.lane_label),
+      lane_path: String(capture.lane_path || ""),
+      note: String(capture.note || seed.capture.note),
+      session_id: String(capture.session_id || ""),
+      session_dir: String(capture.session_dir || ""),
+      started_at: capture.started_at || null,
+      stopped_at: capture.stopped_at || null,
+      receipt_path: String(capture.receipt_path || ""),
+      clip_stub_path: String(capture.clip_stub_path || ""),
+      latest_path: String(capture.latest_path || ""),
+      last_receipt: lastReceipt ? { ...lastReceipt } : null,
+    },
+    dj: {
+      ...seed.dj,
+      supported: dj.supported !== false,
+      provider: String(dj.provider || seed.dj.provider),
+      provider_label: String(dj.provider_label || seed.dj.provider_label),
+      connected: !!dj.connected,
+      playing: !!dj.playing,
+      track_index: Number.isFinite(Number(dj.track_index)) ? Number(dj.track_index) : seed.dj.track_index,
+      track_title: String(dj.track_title || seed.dj.track_title),
+      track_artist: String(dj.track_artist || seed.dj.track_artist),
+      surface_label: String(dj.surface_label || seed.dj.surface_label),
+      note: String(dj.note || seed.dj.note),
+      last_action_at: dj.last_action_at || null,
+    },
     debug: {
       hook_available: !!debug.hook_available,
       last_result: debug.last_result || null,
@@ -383,6 +484,52 @@ export function createWorkshopMode(options = {}) {
   pcScreen.userData.workshopPc = true;
   roomGroup.add(pcScreen);
 
+  const djRackBody = new THREE.Mesh(
+    new THREE.BoxGeometry(0.98, 0.18, 0.34),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35, metalness: 0.42 }),
+  );
+  djRackBody.position.set(1.6, 5.16, 1.06);
+  djRackBody.userData.workshopDj = true;
+  roomGroup.add(djRackBody);
+
+  const djRackFace = new THREE.Mesh(
+    new THREE.BoxGeometry(0.84, 0.02, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x172554, emissive: 0x1d4ed8, emissiveIntensity: 0.28, roughness: 0.22 }),
+  );
+  djRackFace.position.set(1.6, 5.06, 1.06);
+  djRackFace.userData.workshopDj = true;
+  roomGroup.add(djRackFace);
+
+  for (const [index, offset] of [-0.25, 0, 0.25].entries()) {
+    const deckStrip = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.024, 0.035),
+      new THREE.MeshStandardMaterial({
+        color: index === 1 ? 0xf59e0b : 0x38bdf8,
+        emissive: index === 1 ? 0x92400e : 0x0f766e,
+        emissiveIntensity: 0.52,
+      }),
+    );
+    deckStrip.position.set(1.6 + offset, 4.97, 1.06);
+    deckStrip.userData.workshopDj = true;
+    roomGroup.add(deckStrip);
+  }
+
+  const featureWallPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(1.32, 0.08, 0.82),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.46, metalness: 0.18 }),
+  );
+  featureWallPanel.position.set(-4.2, 8.72, 1.82);
+  featureWallPanel.userData.workshopFeatureCapture = true;
+  roomGroup.add(featureWallPanel);
+
+  const featureWallGlow = new THREE.Mesh(
+    new THREE.BoxGeometry(1.08, 0.02, 0.56),
+    new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x78350f, roughness: 0.18 }),
+  );
+  featureWallGlow.position.set(-4.2, 8.66, 1.82);
+  featureWallGlow.userData.workshopFeatureCapture = true;
+  roomGroup.add(featureWallGlow);
+
   const previewMesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.5, 0.18),
     new THREE.MeshStandardMaterial({
@@ -431,6 +578,8 @@ export function createWorkshopMode(options = {}) {
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(0, 0);
   const previewSurfaces = [floor, deskSurface];
+  const djHitTargets = [djRackBody, djRackFace];
+  const featureHitTargets = [featureWallPanel, featureWallGlow];
   const visibleState = new Map();
   const placedMeshById = new Map();
   const workshopBounds = { minX: -7.5, maxX: 7.5, minY: -7.5, maxY: 7.5 };
@@ -463,9 +612,26 @@ export function createWorkshopMode(options = {}) {
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let captureRequestPending = false;
+  let djRequestPending = false;
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
+  }
+
+  function setCaptureScope(scopeId) {
+    const allowed = Array.isArray(workshopState.capture?.allowed_scopes) ? workshopState.capture.allowed_scopes : [];
+    const nextScope = allowed.find((entry) => entry.id === scopeId);
+    if (!nextScope || workshopState.capture?.active) return;
+    workshopState = normalizeWorkshopState({
+      ...workshopState,
+      capture: {
+        ...(workshopState.capture || {}),
+        scope: nextScope.id,
+        scope_label: nextScope.label,
+      },
+    }, currentProjectName());
+    render();
   }
 
   function updateRoute(activeRoute) {
@@ -705,6 +871,74 @@ export function createWorkshopMode(options = {}) {
     }
   }
 
+  async function startCapture() {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId || captureRequestPending) return;
+    captureRequestPending = true;
+    render();
+    try {
+      const data = await api(`/api/projects/${projectId}/workshop/capture/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: workshopState.capture?.scope || "office",
+        }),
+      });
+      workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
+      setStatus?.("ok", `Film capture started for ${String(workshopState.capture?.scope_label || "the room").toLowerCase()}.`);
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not start film capture.");
+    } finally {
+      captureRequestPending = false;
+      render();
+    }
+  }
+
+  async function stopCapture() {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId || captureRequestPending) return;
+    captureRequestPending = true;
+    render();
+    try {
+      const data = await api(`/api/projects/${projectId}/workshop/capture/stop`, {
+        method: "POST",
+      });
+      workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
+      setStatus?.("ok", "Film capture stopped and stub receipt saved.");
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not stop film capture.");
+    } finally {
+      captureRequestPending = false;
+      render();
+    }
+  }
+
+  async function runDjAction(action) {
+    const projectId = String(getProjectId?.() || "").trim();
+    if (!projectId || !action || djRequestPending) return;
+    djRequestPending = true;
+    render();
+    try {
+      const data = await api(`/api/projects/${projectId}/workshop/dj`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
+      const label = action === "next"
+        ? "Next track loaded."
+        : action === "play"
+          ? "DJ deck playing."
+          : "DJ deck paused.";
+      setStatus?.("ok", label);
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not update the DJ deck.");
+    } finally {
+      djRequestPending = false;
+      render();
+    }
+  }
+
   function copyVoicePrompt({ submit = false } = {}) {
     const input = root.querySelector(`#${CSS.escape(dictationInputId)}`);
     const text = String(input?.value || "").trim();
@@ -832,6 +1066,92 @@ export function createWorkshopMode(options = {}) {
     `;
   }
 
+  function renderCaptureLane() {
+    const capture = workshopState.capture || seededWorkshopState(currentProjectName()).capture;
+    const lastReceipt = capture.last_receipt;
+    return `
+      <p class="muted small workshop-soft-note">${esc(capture.note || "Film capture is limited to office and feature spaces.")}</p>
+      <div class="workshop-segmented">
+        ${(Array.isArray(capture.allowed_scopes) ? capture.allowed_scopes : []).map((scope) => `
+          <button
+            type="button"
+            class="workshop-segment${capture.scope === scope.id ? " active" : ""}"
+            data-workshop-capture-scope="${esc(scope.id)}"
+            ${capture.active || captureRequestPending ? "disabled" : ""}
+          >${esc(scope.label)}</button>
+        `).join("")}
+      </div>
+      <div class="workshop-inline-actions">
+        <button
+          type="button"
+          class="btn accent btn-compact"
+          data-workshop-capture-start
+          ${(capture.supported && !capture.active && !captureRequestPending) ? "" : "disabled"}
+        >${captureRequestPending && !capture.active ? "Starting..." : "Start film capture"}</button>
+        <button
+          type="button"
+          class="btn secondary btn-compact"
+          data-workshop-capture-stop
+          ${(capture.supported && capture.active && !captureRequestPending) ? "" : "disabled"}
+        >${captureRequestPending && capture.active ? "Stopping..." : "Stop film capture"}</button>
+      </div>
+      <article class="workshop-card workshop-capture-card">
+        <div class="workshop-card-head">
+          <strong>${esc(capture.lane_label || "Film capture")}</strong>
+          <span class="workshop-pill workshop-pill--${capture.active ? "pending" : "pass"}">${capture.active ? "recording" : "ready"}</span>
+        </div>
+        <div class="workshop-meta-grid">
+          <span><strong>Scope</strong>${esc(capture.scope_label || "Office desk")}</span>
+          <span><strong>Transport</strong>${esc(capture.transport || "stub")}</span>
+          <span><strong>Lane path</strong>${esc(capture.lane_path || "Unavailable")}</span>
+          <span><strong>Latest wake file</strong>${esc(capture.latest_path || "Not written yet")}</span>
+        </div>
+        ${(Array.isArray(capture.disallowed_scopes) ? capture.disallowed_scopes : []).map((scope) => `
+          <p class="workshop-blocked-note"><strong>${esc(scope.label || scope.id || "Blocked scope")}:</strong> ${esc(scope.reason || "Not available here.")}</p>
+        `).join("")}
+        ${capture.session_id ? `<p><strong>Session</strong> ${esc(capture.session_id)}</p>` : ""}
+        ${capture.started_at ? `<p><strong>Started</strong> ${esc(capture.started_at)}</p>` : ""}
+        ${capture.receipt_path ? `<p><strong>Receipt</strong> ${esc(capture.receipt_path)}</p>` : ""}
+        ${capture.clip_stub_path ? `<p><strong>Stub clip</strong> ${esc(capture.clip_stub_path)}</p>` : ""}
+        ${lastReceipt ? `
+          <div class="workshop-inline-ok">
+            Latest receipt saved for ${esc(lastReceipt.scope_label || capture.scope_label || "the selected room space")}.
+          </div>
+        ` : ""}
+      </article>
+    `;
+  }
+
+  function renderDjLane() {
+    const dj = workshopState.dj || seededWorkshopState(currentProjectName()).dj;
+    return `
+      <p class="muted small workshop-soft-note">Monitor rack controls stay independent from film capture, so either lane can be used without blocking the other.</p>
+      <article class="workshop-card workshop-dj-card">
+        <div class="workshop-card-head">
+          <strong>${esc(dj.surface_label || "Monitor rack")}</strong>
+          <span class="workshop-pill workshop-pill--${dj.playing ? "pass" : "waiting"}">${dj.playing ? "playing" : "paused"}</span>
+        </div>
+        <div class="workshop-rack-visual" aria-hidden="true">
+          <span class="workshop-rack-led${dj.playing ? " active" : ""}"></span>
+          <span class="workshop-rack-led active"></span>
+          <span class="workshop-rack-led${dj.connected ? " active" : ""}"></span>
+        </div>
+        <div class="workshop-meta-grid">
+          <span><strong>Provider</strong>${esc(dj.provider_label || "Stub deck")}</span>
+          <span><strong>Track</strong>${esc(dj.track_title || "Placeholder track")}</span>
+          <span><strong>Artist</strong>${esc(dj.track_artist || "Workshop placeholder")}</span>
+          <span><strong>Last action</strong>${esc(dj.last_action_at || "Not yet")}</span>
+        </div>
+        <p>${esc(dj.note || "Stub deck controls are active.")}</p>
+        <div class="workshop-inline-actions">
+          <button type="button" class="btn accent btn-compact" data-workshop-dj-action="play" ${djRequestPending ? "disabled" : ""}>Play</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-dj-action="pause" ${djRequestPending ? "disabled" : ""}>Pause</button>
+          <button type="button" class="btn secondary btn-compact" data-workshop-dj-action="next" ${djRequestPending ? "disabled" : ""}>Next track</button>
+        </div>
+      </article>
+    `;
+  }
+
   function renderBody() {
     if (activeTopTab === "projects") {
       return `
@@ -865,11 +1185,15 @@ export function createWorkshopMode(options = {}) {
           <button type="button" class="workshop-subtab${activeLabTab === "agents" ? " active" : ""}" data-workshop-lab-tab="agents">Manage Agents</button>
           <button type="button" class="workshop-subtab${activeLabTab === "queue" ? " active" : ""}" data-workshop-lab-tab="queue">Queue</button>
           <button type="button" class="workshop-subtab${activeLabTab === "debug" ? " active" : ""}" data-workshop-lab-tab="debug">Debug</button>
+          <button type="button" class="workshop-subtab${activeLabTab === "capture" ? " active" : ""}" data-workshop-lab-tab="capture">Film Capture</button>
+          <button type="button" class="workshop-subtab${activeLabTab === "dj" ? " active" : ""}" data-workshop-lab-tab="dj">DJ Rack</button>
         </div>
         <div class="workshop-panel-scroll">
           ${activeLabTab === "agents" ? renderAgents(true) : ""}
           ${activeLabTab === "queue" ? renderQueue() : ""}
           ${activeLabTab === "debug" ? renderDebugRows() : ""}
+          ${activeLabTab === "capture" ? renderCaptureLane() : ""}
+          ${activeLabTab === "dj" ? renderDjLane() : ""}
         </div>
       `;
     }
@@ -936,6 +1260,9 @@ export function createWorkshopMode(options = {}) {
         render();
       });
     });
+    root.querySelectorAll("[data-workshop-capture-scope]").forEach((btn) => {
+      btn.addEventListener("click", () => setCaptureScope(btn.getAttribute("data-workshop-capture-scope")));
+    });
     root.querySelectorAll("[data-workshop-preset]").forEach((btn) => {
       btn.addEventListener("click", () => {
         selectedPlacePreset = btn.getAttribute("data-workshop-preset") || selectedPlacePreset;
@@ -966,6 +1293,17 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelectorAll("[data-workshop-debug]").forEach((btn) => {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
+    });
+    root.querySelector("[data-workshop-capture-start]")?.addEventListener("click", () => {
+      void startCapture();
+    });
+    root.querySelector("[data-workshop-capture-stop]")?.addEventListener("click", () => {
+      void stopCapture();
+    });
+    root.querySelectorAll("[data-workshop-dj-action]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        void runDjAction(btn.getAttribute("data-workshop-dj-action"));
+      });
     });
     dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
@@ -1073,6 +1411,27 @@ export function createWorkshopMode(options = {}) {
     }
     updatePointerFromEvent(event);
     raycaster.setFromCamera(pointerNdc, camera);
+    const djHit = raycaster.intersectObjects(djHitTargets, false)[0];
+    if (djHit) {
+      activeTopTab = "lab";
+      activeLabTab = "dj";
+      setStatus?.("ok", "DJ rack ready.");
+      render();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const featureHit = raycaster.intersectObjects(featureHitTargets, false)[0];
+    if (featureHit) {
+      activeTopTab = "lab";
+      activeLabTab = "capture";
+      setCaptureScope("features");
+      setStatus?.("ok", "Feature wall film lane ready.");
+      render();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     const pcHit = raycaster.intersectObjects([pcMonitor, pcScreen], false)[0];
     if (pcHit) {
       activeTopTab = "editor";
