@@ -1,3 +1,13 @@
+## 2026-09-18 — Sandbox autonomy monitor (Sam-gated, draft-only)
+
+- Added a file-backed autonomy monitor under `tools/autonomy/` with `status`, `set-enabled`, `set-free-reign`, `trip-kill`, and `inject-fail` commands.
+- Seeded `sandbox-sessions/autonomy/monitor.json` and `fix-index.json`, plus the required `events/`, `drafts/`, and `receipts/` directories.
+- `monitor.enabled=false` and `sandbox-sessions/autonomy/KILL` both force a no-op; `free_reign=true` only emits a draft instruction file and never patches or merges.
+- Documented the operator path in `ai-context/SANDBOX-AUTONOMY-MONITOR.md`.
+- Verified with `node --test tools/autonomy/monitor-smoke.test.mjs` and a temp-root CLI smoke run.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
