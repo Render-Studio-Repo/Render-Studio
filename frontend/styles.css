@@ -42861,6 +42861,77 @@ body.xr-presenting .xr-capture-ready-banner {
   outline: 1px solid rgba(125, 211, 252, 0.4);
 }
 
+.workshop-voice-card {
+  gap: 10px;
+}
+
+.workshop-voice-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+}
+
+.workshop-voice-field span {
+  font-weight: 600;
+}
+
+.workshop-voice-select {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background: rgba(2, 6, 23, 0.78);
+  color: #e2e8f0;
+  padding: 10px 12px;
+}
+
+.workshop-voice-empty {
+  display: grid;
+  gap: 4px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.26);
+  background: rgba(15, 23, 42, 0.4);
+  padding: 10px 12px;
+}
+
+.workshop-voice-empty strong {
+  font-size: 0.8rem;
+  color: #bfdbfe;
+}
+
+.workshop-voice-empty span {
+  font-size: 0.77rem;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.workshop-voice-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.79rem;
+  color: #e2e8f0;
+}
+
+.workshop-voice-toggle input {
+  margin-top: 2px;
+}
+
+.workshop-voice-toggle span {
+  display: grid;
+  gap: 3px;
+}
+
+.workshop-voice-toggle strong {
+  font-size: 0.81rem;
+}
+
+.workshop-voice-toggle small {
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
 .workshop-footnote {
   display: flex;
   flex-wrap: wrap;

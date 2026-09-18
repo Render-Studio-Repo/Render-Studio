@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-voice";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3167,6 +3167,15 @@ const workshopMode = createWorkshopMode({
   api,
   setStatus: setEditStatus,
   toggleDictation: (targetId, btn) => togglePromptDictation(targetId, btn),
+  listVoiceProviders: () => {
+    const hook = window.__renderStudioWorkshopVoiceProviders || window.renderStudioWorkshopVoiceProviders;
+    try {
+      const value = typeof hook === "function" ? hook() : hook;
+      return Array.isArray(value) ? value : [];
+    } catch {
+      return [];
+    }
+  },
   setStudioPromptText: (text, { submit = false } = {}) => {
     const input = document.getElementById("prompt-input");
     if (!input) {

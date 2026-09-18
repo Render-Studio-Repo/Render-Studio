@@ -2,6 +2,24 @@ import * as THREE from "three";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
+const VOICE_PREFS_LS_PREFIX = "render3d:workshop-voice:v1:";
+const DEFAULT_WORKSHOP_VOICES = [
+  {
+    id: "floor-lead",
+    label: "Floor lead",
+    summary: "Direct and concise",
+  },
+  {
+    id: "printer-tech",
+    label: "Printer tech",
+    summary: "Calm and practical",
+  },
+  {
+    id: "review-assistant",
+    label: "Review assistant",
+    summary: "Careful and measured",
+  },
+];
 const PLACE_PRESETS = [
   {
     id: "part-bin",
@@ -57,6 +75,36 @@ function presetById(id) {
 
 function storageKey(projectId) {
   return `${PLACED_LS_PREFIX}${projectId || "none"}`;
+}
+
+function voiceStorageKey(projectId) {
+  return `${VOICE_PREFS_LS_PREFIX}${projectId || "none"}`;
+}
+
+function seededVoicePrefs() {
+  return {
+    provider_id: "",
+    voice_id: DEFAULT_WORKSHOP_VOICES[0].id,
+    allow_talk_over: false,
+  };
+}
+
+function normalizeVoiceProviders(input) {
+  if (!Array.isArray(input)) return [];
+  return input.map((provider) => {
+    const voices = Array.isArray(provider?.voices)
+      ? provider.voices.map((voice) => ({
+        id: String(voice?.id || "").trim(),
+        label: String(voice?.label || voice?.name || voice?.id || "").trim() || "Voice",
+        summary: String(voice?.summary || voice?.description || "").trim(),
+      })).filter((voice) => voice.id)
+      : [];
+    return {
+      id: String(provider?.id || "").trim(),
+      label: String(provider?.label || provider?.name || provider?.id || "").trim() || "Voice provider",
+      voices,
+    };
+  }).filter((provider) => provider.id && provider.voices.length);
 }
 
 function seededWorkshopState(projectName = "Project") {
@@ -280,6 +328,7 @@ export function createWorkshopMode(options = {}) {
     api,
     setStatus,
     toggleDictation,
+    listVoiceProviders,
     setStudioPromptText,
     clearStudioSelection,
   } = options;
@@ -463,6 +512,7 @@ export function createWorkshopMode(options = {}) {
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let voicePrefs = seededVoicePrefs();
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
@@ -499,6 +549,65 @@ export function createWorkshopMode(options = {}) {
     } catch {
       /* optional */
     }
+  }
+
+  function loadVoicePrefs(projectId) {
+    if (!projectId) {
+      voicePrefs = seededVoicePrefs();
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(voiceStorageKey(projectId));
+      const parsed = raw ? JSON.parse(raw) : null;
+      voicePrefs = {
+        provider_id: String(parsed?.provider_id || "").trim(),
+        voice_id: String(parsed?.voice_id || DEFAULT_WORKSHOP_VOICES[0].id).trim() || DEFAULT_WORKSHOP_VOICES[0].id,
+        allow_talk_over: !!parsed?.allow_talk_over,
+      };
+    } catch {
+      voicePrefs = seededVoicePrefs();
+    }
+  }
+
+  function saveVoicePrefs() {
+    if (!activeProjectId) return;
+    try {
+      localStorage.setItem(voiceStorageKey(activeProjectId), JSON.stringify(voicePrefs));
+    } catch {
+      /* optional */
+    }
+  }
+
+  function getVoicePickerState() {
+    let providers = [];
+    try {
+      providers = normalizeVoiceProviders(listVoiceProviders?.());
+    } catch {
+      providers = [];
+    }
+    if (providers.length) {
+      const activeProvider = providers.find((provider) => provider.id === voicePrefs.provider_id) || providers[0];
+      const voiceOptions = activeProvider?.voices || [];
+      const activeVoice = voiceOptions.find((voice) => voice.id === voicePrefs.voice_id) || voiceOptions[0] || null;
+      return {
+        connected: true,
+        providers,
+        activeProvider,
+        voiceOptions,
+        activeVoice,
+        allowTalkOver: !!voicePrefs.allow_talk_over,
+      };
+    }
+    const voiceOptions = DEFAULT_WORKSHOP_VOICES;
+    const activeVoice = voiceOptions.find((voice) => voice.id === voicePrefs.voice_id) || voiceOptions[0] || null;
+    return {
+      connected: false,
+      providers: [],
+      activeProvider: null,
+      voiceOptions,
+      activeVoice,
+      allowTalkOver: !!voicePrefs.allow_talk_over,
+    };
   }
 
   function clearPlacedScene() {
@@ -541,6 +650,51 @@ export function createWorkshopMode(options = {}) {
 
   function selectedPlacedItem() {
     return placedItems.find((item) => item.id === selectedItemId) || null;
+  }
+
+  function renderVoicePicker() {
+    const picker = getVoicePickerState();
+    return `
+      <article class="workshop-card workshop-voice-card">
+        <div class="workshop-card-head">
+          <strong>Workshop voice</strong>
+          <span class="workshop-pill${picker.connected ? " workshop-pill--approved" : ""}">${picker.connected ? "Connected" : "Connect voice"}</span>
+        </div>
+        <p>${picker.connected
+          ? "Pick the voice the workshop should use for spoken updates."
+          : "Pick a preferred voice now. Connect ElevenLabs or Grok later to hear it out loud."}</p>
+        ${picker.connected ? `
+          <label class="workshop-voice-field">
+            <span>Voice provider</span>
+            <select class="workshop-voice-select" data-workshop-voice-provider>
+              ${picker.providers.map((provider) => `
+                <option value="${esc(provider.id)}"${provider.id === picker.activeProvider?.id ? " selected" : ""}>${esc(provider.label)}</option>
+              `).join("")}
+            </select>
+          </label>
+        ` : `
+          <div class="workshop-voice-empty">
+            <strong>Connect voice</strong>
+            <span>Voice output is not connected in this workspace yet, so the workshop stays text-only and keeps using the current prompt handoff.</span>
+          </div>
+        `}
+        <label class="workshop-voice-field">
+          <span>${picker.connected ? "Voice" : "Preferred voice"}</span>
+          <select class="workshop-voice-select" data-workshop-voice-option>
+            ${picker.voiceOptions.map((voice) => `
+              <option value="${esc(voice.id)}"${voice.id === picker.activeVoice?.id ? " selected" : ""}>${esc(voice.summary ? `${voice.label} - ${voice.summary}` : voice.label)}</option>
+            `).join("")}
+          </select>
+        </label>
+        <label class="workshop-voice-toggle">
+          <input type="checkbox" data-workshop-barge-in${picker.allowTalkOver ? " checked" : ""}>
+          <span>
+            <strong>Allow interrupting the current speaker</strong>
+            <small>Off by default. The workshop waits for the current line to finish.</small>
+          </span>
+        </label>
+      </article>
+    `;
   }
 
   function updatePreviewMesh() {
@@ -640,6 +794,7 @@ export function createWorkshopMode(options = {}) {
     const projectId = String(getProjectId?.() || "").trim();
     activeProjectId = projectId;
     loadPlacedItems(projectId);
+    loadVoicePrefs(projectId);
     rebuildPlacedScene();
     if (!projectId) {
       workshopState = seededWorkshopState(currentProjectName());
@@ -899,6 +1054,8 @@ export function createWorkshopMode(options = {}) {
         ` : ""}
         ${activeEditorTab === "voice" ? `
           <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt, so words appear here while you speak.</p>
+          ${renderVoicePicker()}
+          <p class="muted small workshop-soft-note">One speaker at a time is the default, so new speech never cuts off an ongoing line unless you turn that on.</p>
           <textarea id="${esc(dictationInputId)}" class="workshop-voice-input" rows="5" placeholder="Describe the next workshop step or placement...">${esc(voiceDraft)}</textarea>
           <div class="workshop-inline-actions">
             <button type="button" class="btn secondary btn-compact${pointerLocked ? " hidden" : ""}" data-workshop-dictate>Mic</button>
@@ -970,6 +1127,36 @@ export function createWorkshopMode(options = {}) {
     dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
       await toggleDictation?.(dictationInputId, dictationBtn);
+    });
+    root.querySelector("[data-workshop-voice-provider]")?.addEventListener("change", (event) => {
+      const nextProviderId = String(event.target?.value || "").trim();
+      const picker = getVoicePickerState();
+      const provider = picker.providers.find((entry) => entry.id === nextProviderId) || picker.providers[0];
+      if (!provider) return;
+      voicePrefs.provider_id = provider.id;
+      voicePrefs.voice_id = provider.voices[0]?.id || voicePrefs.voice_id;
+      saveVoicePrefs();
+      setStatus?.("ok", `Workshop voice set to ${provider.label}.`);
+      render();
+    });
+    root.querySelector("[data-workshop-voice-option]")?.addEventListener("change", (event) => {
+      const nextVoiceId = String(event.target?.value || "").trim();
+      if (!nextVoiceId) return;
+      voicePrefs.voice_id = nextVoiceId;
+      saveVoicePrefs();
+      const picker = getVoicePickerState();
+      setStatus?.("ok", `Workshop voice saved as ${picker.activeVoice?.label || "the selected voice"}.`);
+      render();
+    });
+    root.querySelector("[data-workshop-barge-in]")?.addEventListener("change", (event) => {
+      voicePrefs.allow_talk_over = !!event.target?.checked;
+      saveVoicePrefs();
+      setStatus?.(
+        "ok",
+        voicePrefs.allow_talk_over
+          ? "Workshop talk-over is on."
+          : "Workshop talk-over is off.",
+      );
     });
     root.querySelector(`#${CSS.escape(dictationInputId)}`)?.addEventListener("input", (event) => {
       voiceDraft = event.target?.value || "";
@@ -1204,6 +1391,7 @@ export function createWorkshopMode(options = {}) {
     activeProjectId = nextId;
     voiceDraft = "";
     loadPlacedItems(nextId);
+    loadVoicePrefs(nextId);
     rebuildPlacedScene();
     if (active) {
       workshopState = normalizeWorkshopState(workshopState, currentProjectName());
