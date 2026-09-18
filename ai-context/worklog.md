@@ -1,3 +1,13 @@
+## 2026-09-18 — Branch protection playbook + PR guard
+
+- Added `.github/workflows/pr-guard.yml` for pull requests to `master`; it runs the lightweight `scripts/ci/pr-guard.sh` sanity check.
+- Added `docs/BRANCH_RULES.md` documenting the required protected-branch settings and the rule that agents never push `master`/`main` directly.
+- Added `scripts/github/apply-classic-branch-protection.sh` so an admin-authenticated `gh` session can apply classic protection to `master` and `main` (if `main` exists).
+- Verified `bash scripts/ci/pr-guard.sh` locally; it used the no-top-level-package fallback smoke path and passed.
+- GitHub rulesets are unavailable on this private repo's current plan, and the cloud environment's GitHub token cannot administer branch protection (`403 Resource not accessible by integration`), so protection changes must be applied by a repo admin via the UI or the helper script.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
