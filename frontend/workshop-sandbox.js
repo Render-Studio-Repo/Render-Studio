@@ -687,8 +687,8 @@ export function createWorkshopMode({
     active = true;
     workshopError = "";
     document.body.classList.add("workshop-mode-active", "sandbox-mode-active");
-    await syncSession(true);
     updateRoute(true);
+    await syncSession(true);
     setStatus?.("ok", "Sandbox ready. Compare and test before you commit.");
     render();
   }

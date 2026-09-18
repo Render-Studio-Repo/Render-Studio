@@ -1,3 +1,13 @@
+## 2026-09-18 — Sandbox redesign: restore point + compare + keep/discard
+
+- Replaced the old Workshop side-room shell with a large-viewport **Sandbox** overlay that keeps the main Studio canvas visible and docks the control panel on the right.
+- Entering Sandbox now starts a persisted session restore point (`#sandbox`, with legacy `#workshop` still accepted) backed by `project.json` metadata plus client-side session/preview state.
+- Added Workshop session APIs for start / restore / discard / push-live, and reused timeline restore-as-latest so discard cleanly rolls the project back to the “when you entered” checkpoint.
+- Added side-by-side and A/B compare surfaces, current-draft preview refresh, and clear **Push to live** vs **Discard sandbox changes** actions.
+- Verified behavior in-browser against a local harness that mounted the real Sandbox module + styles: large-viewport layout, compare modes, restore to entry point, push-live exit, and discard restore all passed.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
