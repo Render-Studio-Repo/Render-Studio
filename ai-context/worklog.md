@@ -1,3 +1,13 @@
+## 2026-09-18 — Workshop desktop mode + VR label pass
+
+- Added `frontend/workshop-mode.js`: a lightweight Workshop overlay/scene on top of the existing viewport with a **PC** launcher, `#workshop` route, desktop walk + mouse-look controls, cursor-follow placement preview, move/place flow via transform handles, Voice Prompt tab, God Mode agent/task cards, Project create/train/approval tabs, and Studio Lab manage-agents / queue / debug tabs.
+- Added thin wiring in `frontend/app.js` and updated headset-facing UI copy in `frontend/index.html` + `frontend/viewport-xr.js` so the buyer-facing viewport label reads **VR** instead of generic **AR**.
+- Added `backend/services/workshop_service.py` plus thin `backend/main.py` routes to seed/store Workshop approval + debug state in existing per-project metadata (`project.json`); debug forwards to a configured hook URL if present, otherwise saves a waiting result locally.
+- Appended scoped Workshop CSS to `frontend/styles.css` and cache-busted every `styles.css` reference plus `index.html` → `app.js`.
+- Verification: parser/compile checks passed (`node --check` on changed JS, `python3 -m py_compile` on changed Python). Browser-tested via a temporary static harness because this cloud pod did not have the live FastAPI/runtime stack running; confirmed PC entry, Workshop tabs, placement preview, transform move, voice prompt copy path, approvals, queue/debug states, and mouse-look flow.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
