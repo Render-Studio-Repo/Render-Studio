@@ -1,4 +1,9 @@
 import * as THREE from "three";
+import {
+  bindWorkshopTrainingCapture,
+  normalizeWorkshopTrainingCapture,
+  renderWorkshopTrainingCapture,
+} from "./workshop-training-capture.js?v=20260918-train-capture";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
@@ -181,6 +186,7 @@ function normalizeWorkshopState(input, projectName = "Project") {
       hook_available: !!debug.hook_available,
       last_result: debug.last_result || null,
     },
+    training_capture: normalizeWorkshopTrainingCapture(value.training_capture, seed.project_label),
   };
 }
 
@@ -842,7 +848,10 @@ export function createWorkshopMode(options = {}) {
         </div>
         <div class="workshop-panel-scroll">
           ${activeProjectTab === "create" ? projectCards(workshopState.projects?.create || [], "create") : ""}
-          ${activeProjectTab === "train" ? projectCards(workshopState.projects?.train || [], "train") : ""}
+          ${activeProjectTab === "train" ? `
+            ${renderWorkshopTrainingCapture(workshopState.training_capture, currentProjectName())}
+            ${projectCards(workshopState.projects?.train || [], "train")}
+          ` : ""}
           ${activeProjectTab === "approvals" ? (workshopState.approvals || []).map((item) => `
             <article class="workshop-card">
               <div class="workshop-card-head">
@@ -976,6 +985,16 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelector("[data-workshop-copy-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: false }));
     root.querySelector("[data-workshop-run-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: true }));
+    bindWorkshopTrainingCapture(root, {
+      api,
+      getProjectId,
+      setStatus,
+      getTrainingState: () => workshopState.training_capture,
+      replaceWorkshopState: (nextWorkshop) => {
+        workshopState = normalizeWorkshopState(nextWorkshop, currentProjectName());
+        render();
+      },
+    });
   }
 
   function render() {

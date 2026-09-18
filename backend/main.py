@@ -53,6 +53,7 @@ from backend.services import (
     ai_credit_service,
     wiring_debug_job_service,
     workshop_service,
+    workshop_training_capture_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -17573,6 +17574,40 @@ async def run_project_workshop_debug(
         label=body.label or "",
         detail=body.detail or "",
     )
+    return {
+        "result": result,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/training-capture/start")
+def start_project_workshop_training_capture(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        result = workshop_training_capture_service.start_capture(path, user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "result": result,
+        "workshop": workshop_service.get_state(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/training-capture/stop")
+def stop_project_workshop_training_capture(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        result = workshop_training_capture_service.stop_capture(path, user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
         "result": result,
         "workshop": workshop_service.get_state(path),

@@ -84,3 +84,15 @@ scripts/credentials_google*.json
 # Local tool installs (do not commit)
 /.bun/
 /.agents/
+
+# Sandbox receipt / training capture runtime outputs
+sandbox-sessions/receipts/RCPT-*.json
+sandbox-sessions/receipts/latest.json
+sandbox-sessions/training-captures/**
+sandbox-sessions/Winstead-Fleet-KB/index/training-captures.json
+sandbox-sessions/Winstead-Fleet-KB/training-captures/**
+!sandbox-sessions/receipts/.gitkeep
+!sandbox-sessions/receipts/examples/**
+!sandbox-sessions/training-captures/.gitkeep
+!sandbox-sessions/Winstead-Fleet-KB/.gitkeep
+!sandbox-sessions/Winstead-Fleet-KB/index/.gitkeep

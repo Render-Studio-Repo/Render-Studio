@@ -1,0 +1,36 @@
+{
+  "receipt_id": "RCPT-TRAIN-20260918-wiring-demo",
+  "log_id": "train-20260918t054100z-wiring-demo",
+  "pr_url": null,
+  "pr_number": null,
+  "color": "yellow",
+  "guard_note": "Sandbox training capture saved. Wake PM/harness with the receipt id once a follow-up PR or review loop needs to consume it.",
+  "mule_hop": "render-studio://workshop/training-capture/train-20260918t054100z-wiring-demo",
+  "rmq": "rmq-1789710085",
+  "status": "captured",
+  "failure_id": null,
+  "payload": {
+    "kind": "training_capture",
+    "source_ui": "Workshop / Quest training",
+    "who": {
+      "user_id": "demo-user",
+      "display_name": "Workshop Demo",
+      "email": "demo.docs.gif@r3d-studios.com"
+    },
+    "what": "Workshop wiring demo training capture",
+    "when": {
+      "started_at": "2026-09-18T05:41:00+00:00",
+      "stopped_at": "2026-09-18T05:43:12+00:00"
+    },
+    "project": {
+      "id": "demo-project",
+      "label": "Training Demo Project"
+    },
+    "media_pointer_path": "sandbox-sessions/training-captures/20260918/train-20260918t054100z-wiring-demo/media-pointer.json",
+    "action_controller_log_path": "sandbox-sessions/training-captures/20260918/train-20260918t054100z-wiring-demo/action-controller-log.json",
+    "related_fail_ids": [],
+    "related_fix_ids": [],
+    "related_receipt_ids": []
+  },
+  "created_at": "2026-09-18T05:43:12+00:00"
+}

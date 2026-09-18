@@ -42737,13 +42737,28 @@ body.xr-presenting .xr-capture-ready-banner {
   color: #bbf7d0;
 }
 
+.workshop-pill--captured {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+
 .workshop-pill--pending,
 .workshop-pill--waiting {
   background: rgba(245, 158, 11, 0.18);
   color: #fde68a;
 }
 
+.workshop-pill--capturing {
+  background: rgba(56, 189, 248, 0.18);
+  color: #bae6fd;
+}
+
 .workshop-pill--fail {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
+.workshop-pill--error {
   background: rgba(239, 68, 68, 0.18);
   color: #fecaca;
 }
@@ -42861,6 +42876,68 @@ body.xr-presenting .xr-capture-ready-banner {
   outline: 1px solid rgba(125, 211, 252, 0.4);
 }
 
+.workshop-training-capture {
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  background: rgba(8, 15, 28, 0.72);
+  padding: 13px;
+  display: grid;
+  gap: 12px;
+}
+
+.workshop-training-capture h3 {
+  margin: 4px 0 6px;
+  font-size: 1rem;
+}
+
+.workshop-training-capture p {
+  margin: 0;
+  color: #bfdbfe;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.workshop-training-capture__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.workshop-training-capture__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  gap: 10px;
+}
+
+.workshop-training-capture__cell {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.62);
+  padding: 10px 11px;
+  display: grid;
+  gap: 6px;
+}
+
+.workshop-training-capture__cell span {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workshop-training-capture__cell strong,
+.workshop-training-capture__cell code {
+  color: #e2e8f0;
+  font-size: 0.77rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.workshop-training-capture__cell code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
 .workshop-footnote {
   display: flex;
   flex-wrap: wrap;
@@ -42907,6 +42984,10 @@ body.xr-presenting .xr-capture-ready-banner {
   .workshop-shell-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .workshop-training-capture__head {
+    grid-template-columns: 1fr;
   }
 }
 

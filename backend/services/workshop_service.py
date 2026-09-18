@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.services import project_store
+from backend.services import project_store, workshop_training_capture_service
 
 META_KEY = "workshop"
 DEBUG_HOOK_ENV_KEYS = (
@@ -184,6 +184,7 @@ def get_state(project_path: Path) -> dict[str, Any]:
     normalized = _normalize_state(meta.get(META_KEY), project_path, meta)
     if meta.get(META_KEY) != normalized:
         _save_state(project_path, normalized)
+    normalized["training_capture"] = workshop_training_capture_service.get_state(project_path)
     return normalized
 
 
