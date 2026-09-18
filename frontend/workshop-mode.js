@@ -393,6 +393,12 @@ export function createWorkshopMode(options = {}) {
     return ideState.files.find((file) => file.id === ideState.activeFileId) || ideState.files[0] || null;
   }
 
+  function openIdeFile(fileId = "") {
+    if (!fileId || !ideState.files.some((file) => file.id === fileId)) return;
+    ideState = { ...ideState, activeFileId: fileId };
+    render();
+  }
+
   function updateActiveFileContent(content = "") {
     const next = ideState.files.map((file) => (
       file.id === ideState.activeFileId ? { ...file, content } : file
@@ -481,31 +487,68 @@ export function createWorkshopMode(options = {}) {
     rootMesh.name = `workshop-item-${item.id}`;
     rootMesh.userData.workshopItemId = item.id;
     rootMesh.userData.workshopItemType = item.type;
+    const rootZ = Number(item.pose?.z) || 0;
 
     if (item.type === "desk") {
+      const deskHeight = dims.height || WORKSHOP_DIMENSIONS_M.desk.height;
+      const legHeight = deskHeight - WORKSHOP_DIMENSIONS_M.desk.topThickness;
       const top = new THREE.Mesh(
         new THREE.BoxGeometry(dims.width || 1.6, dims.depth || 0.8, WORKSHOP_DIMENSIONS_M.desk.topThickness),
         new THREE.MeshStandardMaterial({ color: 0x8b5e3c, roughness: 0.78, metalness: 0.04 }),
       );
-      top.position.z = (dims.height || 0.74) - (WORKSHOP_DIMENSIONS_M.desk.topThickness / 2);
+      top.position.z = (deskHeight - WORKSHOP_DIMENSIONS_M.desk.topThickness) / 2;
       rootMesh.add(top);
       for (const sx of [-1, 1]) {
         for (const sy of [-1, 1]) {
           const leg = new THREE.Mesh(
-            new THREE.BoxGeometry(WORKSHOP_DIMENSIONS_M.desk.legSize, WORKSHOP_DIMENSIONS_M.desk.legSize, (dims.height || 0.74) - WORKSHOP_DIMENSIONS_M.desk.topThickness),
+            new THREE.BoxGeometry(WORKSHOP_DIMENSIONS_M.desk.legSize, WORKSHOP_DIMENSIONS_M.desk.legSize, legHeight),
             new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.68, metalness: 0.16 }),
           );
           leg.position.set(
             sx * ((dims.width || 1.6) / 2 - 0.12),
             sy * ((dims.depth || 0.8) / 2 - 0.12),
-            ((dims.height || 0.74) - WORKSHOP_DIMENSIONS_M.desk.topThickness) / 2,
+            -(WORKSHOP_DIMENSIONS_M.desk.topThickness / 2),
           );
           rootMesh.add(leg);
         }
       }
       const seatLabel = item.metadata?.seatLabel || item.label;
       const label = createLabelPlane(seatLabel, { w: 1.4, h: 0.34 });
-      label.position.set(0, 0, (dims.height || 0.74) + 0.48);
+      label.position.set(0, 0, (deskHeight / 2) + 0.48);
+      rootMesh.add(label);
+    } else if (item.type === "corner-desk") {
+      const deskHeight = dims.height || WORKSHOP_DIMENSIONS_M.cornerDesk.height;
+      const topZ = (deskHeight - WORKSHOP_DIMENSIONS_M.cornerDesk.topThickness) / 2;
+      const mainTop = new THREE.Mesh(
+        new THREE.BoxGeometry(dims.width || WORKSHOP_DIMENSIONS_M.cornerDesk.width, 0.82, WORKSHOP_DIMENSIONS_M.cornerDesk.topThickness),
+        new THREE.MeshStandardMaterial({ color: 0x6b4f3a, roughness: 0.78, metalness: 0.04 }),
+      );
+      mainTop.position.z = topZ;
+      rootMesh.add(mainTop);
+      const wingTop = new THREE.Mesh(
+        new THREE.BoxGeometry(WORKSHOP_DIMENSIONS_M.cornerDesk.returnWidth, WORKSHOP_DIMENSIONS_M.cornerDesk.returnDepth, WORKSHOP_DIMENSIONS_M.cornerDesk.topThickness),
+        new THREE.MeshStandardMaterial({ color: 0x7c5b42, roughness: 0.78, metalness: 0.04 }),
+      );
+      wingTop.position.set(-0.42, 0.54, topZ);
+      rootMesh.add(wingTop);
+      const legPositions = [
+        [-0.92, -0.32],
+        [0.92, -0.32],
+        [-0.92, 0.32],
+        [0.92, 0.32],
+        [-0.92, 0.86],
+        [0.06, 0.86],
+      ];
+      legPositions.forEach(([x, y]) => {
+        const leg = new THREE.Mesh(
+          new THREE.BoxGeometry(WORKSHOP_DIMENSIONS_M.cornerDesk.legSize, WORKSHOP_DIMENSIONS_M.cornerDesk.legSize, deskHeight - WORKSHOP_DIMENSIONS_M.cornerDesk.topThickness),
+          new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.68, metalness: 0.16 }),
+        );
+        leg.position.set(x, y, -(WORKSHOP_DIMENSIONS_M.cornerDesk.topThickness / 2));
+        rootMesh.add(leg);
+      });
+      const label = createLabelPlane(`${item.metadata?.seatLabel || item.label}\nCorner desk`, { w: 1.6, h: 0.42 });
+      label.position.set(0, 0, (deskHeight / 2) + 0.5);
       rootMesh.add(label);
     } else if (item.type === "tv") {
       const screenCenterZ = item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight;
@@ -517,56 +560,59 @@ export function createWorkshopMode(options = {}) {
         new THREE.CylinderGeometry(0.026, 0.034, standHeight, 18),
         new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.6, metalness: 0.2 }),
       );
-      stand.position.z = standBaseZ + (standHeight / 2);
+      stand.position.z = standBaseZ + (standHeight / 2) - rootZ;
       rootMesh.add(stand);
       const standBase = new THREE.Mesh(
         new THREE.CylinderGeometry(standFootprint / 2, standFootprint / 2, 0.03, 18),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.56, metalness: 0.2 }),
       );
-      standBase.position.z = standBaseZ + 0.015;
+      standBase.position.z = standBaseZ + 0.015 - rootZ;
       rootMesh.add(standBase);
       const bezel = new THREE.Mesh(
         new THREE.BoxGeometry((dims.width || 1.4) + 0.08, dims.depth || 0.12, (dims.height || 0.86) + 0.08),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.32, metalness: 0.18 }),
       );
-      bezel.position.z = screenCenterZ;
+      bezel.position.z = 0;
       rootMesh.add(bezel);
       const screen = new THREE.Mesh(
         new THREE.PlaneGeometry(dims.width || 1.4, dims.height || 0.86),
         new THREE.MeshBasicMaterial({ color: 0x0f172a }),
       );
-      screen.position.set(0, -((dims.depth || 0.12) / 2 + 0.005), screenCenterZ);
+      screen.position.set(0, -((dims.depth || 0.12) / 2 + 0.005), 0);
       rootMesh.add(screen);
       registerTvScreen(item, screen);
       const label = createLabelPlane(item.label || "TV", { w: 1.3, h: 0.34 });
-      label.position.set(0, 0.16, screenCenterZ + (screenHeight / 2) + 0.34);
+      label.position.set(0, 0.16, (screenHeight / 2) + 0.34);
       rootMesh.add(label);
     } else if (item.type === "robot-bay") {
       const marker = createRingMarker(dims.width || 4.2, dims.depth || 3.0, 0x3b82f6);
+      marker.position.z -= rootZ;
       rootMesh.add(marker);
       const border = new THREE.Mesh(
         new THREE.RingGeometry(1.05, 1.24, 32),
         new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.32, side: THREE.DoubleSide }),
       );
-      border.position.z = 0.018;
+      border.position.z = 0.018 - rootZ;
       rootMesh.add(border);
       const label = createLabelPlane("Robotics sim bay\nOpenArm · MuJoCo · Isaac", { w: 1.8, h: 0.54 });
-      label.position.set(0, 0, 0.9);
+      label.position.set(0, 0, 0.9 - rootZ);
       rootMesh.add(label);
     } else if (item.type === "wiring-bay") {
       const marker = createRingMarker(dims.width || 2.6, dims.depth || 1.6, 0xf59e0b);
+      marker.position.z -= rootZ;
       rootMesh.add(marker);
       const label = createLabelPlane("Wiring bay", { w: 1.2, h: 0.34 });
-      label.position.set(0, 0, 0.72);
+      label.position.set(0, 0, 0.72 - rootZ);
       rootMesh.add(label);
     } else if (item.type === "dj-zone") {
       const marker = new THREE.Mesh(
         new THREE.CircleGeometry(Math.max(dims.width || 2.2, dims.depth || 1.8) / 2, 40),
         new THREE.MeshStandardMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
       );
+      marker.position.z = 0.01 - rootZ;
       rootMesh.add(marker);
       const label = createLabelPlane('DJ handoff zone\nSay "Hey DJ"', { w: 1.55, h: 0.48 });
-      label.position.set(0, 0, 0.72);
+      label.position.set(0, 0, 0.72 - rootZ);
       rootMesh.add(label);
     }
 
@@ -917,6 +963,35 @@ export function createWorkshopMode(options = {}) {
         ctx.fillStyle = "#fbbf24";
         ctx.font = "600 21px Inter, sans-serif";
         ctx.fillText(todo || "TODO: connect live CRM", 52, 380);
+      } else if (slot === "pm-trial-queue") {
+        ctx.fillText("Architecture trials", 52, 126);
+        ctx.font = "600 22px Inter, sans-serif";
+        ctx.fillText("01 Lobby pass  - queued  - SketchUp A", 52, 182);
+        ctx.fillText("02 Bay redesign - active  - source ref stub", 52, 222);
+        ctx.fillText("03 Export shell - next    - target: build", 52, 262);
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(52, 314, 356, 18);
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillText(todo || "TODO: connect live project feed", 52, 382);
+      } else if (slot === "pm-teach-board") {
+        ctx.fillText("Teach assemble board", 52, 126);
+        ctx.font = "600 21px Inter, sans-serif";
+        ctx.fillText("SketchUp -> redesign", 52, 182);
+        ctx.fillText("1. Import refs", 52, 218);
+        ctx.fillText("2. Constrain room", 52, 250);
+        ctx.fillText("3. Coach prompt", 52, 282);
+        ctx.fillText("4. Build export", 52, 314);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillText("Code Bot + Concrete CAD", 52, 382);
+      } else if (slot === "pm-cad-collab" || agentId === "concrete-cad") {
+        ctx.fillText("PM <-> CAD handoff", 52, 126);
+        ctx.font = "600 21px Inter, sans-serif";
+        ctx.fillText("Target: redesign", 52, 182);
+        ctx.fillText("Ref stub: atrium-v3.skp", 52, 220);
+        ctx.fillText("Next: constrain -> rebuild", 52, 258);
+        ctx.fillText("Collab: PM + CAD + Code Bot", 52, 296);
+        ctx.fillStyle = "#93c5fd";
+        ctx.fillText(todo || "TODO: connect live project feed", 52, 380);
       } else if (slot === "openarm-telemetry") {
         const sweep = (Math.sin(now / 1200) * 18 + 42).toFixed(1);
         const load = (Math.cos(now / 1500) * 8 + 54).toFixed(1);
@@ -1017,6 +1092,12 @@ export function createWorkshopMode(options = {}) {
         <p>${esc(
           item.streamSlot === "sales-interactions"
             ? "Mock Sales interactions panel for the Sales seat. TODO: hook up HubSpot or live CRM."
+            : item.streamSlot === "pm-trial-queue"
+            ? "Projects Manager queue of upcoming architecture and design trials."
+            : item.streamSlot === "pm-teach-board"
+            ? "Projects Manager teach-assemble board for SketchUp -> redesign -> build coaching."
+            : item.streamSlot === "pm-cad-collab"
+            ? "Projects Manager and Concrete CAD collaboration handoff panel."
             : item.streamSlot === "openarm-telemetry"
             ? "Mock OpenArm telemetry feed."
             : "Queue and room activity feed."
@@ -1127,6 +1208,7 @@ export function createWorkshopMode(options = {}) {
               <button type="button" class="workshop-ide-file${ideState.activeFileId === ideFile.id ? " active" : ""}" data-workshop-file="${esc(ideFile.id)}">${esc(ideFile.label)}</button>
             `).join("")}
             <button type="button" class="btn secondary btn-compact workshop-ide-stub-btn" data-workshop-partner-modal>Choose partner</button>
+            <button type="button" class="btn secondary btn-compact workshop-ide-stub-btn" data-workshop-open-teach-assemble>Teach assemble from SketchUp</button>
             <button type="button" class="btn accent btn-compact workshop-ide-stub-btn" data-workshop-agent-update>Insert partner update</button>
           </aside>
           <div class="workshop-ide-editor">
@@ -1210,13 +1292,13 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelectorAll("[data-workshop-file]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        ideState = { ...ideState, activeFileId: btn.getAttribute("data-workshop-file") || ideState.activeFileId };
-        render();
+        openIdeFile(btn.getAttribute("data-workshop-file") || ideState.activeFileId);
       });
     });
     root.querySelector("[data-workshop-ide-text]")?.addEventListener("input", (event) => {
       updateActiveFileContent(event.target?.value || "");
     });
+    root.querySelector("[data-workshop-open-teach-assemble]")?.addEventListener("click", () => openIdeFile("teach-assemble"));
     root.querySelector("[data-workshop-agent-update]")?.addEventListener("click", () => appendPartnerUpdate());
     root.querySelectorAll("[data-workshop-partner-modal]").forEach((btn) => {
       btn.addEventListener("click", () => {

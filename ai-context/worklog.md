@@ -2,6 +2,7 @@
 
 - Added a first-class **Workshop** workspace mode in Studio nav and upgraded the Workshop route into **God View**, **Editor**, and **Wiring Sim** surfaces.
 - Seeded a true-scale warehouse shell in meters with labeled agent desks, a dedicated **Sales** seat, a true-scale **Sales agent monitor** / **PM wrap monitor** TV setup, a robotics sim bay, wiring bay marker, and DJ handoff zone.
+- Projects Manager now uses a true-scale **corner management desk** with a wrap-around monitor cluster and a mock SketchUp teach-assemble board; Concrete CAD sits adjacent for an obvious PM↔CAD collaboration lane.
 - Added persisted Workshop metadata for partner selection, layout export state, and collab IDE files via `project.json` + new `PUT /api/projects/{id}/workshop`.
 - Layout export now downloads passthrough-ready JSON with meters and yaw; README documents the Workshop unit system.
 - Local verification in this VM: `python3 -m py_compile backend/main.py backend/services/workshop_service.py` and `node --check` on changed frontend Workshop modules passed. Full browser/server smoke was blocked here because this VM lacks the documented FastAPI/systemd runtime.

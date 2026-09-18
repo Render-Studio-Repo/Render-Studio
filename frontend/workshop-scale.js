@@ -22,6 +22,15 @@ export const WORKSHOP_DIMENSIONS_M = {
     topThickness: 0.04,
     legSize: 0.06,
   },
+  cornerDesk: {
+    width: 2.0,
+    depth: 1.8,
+    height: 0.76,
+    returnWidth: 1.1,
+    returnDepth: 0.7,
+    topThickness: 0.04,
+    legSize: 0.06,
+  },
   tv: {
     width: 1.4,
     depth: 0.12,
@@ -35,6 +44,13 @@ export const WORKSHOP_DIMENSIONS_M = {
     height: 0.34,
     standHeight: 1.08,
     standFootprint: 0.22,
+  },
+  ultrawideMonitor: {
+    width: 1.18,
+    depth: 0.09,
+    height: 0.37,
+    standHeight: 1.1,
+    standFootprint: 0.26,
   },
   robotBay: {
     width: 4.2,
@@ -259,49 +275,82 @@ export function createWorkshopObject({
 
 export function buildDefaultWorkshopLayout() {
   const desk = WORKSHOP_DIMENSIONS_M.desk;
+  const cornerDesk = WORKSHOP_DIMENSIONS_M.cornerDesk;
   const tv = WORKSHOP_DIMENSIONS_M.tv;
   const deskMonitor = WORKSHOP_DIMENSIONS_M.deskMonitor;
+  const ultrawideMonitor = WORKSHOP_DIMENSIONS_M.ultrawideMonitor;
   const robotBay = WORKSHOP_DIMENSIONS_M.robotBay;
   const wiringBay = WORKSHOP_DIMENSIONS_M.wiringBay;
   const djZone = WORKSHOP_DIMENSIONS_M.djZone;
-  const seatPositions = [
-    { x: -6.2, y: -2.9, yaw: 0 },
-    { x: -2.1, y: -2.9, yaw: 0 },
-    { x: 2.1, y: -2.9, yaw: 0 },
-    { x: 6.2, y: -2.9, yaw: 0 },
-    { x: -6.2, y: 2.9, yaw: Math.PI },
-    { x: -2.1, y: 2.9, yaw: Math.PI },
-    { x: 2.1, y: 2.9, yaw: Math.PI },
-    { x: 6.2, y: 2.9, yaw: Math.PI },
-  ];
+  const seatLayoutById = {
+    "sam-seat": { x: -6.2, y: -2.9, yaw: 0, type: "desk", dimensions: desk },
+    astra: { x: -2.1, y: -2.9, yaw: 0, type: "desk", dimensions: desk },
+    sales: { x: 2.1, y: -2.9, yaw: 0, type: "desk", dimensions: desk },
+    "code-bot": { x: 6.2, y: -2.9, yaw: 0, type: "desk", dimensions: desk },
+    "projects-manager": { x: -1.4, y: 3.15, yaw: Math.PI, type: "corner-desk", dimensions: cornerDesk },
+    "concrete-cad": { x: 2.65, y: 2.95, yaw: Math.PI, type: "desk", dimensions: desk },
+    "open-seat-1": { x: -6.2, y: 2.9, yaw: Math.PI, type: "desk", dimensions: desk },
+    "open-seat-2": { x: 6.2, y: 2.9, yaw: Math.PI, type: "desk", dimensions: desk },
+  };
 
-  const objects = WORKSHOP_AGENT_SEATS.map((seat, index) => createWorkshopObject({
-    id: `desk-${seat.id}`,
-    type: "desk",
-    label: seat.deskLabel,
-    seatId: seat.id,
-    pose: {
-      x: seatPositions[index]?.x ?? 0,
-      y: seatPositions[index]?.y ?? 0,
-      z: desk.height / 2,
-      yaw: seatPositions[index]?.yaw ?? 0,
-    },
-    dimensions: desk,
-    metadata: {
-      seatLabel: seat.label,
-      role: seat.role,
-    },
-  }));
+  const objects = WORKSHOP_AGENT_SEATS.map((seat) => {
+    const placement = seatLayoutById[seat.id] || { x: 0, y: 0, yaw: 0, type: "desk", dimensions: desk };
+    const dimensions = placement.dimensions || desk;
+    return createWorkshopObject({
+      id: `desk-${seat.id}`,
+      type: placement.type || "desk",
+      label: seat.deskLabel,
+      seatId: seat.id,
+      pose: {
+        x: placement.x,
+        y: placement.y,
+        z: (dimensions.height || desk.height) / 2,
+        yaw: placement.yaw,
+      },
+      dimensions,
+      metadata: {
+        seatLabel: seat.label,
+        role: seat.role,
+      },
+    });
+  });
 
   objects.push(
     createWorkshopObject({
       id: "tv-pm-wrap",
       type: "tv",
       label: "PM wrap monitor",
-      pose: { x: 0, y: 6.15, z: tv.standHeight, yaw: Math.PI },
-      dimensions: { width: tv.width, depth: tv.depth, height: tv.height },
-      streamSlot: "openarm-telemetry",
-      metadata: { panelType: "pm-wrap", agentId: "projects-manager" },
+      pose: { x: -1.4, y: 2.55, z: ultrawideMonitor.standHeight, yaw: Math.PI },
+      dimensions: { width: ultrawideMonitor.width, depth: ultrawideMonitor.depth, height: ultrawideMonitor.height },
+      streamSlot: "pm-trial-queue",
+      metadata: { panelType: "pm-trial-queue", agentId: "projects-manager", mount: "desk", todo: "Hook up live project feed." },
+    }),
+    createWorkshopObject({
+      id: "tv-pm-left",
+      type: "tv",
+      label: "PM queue side monitor",
+      pose: { x: -1.98, y: 2.62, z: deskMonitor.standHeight, yaw: Math.PI + 0.42 },
+      dimensions: { width: deskMonitor.width, depth: deskMonitor.depth, height: deskMonitor.height },
+      streamSlot: "pm-cad-collab",
+      metadata: { panelType: "pm-cad-collab", agentId: "projects-manager", mount: "desk", todo: "Hook up live project feed." },
+    }),
+    createWorkshopObject({
+      id: "tv-pm-right",
+      type: "tv",
+      label: "PM teach assemble board",
+      pose: { x: -0.82, y: 2.62, z: deskMonitor.standHeight, yaw: Math.PI - 0.42 },
+      dimensions: { width: deskMonitor.width, depth: deskMonitor.depth, height: deskMonitor.height },
+      streamSlot: "pm-teach-board",
+      metadata: { panelType: "pm-teach-board", agentId: "projects-manager", mount: "desk", todo: "Hook up live project feed." },
+    }),
+    createWorkshopObject({
+      id: "tv-concrete-link",
+      type: "tv",
+      label: "Concrete CAD handoff monitor",
+      pose: { x: 2.65, y: 2.66, z: deskMonitor.standHeight, yaw: Math.PI },
+      dimensions: { width: deskMonitor.width, depth: deskMonitor.depth, height: deskMonitor.height },
+      streamSlot: "pm-cad-collab",
+      metadata: { panelType: "pm-cad-collab", agentId: "concrete-cad", mount: "desk", todo: "Hook up live project feed." },
     }),
     createWorkshopObject({
       id: "tv-sales-desk",
@@ -410,6 +459,19 @@ export function buildDefaultWorkshopIde() {
         content: "Selected partner updates will land here.\n",
       },
       {
+        id: "teach-assemble",
+        label: "teach-assemble-from-sketchup.md",
+        language: "markdown",
+        content:
+          "# Teach assemble from SketchUp\n\n"
+          + "Collaborators: Projects Manager, Code Bot, Concrete CAD\n\n"
+          + "## Prompt templates\n"
+          + "- Import: Bring the SketchUp source in and label real reference edges.\n"
+          + "- Constrain: Lock floor, bay, and desk clearances before edits.\n"
+          + "- Redesign: Rewrite the assembly for a cleaner room-ready layout.\n"
+          + "- Build export: Produce the handoff prompt and export package.\n",
+      },
+      {
         id: "sim-plan",
         label: "sim-plan.json",
         language: "json",
@@ -435,10 +497,15 @@ export function normalizeWorkshopIde(input) {
         content: String(file.content || ""),
       }))
     : fallback.files;
-  const activeFileId = files.some((file) => file.id === value.activeFileId)
+  const byId = new Set(files.map((file) => file.id));
+  const mergedFiles = [
+    ...files,
+    ...fallback.files.filter((file) => !byId.has(file.id)),
+  ];
+  const activeFileId = mergedFiles.some((file) => file.id === value.activeFileId)
     ? value.activeFileId
-    : files[0]?.id || fallback.activeFileId;
-  return { activeFileId, files };
+    : mergedFiles[0]?.id || fallback.activeFileId;
+  return { activeFileId, files: mergedFiles };
 }
 
 export function exportWorkshopLayout(layout, extra = {}) {
