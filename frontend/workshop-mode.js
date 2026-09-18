@@ -367,6 +367,42 @@ function buildWorkshopItemMesh(item, preset) {
   return root;
 }
 
+function buildWorkshopCameraProp() {
+  const root = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.14, 0.14),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.42, metalness: 0.24 }),
+  );
+  root.add(body);
+  const lens = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.042, 0.052, 0.1, 18),
+    new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.26, metalness: 0.42 }),
+  );
+  lens.rotation.x = Math.PI / 2;
+  lens.position.set(0.11, -0.06, 0.01);
+  root.add(lens);
+  const handle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 0.09, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.48 }),
+  );
+  handle.position.set(-0.07, 0.06, -0.02);
+  handle.rotation.x = -0.18;
+  root.add(handle);
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.018, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0x991b1b, emissive: 0x220909, emissiveIntensity: 0.35 }),
+  );
+  light.position.set(0.08, -0.01, 0.055);
+  root.add(light);
+  root.traverse((child) => {
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.userData.workshopCameraProp = true;
+  });
+  root.userData.recordLight = light;
+  return root;
+}
+
 export function createWorkshopMode(options = {}) {
   const {
     viewportEl,
@@ -383,6 +419,11 @@ export function createWorkshopMode(options = {}) {
     toggleDictation,
     setStudioPromptText,
     clearStudioSelection,
+    startViewportRecording,
+    stopViewportRecording,
+    isViewportRecording,
+    importClipToVideoEditor,
+    getLatestViewportClip,
   } = options;
 
   if (!viewportEl || !renderer || !scene || !camera || !controls || !transformControls) {
@@ -530,6 +571,17 @@ export function createWorkshopMode(options = {}) {
   featureWallGlow.userData.workshopFeatureCapture = true;
   roomGroup.add(featureWallGlow);
 
+  const deskCameraProp = buildWorkshopCameraProp();
+  deskCameraProp.position.set(1.05, 5.56, 0.99);
+  deskCameraProp.rotation.set(0.12, -0.5, -0.08);
+  roomGroup.add(deskCameraProp);
+
+  const heldCameraProp = buildWorkshopCameraProp();
+  heldCameraProp.visible = false;
+  heldCameraProp.position.set(0.26, -0.18, -0.44);
+  heldCameraProp.rotation.set(0.06, Math.PI / 2, -0.08);
+  camera.add(heldCameraProp);
+
   const previewMesh = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.5, 0.18),
     new THREE.MeshStandardMaterial({
@@ -580,6 +632,7 @@ export function createWorkshopMode(options = {}) {
   const previewSurfaces = [floor, deskSurface];
   const djHitTargets = [djRackBody, djRackFace];
   const featureHitTargets = [featureWallPanel, featureWallGlow];
+  const cameraPropTargets = [deskCameraProp];
   const visibleState = new Map();
   const placedMeshById = new Map();
   const workshopBounds = { minX: -7.5, maxX: 7.5, minY: -7.5, maxY: 7.5 };
@@ -614,9 +667,43 @@ export function createWorkshopMode(options = {}) {
   let placedItems = [];
   let captureRequestPending = false;
   let djRequestPending = false;
+  let filmActionPending = false;
+  let cameraHeld = false;
+  let cameraAimed = false;
+  let workshopTakeCount = 0;
+  let currentTakeLabel = "";
+  const defaultCameraFov = camera.isPerspectiveCamera ? camera.fov : 50;
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
+  }
+
+  function emitWorkshopEvent(name, detail = {}) {
+    try {
+      window.dispatchEvent(new CustomEvent(name, {
+        detail: {
+          projectId: String(getProjectId?.() || "").trim(),
+          scope: workshopState.capture?.scope || "office",
+          scopeLabel: workshopState.capture?.scope_label || "Office desk",
+          ...detail,
+        },
+      }));
+    } catch {
+      /* optional */
+    }
+  }
+
+  function syncCameraPropVisuals() {
+    const recordingNow = !!isViewportRecording?.();
+    deskCameraProp.visible = !cameraHeld;
+    heldCameraProp.visible = cameraHeld;
+    [deskCameraProp, heldCameraProp].forEach((prop) => {
+      const light = prop?.userData?.recordLight;
+      if (!light?.material) return;
+      light.material.color.setHex(recordingNow ? 0xef4444 : 0x991b1b);
+      light.material.emissive.setHex(recordingNow ? 0x7f1d1d : 0x220909);
+      light.material.emissiveIntensity = recordingNow ? 1.2 : 0.35;
+    });
   }
 
   function setCaptureScope(scopeId) {
@@ -632,6 +719,34 @@ export function createWorkshopMode(options = {}) {
       },
     }, currentProjectName());
     render();
+  }
+
+  function setCameraHeld(next = !cameraHeld) {
+    cameraHeld = !!next;
+    if (!cameraHeld) setCameraAim(false);
+    syncCameraPropVisuals();
+    render();
+    emitWorkshopEvent("render3d:workshop-camera-held", { held: cameraHeld });
+    return cameraHeld;
+  }
+
+  function setCameraAim(next = !cameraAimed) {
+    if (next && !cameraHeld) cameraHeld = true;
+    cameraAimed = !!next;
+    if (camera.isPerspectiveCamera) {
+      camera.fov = cameraAimed ? Math.max(28, defaultCameraFov - 14) : defaultCameraFov;
+      camera.updateProjectionMatrix();
+    }
+    syncCameraPropVisuals();
+    render();
+    emitWorkshopEvent("render3d:workshop-camera-aim", { aimed: cameraAimed });
+    return cameraAimed;
+  }
+
+  function nextTakeLabel() {
+    workshopTakeCount += 1;
+    const scopeLabel = String(workshopState.capture?.scope_label || "Office desk").trim() || "Office desk";
+    return `Workshop ${scopeLabel} take ${workshopTakeCount}`;
   }
 
   function updateRoute(activeRoute) {
@@ -871,45 +986,112 @@ export function createWorkshopMode(options = {}) {
     }
   }
 
-  async function startCapture() {
+  async function startFilmTake() {
     const projectId = String(getProjectId?.() || "").trim();
-    if (!projectId || captureRequestPending) return;
-    captureRequestPending = true;
+    const capture = workshopState.capture || seededWorkshopState(currentProjectName()).capture;
+    if (!projectId || filmActionPending || captureRequestPending) return false;
+    if (isViewportRecording?.()) {
+      setStatus?.("error", "A viewport take is already recording.");
+      return false;
+    }
+    if (!capture.supported) {
+      setStatus?.("error", capture.note || "Film capture is not supported in this environment.");
+      return false;
+    }
+    filmActionPending = true;
+    if (!cameraHeld) setCameraHeld(true);
+    if (!cameraAimed) setCameraAim(true);
+    currentTakeLabel = nextTakeLabel();
     render();
     try {
+      const started = await startViewportRecording?.({
+        label: currentTakeLabel,
+        editorLabel: currentTakeLabel,
+        editorStatus: `${currentTakeLabel} dropped into the video editor tray.`,
+        source: "viewport",
+        append: true,
+      });
+      if (!started) throw new Error("Viewport recording could not start.");
+      captureRequestPending = true;
       const data = await api(`/api/projects/${projectId}/workshop/capture/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scope: workshopState.capture?.scope || "office",
-        }),
+        body: JSON.stringify({ scope: capture.scope || "office" }),
       });
       workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
-      setStatus?.("ok", `Film capture started for ${String(workshopState.capture?.scope_label || "the room").toLowerCase()}.`);
+      setStatus?.("ok", `${currentTakeLabel} recording in ${String(workshopState.capture?.scope_label || "the room").toLowerCase()}.`);
+      emitWorkshopEvent("render3d:workshop-film-started", {
+        label: currentTakeLabel,
+        recording: true,
+      });
+      return true;
     } catch (err) {
-      setStatus?.("error", err?.message || "Could not start film capture.");
+      if (isViewportRecording?.()) {
+        try { await stopViewportRecording?.({ silent: true }); } catch (_) {}
+      }
+      setStatus?.("error", err?.message || "Could not start the Workshop camera take.");
+      return false;
     } finally {
       captureRequestPending = false;
+      filmActionPending = false;
+      syncCameraPropVisuals();
       render();
     }
   }
 
-  async function stopCapture() {
+  async function stopFilmTake() {
     const projectId = String(getProjectId?.() || "").trim();
-    if (!projectId || captureRequestPending) return;
-    captureRequestPending = true;
+    if (!projectId || filmActionPending || captureRequestPending) return false;
+    filmActionPending = true;
     render();
     try {
+      if (isViewportRecording?.()) {
+        await stopViewportRecording?.();
+      }
+      captureRequestPending = true;
       const data = await api(`/api/projects/${projectId}/workshop/capture/stop`, {
         method: "POST",
       });
       workshopState = normalizeWorkshopState(data.workshop || data, currentProjectName());
-      setStatus?.("ok", "Film capture stopped and stub receipt saved.");
+      setStatus?.("ok", `${currentTakeLabel || "Workshop take"} stopped — clip sent to the video editor tray.`);
+      emitWorkshopEvent("render3d:workshop-film-stopped", {
+        label: currentTakeLabel,
+        recording: false,
+        receiptPath: workshopState.capture?.receipt_path || "",
+      });
+      return true;
     } catch (err) {
-      setStatus?.("error", err?.message || "Could not stop film capture.");
+      setStatus?.("error", err?.message || "Could not stop the Workshop camera take.");
+      return false;
     } finally {
       captureRequestPending = false;
+      filmActionPending = false;
+      syncCameraPropVisuals();
       render();
+    }
+  }
+
+  async function openVideoEditorTray() {
+    const blob = getLatestViewportClip?.();
+    if (!blob) {
+      setStatus?.("error", "Record a Workshop take first so it can land in the video editor tray.");
+      return false;
+    }
+    try {
+      await importClipToVideoEditor?.(blob, {
+        append: true,
+        label: currentTakeLabel || `Workshop ${workshopState.capture?.scope_label || "Office desk"} take`,
+        source: "viewport",
+        editorStatus: "Workshop take opened in the video editor tray.",
+      });
+      setStatus?.("ok", "Workshop take opened in the video editor tray.");
+      emitWorkshopEvent("render3d:workshop-video-editor-opened", {
+        label: currentTakeLabel,
+      });
+      return true;
+    } catch (err) {
+      setStatus?.("error", err?.message || "Could not open the video editor tray.");
+      return false;
     }
   }
 
@@ -1069,6 +1251,7 @@ export function createWorkshopMode(options = {}) {
   function renderCaptureLane() {
     const capture = workshopState.capture || seededWorkshopState(currentProjectName()).capture;
     const lastReceipt = capture.last_receipt;
+    const recordingNow = !!isViewportRecording?.();
     return `
       <p class="muted small workshop-soft-note">${esc(capture.note || "Film capture is limited to office and feature spaces.")}</p>
       <div class="workshop-segmented">
@@ -1084,27 +1267,49 @@ export function createWorkshopMode(options = {}) {
       <div class="workshop-inline-actions">
         <button
           type="button"
+          class="btn secondary btn-compact"
+          data-workshop-camera-hold
+          ${filmActionPending ? "disabled" : ""}
+        >${cameraHeld ? "Put camera down" : "Hold camera"}</button>
+        <button
+          type="button"
+          class="btn secondary btn-compact"
+          data-workshop-camera-aim
+          ${filmActionPending ? "disabled" : ""}
+        >${cameraAimed ? "Exit aim" : "Aim shot"}</button>
+        <button
+          type="button"
           class="btn accent btn-compact"
           data-workshop-capture-start
-          ${(capture.supported && !capture.active && !captureRequestPending) ? "" : "disabled"}
-        >${captureRequestPending && !capture.active ? "Starting..." : "Start film capture"}</button>
+          ${(capture.supported && !recordingNow && !filmActionPending && !captureRequestPending) ? "" : "disabled"}
+        >${filmActionPending && !recordingNow ? "Starting..." : "Record take"}</button>
         <button
           type="button"
           class="btn secondary btn-compact"
           data-workshop-capture-stop
-          ${(capture.supported && capture.active && !captureRequestPending) ? "" : "disabled"}
-        >${captureRequestPending && capture.active ? "Stopping..." : "Stop film capture"}</button>
+          ${(capture.supported && recordingNow && !filmActionPending && !captureRequestPending) ? "" : "disabled"}
+        >${filmActionPending && recordingNow ? "Stopping..." : "Stop take"}</button>
+        <button
+          type="button"
+          class="btn secondary btn-compact"
+          data-workshop-open-video-editor
+          ${filmActionPending ? "disabled" : ""}
+        >Open video editor</button>
       </div>
       <article class="workshop-card workshop-capture-card">
         <div class="workshop-card-head">
           <strong>${esc(capture.lane_label || "Film capture")}</strong>
-          <span class="workshop-pill workshop-pill--${capture.active ? "pending" : "pass"}">${capture.active ? "recording" : "ready"}</span>
+          <span class="workshop-pill workshop-pill--${recordingNow ? "pending" : "pass"}">${recordingNow ? "recording" : "ready"}</span>
         </div>
         <div class="workshop-meta-grid">
           <span><strong>Scope</strong>${esc(capture.scope_label || "Office desk")}</span>
           <span><strong>Transport</strong>${esc(capture.transport || "stub")}</span>
           <span><strong>Lane path</strong>${esc(capture.lane_path || "Unavailable")}</span>
           <span><strong>Latest wake file</strong>${esc(capture.latest_path || "Not written yet")}</span>
+          <span><strong>Camera prop</strong>${cameraHeld ? "In hand" : "Docked at desk"}</span>
+          <span><strong>Aim mode</strong>${cameraAimed ? "On" : "Off"}</span>
+          <span><strong>Editor route</strong>Sam video editor tray</span>
+          <span><strong>Take label</strong>${esc(currentTakeLabel || "Arm a shot to label it")}</span>
         </div>
         ${(Array.isArray(capture.disallowed_scopes) ? capture.disallowed_scopes : []).map((scope) => `
           <p class="workshop-blocked-note"><strong>${esc(scope.label || scope.id || "Blocked scope")}:</strong> ${esc(scope.reason || "Not available here.")}</p>
@@ -1295,10 +1500,19 @@ export function createWorkshopMode(options = {}) {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
     });
     root.querySelector("[data-workshop-capture-start]")?.addEventListener("click", () => {
-      void startCapture();
+      void startFilmTake();
     });
     root.querySelector("[data-workshop-capture-stop]")?.addEventListener("click", () => {
-      void stopCapture();
+      void stopFilmTake();
+    });
+    root.querySelector("[data-workshop-camera-hold]")?.addEventListener("click", () => {
+      setCameraHeld(!cameraHeld);
+    });
+    root.querySelector("[data-workshop-camera-aim]")?.addEventListener("click", () => {
+      setCameraAim(!cameraAimed);
+    });
+    root.querySelector("[data-workshop-open-video-editor]")?.addEventListener("click", () => {
+      void openVideoEditorTray();
     });
     root.querySelectorAll("[data-workshop-dj-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1325,6 +1539,7 @@ export function createWorkshopMode(options = {}) {
     root.classList.toggle("hidden", !active);
     reticle.hidden = !(active && pointerLocked);
     reticle.classList.toggle("hidden", !(active && pointerLocked));
+    syncCameraPropVisuals();
     if (!active) return;
     const projectName = workshopState.project_label || currentProjectName();
     root.innerHTML = `
@@ -1411,6 +1626,17 @@ export function createWorkshopMode(options = {}) {
     }
     updatePointerFromEvent(event);
     raycaster.setFromCamera(pointerNdc, camera);
+    const cameraHit = raycaster.intersectObjects(cameraPropTargets, true)[0];
+    if (cameraHit) {
+      activeTopTab = "lab";
+      activeLabTab = "capture";
+      setCameraHeld(true);
+      setStatus?.("ok", "Workshop camera ready.");
+      render();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     const djHit = raycaster.intersectObjects(djHitTargets, false)[0];
     if (djHit) {
       activeTopTab = "lab";
@@ -1522,6 +1748,7 @@ export function createWorkshopMode(options = {}) {
     active = false;
     pointerLocked = false;
     keysDown.clear();
+    setCameraHeld(false);
     document.exitPointerLock?.();
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
@@ -1552,6 +1779,7 @@ export function createWorkshopMode(options = {}) {
     }
     camera.position.z = 1.72;
     applyLook();
+    syncCameraPropVisuals();
     controls.target.copy(camera.position).add(new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0));
     raycaster.setFromCamera(pointerLocked ? new THREE.Vector2(0, 0) : pointerNdc, camera);
     updatePreviewMesh();
@@ -1562,6 +1790,7 @@ export function createWorkshopMode(options = {}) {
     if (nextId === activeProjectId) return;
     activeProjectId = nextId;
     voiceDraft = "";
+    currentTakeLabel = "";
     loadPlacedItems(nextId);
     rebuildPlacedScene();
     if (active) {
@@ -1605,6 +1834,23 @@ export function createWorkshopMode(options = {}) {
   return {
     enter,
     exit,
+    setCaptureScope,
+    setCameraHeld,
+    setCameraAim,
+    startFilmTake,
+    stopFilmTake,
+    openVideoEditorTray,
+    getFilmStatus() {
+      return {
+        active: active && !!isViewportRecording?.(),
+        held: cameraHeld,
+        aimed: cameraAimed,
+        scope: workshopState.capture?.scope || "office",
+        scopeLabel: workshopState.capture?.scope_label || "Office desk",
+        currentTakeLabel,
+        receiptPath: workshopState.capture?.receipt_path || "",
+      };
+    },
     isActive() {
       return active;
     },

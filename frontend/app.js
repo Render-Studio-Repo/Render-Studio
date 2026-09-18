@@ -74,7 +74,7 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260918-workshop-v3";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
 import { createViewportXR } from "./viewport-xr.js?v=20260918-workshop-vr";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v2";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v3";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3191,6 +3191,11 @@ const workshopMode = createWorkshopMode({
       gizmoPanel?.hide?.();
     } catch (_) {}
   },
+  startViewportRecording: (options = {}) => viewportVideoRecorder?.startRecording?.(options),
+  stopViewportRecording: (options = {}) => viewportVideoRecorder?.stopRecording?.(options),
+  isViewportRecording: () => !!viewportVideoRecorder?.isRecording?.(),
+  importClipToVideoEditor: (blob, options = {}) => viewportVideoRecorder?.importClip?.(blob, options),
+  getLatestViewportClip: () => viewportVideoRecorder?.getLastBlob?.() || null,
 });
 
 /** XR Folders tab: personal + shared folder roots, then projects inside a folder. */
@@ -28582,6 +28587,37 @@ try {
 } catch (_) {
   /* video control optional */
 }
+
+window.__render3dWorkshopCamShoot = {
+  enter: () => workshopMode?.enter?.(),
+  exit: (...args) => workshopMode?.exit?.(...args),
+  setScope: (scope) => workshopMode?.setCaptureScope?.(scope),
+  hold: (next = true) => workshopMode?.setCameraHeld?.(next),
+  aim: (next = true) => workshopMode?.setCameraAim?.(next),
+  start: () => workshopMode?.startFilmTake?.(),
+  stop: () => workshopMode?.stopFilmTake?.(),
+  status: () => workshopMode?.getFilmStatus?.() || null,
+};
+
+window.__render3dWorkshopVideoEditor = {
+  open: () => workshopMode?.openVideoEditorTray?.(),
+  importLastTake: () => {
+    const blob = viewportVideoRecorder?.getLastBlob?.();
+    if (!blob) return false;
+    return viewportVideoRecorder?.importClip?.(blob, {
+      append: true,
+      label: workshopMode?.getFilmStatus?.()?.currentTakeLabel || "Workshop take",
+      source: "viewport",
+      editorStatus: "Workshop take opened in the video editor tray.",
+    });
+  },
+  getLastBlob: () => viewportVideoRecorder?.getLastBlob?.() || null,
+};
+
+window.__render3dWorkshop = {
+  camShoot: window.__render3dWorkshopCamShoot,
+  videoEditor: window.__render3dWorkshopVideoEditor,
+};
 
 function closeScreenshotMenu() {
   document.getElementById("viewport-shot-menu")?.classList.add("hidden");

@@ -205,6 +205,7 @@ export function createViewportVideoRecorder({
   let videoEditor = null;
   let appendNextViewportTake = false;
   let pendingDesktopClip = null;
+  let pendingImportOptions = null;
 
   function els() {
     return {
@@ -1023,20 +1024,24 @@ export function createViewportVideoRecorder({
     shareModalEl?.classList.add("hidden");
   }
 
-  async function openShareModal(blob) {
-    const append = appendNextViewportTake;
+  async function openShareModal(blob, options = {}) {
+    const append = options && Object.prototype.hasOwnProperty.call(options, "append")
+      ? !!options.append
+      : appendNextViewportTake;
     appendNextViewportTake = false;
     sourceBlob = blob;
     lastBlob = blob;
     const modal = ensureShareModal();
+    const label = String(options.label || "3D viewport").slice(0, 80) || "3D viewport";
+    const source = String(options.source || "viewport") || "viewport";
     if (append && videoEditor?.addClip) {
       await videoEditor.addClip({
         blob,
-        source: "viewport",
-        label: `3D take ${(videoEditor.getClips?.() || []).filter((c) => c.source === "viewport").length + 1}`,
+        source,
+        label,
       });
     } else {
-      videoEditor?.setPrimaryClip?.(blob, { label: "3D viewport", source: "viewport" });
+      videoEditor?.setPrimaryClip?.(blob, { label, source });
     }
     const preview = modal.querySelector(".viewport-video-share-preview");
     if (preview && !append) {
@@ -1061,7 +1066,7 @@ export function createViewportVideoRecorder({
         } catch (_) {}
       });
     }
-    setShareStatus(append ? "3D take added to timeline." : "");
+    setShareStatus(String(options.editorStatus || (append ? `${label} added to timeline.` : "")));
     try {
       videoEditor?.syncAssembleAvailability?.();
     } catch (_) {}
@@ -1260,17 +1265,18 @@ export function createViewportVideoRecorder({
     return stream;
   }
 
-  async function startRecording() {
-    if (recording) return;
+  async function startRecording(options = {}) {
+    if (recording) return false;
     const canvas = getCanvas?.();
     if (!canvas || typeof canvas.captureStream !== "function") {
       setStatus(false, "This browser cannot record the viewport canvas.");
-      return;
+      return false;
     }
     if (!window.MediaRecorder) {
       setStatus(false, "MediaRecorder is not available in this browser.");
-      return;
+      return false;
     }
+    pendingImportOptions = options && typeof options === "object" ? { ...options } : null;
 
     prefs = readPrefs();
     const fps = prefs.fps;
@@ -1305,7 +1311,8 @@ export function createViewportVideoRecorder({
     } catch (err) {
       cleanupStreams();
       setStatus(false, err.message || "Could not capture viewport stream.");
-      return;
+      pendingImportOptions = null;
+      return false;
     }
 
     const tracks = [...canvasStream.getVideoTracks()];
@@ -1344,7 +1351,8 @@ export function createViewportVideoRecorder({
     } catch (err) {
       cleanupStreams();
       setStatus(false, err.message || "Could not start MediaRecorder.");
-      return;
+      pendingImportOptions = null;
+      return false;
     }
 
     recorder.ondataavailable = (e) => {
@@ -1364,6 +1372,10 @@ export function createViewportVideoRecorder({
       recorder = null;
       const xr = startedInXr || !!isXrPresenting?.();
       startedInXr = false;
+      const importOptions = pendingImportOptions && typeof pendingImportOptions === "object"
+        ? { ...pendingImportOptions }
+        : {};
+      pendingImportOptions = null;
       void (async () => {
         // Tiny / empty encodes are useless — don't publish a 0s clip to the PC.
         const tooSmall = !blob || blob.size < 12_000 || elapsed < 400;
@@ -1371,10 +1383,15 @@ export function createViewportVideoRecorder({
           lastBlob = blob;
           sourceBlob = blob;
           pendingDesktopClip = blob;
+          const clipLabel = String(
+            importOptions.label
+            || (xr ? (hadPov ? "XR POV clip" : "XR viewport clip") : "Viewport clip"),
+          ).slice(0, 80) || "Viewport clip";
+          const clipSource = String(importOptions.source || "viewport") || "viewport";
           let saved = null;
           try {
             saved = await saveClipToProject(blob, {
-              label: xr ? (hadPov ? "XR POV clip" : "XR viewport clip") : "Viewport clip",
+              label: clipLabel,
               xr,
               forceArFolder: xr,
               modeLabel: xr ? (getXrModeLabel?.() || "AR") : null,
@@ -1384,11 +1401,27 @@ export function createViewportVideoRecorder({
             setStatus(false, err?.message || "Could not save clip to references.");
           }
           if (!xr || !isXrPresenting?.()) {
-            try { await openShareModal(blob); } catch (err) {
+            try {
+              await openShareModal(blob, {
+                append: importOptions.append,
+                label: importOptions.editorLabel || clipLabel,
+                source: clipSource,
+                editorStatus: importOptions.editorStatus,
+              });
+            } catch (err) {
               console.warn("[viewport-video] open share modal", err);
             }
           }
-          try { onClipReady?.(blob, { xr, kind: "video", saved: !!saved, pov: hadPov }); } catch (_) {}
+          try {
+            onClipReady?.(blob, {
+              xr,
+              kind: "video",
+              saved: !!saved,
+              pov: hadPov,
+              label: clipLabel,
+              source: clipSource,
+            });
+          } catch (_) {}
           setStatus(
             true,
             xr
@@ -1447,6 +1480,7 @@ export function createViewportVideoRecorder({
         ? `Recording headset POV… ${qualityLabel(prefs.quality)} @ ${fps} fps`
         : `Recording… ${qualityLabel(prefs.quality)} @ ${fps} fps`,
     );
+    return true;
   }
 
   function pauseRecording() {
@@ -1540,6 +1574,15 @@ export function createViewportVideoRecorder({
     pendingDesktopClip = null;
   }
 
+  async function importClip(blob, options = {}) {
+    if (!blob) return false;
+    await openShareModal(blob, {
+      append: Object.prototype.hasOwnProperty.call(options || {}, "append") ? options.append : true,
+      ...options,
+    });
+    return true;
+  }
+
   function bind() {
     const { main, options, menu } = els();
     if (!main || main.dataset.videoBound === "1") return;
@@ -1618,5 +1661,7 @@ export function createViewportVideoRecorder({
     getElapsedMs: () => recordingElapsedMs(),
     closeMenu,
     openShareModal,
+    importClip,
+    getLastBlob: () => pendingDesktopClip || lastBlob,
   };
 }
