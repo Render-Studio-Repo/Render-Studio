@@ -1,0 +1,113 @@
+{
+  "receipt_id": "RCPT-RENDER-20260918-pass-fixture",
+  "log_id": "render-log-pass-001",
+  "pr_url": null,
+  "pr_number": null,
+  "color": "green",
+  "guard_note": "All fail-closed render QA gates passed.",
+  "mule_hop": "render-studio://render-qa/render-log-pass-001",
+  "rmq": "rmq-1789711555",
+  "status": "pass",
+  "failure_id": null,
+  "payload": {
+    "kind": "render_qa",
+    "render_kind": "scene_render",
+    "project": {
+      "id": "demo-project-pass",
+      "label": "Demo Project Pass"
+    },
+    "render": {
+      "render_id": "render_20260918_060600_abcd12.png",
+      "path": "projects/demo-project-pass/renders/render_20260918_060600_abcd12.png",
+      "content_hash": "79d7702ab9e4c7fb7e6b3783de5c545c9bd5d8053fcf6f1fe3d8f5db3e37e0f5",
+      "width": 1024,
+      "height": 1024
+    },
+    "source": {
+      "filename": "fixture.glb",
+      "path": "projects/demo-project-pass/fixture.glb",
+      "content_hash": "182851f6e2a4a3d0bbfc1de62465aeba84bf90327fb77ad4b4086ad75d295638",
+      "format": "glb",
+      "size_bytes": 4096,
+      "up_axis": "z"
+    },
+    "request_capture": {
+      "width": 1600,
+      "height": 900,
+      "content_hash": "0e2eb53a5d8f94917f4f1b3844da80f6ac0e5c39fc6fbe32b5086f8b2f25564d"
+    },
+    "export_metadata": {
+      "exports": [
+        {
+          "filename": "fixture.step",
+          "path": "projects/demo-project-pass/fixture.step",
+          "exists": true,
+          "format": "step",
+          "content_hash": "1c6b4f0488f440e4f776ba2a46c3bd1ccf3d981675b2c049ae3d0afe8023c6b4",
+          "size_bytes": 8912,
+          "up_axis": "z"
+        },
+        {
+          "filename": "fixture.stl",
+          "path": "projects/demo-project-pass/fixture.stl",
+          "exists": true,
+          "format": "stl",
+          "content_hash": "db90dd83e30d0b4f314eb7e8b493db10d656f8424ad2e877b0803c8db1d30e33",
+          "size_bytes": 5120,
+          "up_axis": "z"
+        },
+        {
+          "filename": "fixture.glb",
+          "path": "projects/demo-project-pass/fixture.glb",
+          "exists": true,
+          "format": "glb",
+          "content_hash": "182851f6e2a4a3d0bbfc1de62465aeba84bf90327fb77ad4b4086ad75d295638",
+          "size_bytes": 4096,
+          "up_axis": "z"
+        }
+      ],
+      "layout": {
+        "filename": "layout.json",
+        "path": "projects/demo-project-pass/layout.json",
+        "exists": true,
+        "content_hash": "f8297937c44b33f1f719e6e1fe3f2f6d7ff79fdf8275ea9f3957766cf959f1e0",
+        "size_bytes": 256,
+        "units": "meters",
+        "units_raw": "meters"
+      }
+    },
+    "gates": [
+      {
+        "id": "IDENTITY",
+        "status": "pass",
+        "detail": "Source hash bound to render output."
+      },
+      {
+        "id": "UPRIGHT",
+        "status": "pass",
+        "detail": "Explicit Z-up signal present for the render source."
+      },
+      {
+        "id": "FRAMING",
+        "status": "pass",
+        "detail": "Viewport capture and rendered image both have usable dimensions."
+      },
+      {
+        "id": "USER",
+        "status": "pass",
+        "detail": "Explicit user approval signal present."
+      }
+    ],
+    "user_signal": {
+      "provided": true,
+      "raw": "approved",
+      "status": "approved",
+      "approved": true
+    },
+    "related_receipt_ids": [],
+    "notes": [
+      "Render QA never fabricates scores; PM chart feeds project receipt facts only."
+    ]
+  },
+  "created_at": "2026-09-18T06:06:00+00:00"
+}

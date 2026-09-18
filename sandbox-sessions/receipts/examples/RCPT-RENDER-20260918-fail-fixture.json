@@ -1,0 +1,91 @@
+{
+  "receipt_id": "RCPT-RENDER-20260918-fail-fixture",
+  "log_id": "render-log-fail-001",
+  "pr_url": null,
+  "pr_number": null,
+  "color": "red",
+  "guard_note": "One or more fail-closed render QA gates blocked green; use the FAIL pack before attempting repair.",
+  "mule_hop": "render-studio://render-qa/render-log-fail-001",
+  "rmq": "rmq-1789711555",
+  "status": "fail",
+  "failure_id": "FAIL-RENDER-20260918-fail-fixture",
+  "payload": {
+    "kind": "render_qa",
+    "render_kind": "scene_render",
+    "project": {
+      "id": "demo-project-fail",
+      "label": "Demo Project Fail"
+    },
+    "render": {
+      "render_id": "render_20260918_060601_deadbe.png",
+      "path": "projects/demo-project-fail/renders/render_20260918_060601_deadbe.png",
+      "content_hash": "cc7245f1c7f92cbafec78f26f8a788cad61fbee57f9d4e98ad6da7d4ec53d0ea",
+      "width": 1024,
+      "height": 1024
+    },
+    "source": {
+      "filename": "fixture.glb",
+      "path": "projects/demo-project-fail/fixture.glb",
+      "content_hash": "8e25f2d72e6e74b26278fdfd10bc8f0d647710bfbe4e0dc8ff9586d2806fef41",
+      "format": "glb",
+      "size_bytes": 4096,
+      "up_axis": null
+    },
+    "request_capture": {
+      "width": 0,
+      "height": 0,
+      "content_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed0a0b0d66c6ba442cb296f10279e7d6"
+    },
+    "export_metadata": {
+      "exports": [
+        {
+          "filename": "fixture.glb",
+          "path": "projects/demo-project-fail/fixture.glb",
+          "exists": true,
+          "format": "glb",
+          "content_hash": "8e25f2d72e6e74b26278fdfd10bc8f0d647710bfbe4e0dc8ff9586d2806fef41",
+          "size_bytes": 4096,
+          "up_axis": null
+        }
+      ],
+      "layout": null
+    },
+    "gates": [
+      {
+        "id": "IDENTITY",
+        "status": "pass",
+        "detail": "Source hash bound to render output."
+      },
+      {
+        "id": "UPRIGHT",
+        "status": "fail",
+        "detail": "Missing explicit Z-up metadata; fail closed rather than guessing orientation."
+      },
+      {
+        "id": "FRAMING",
+        "status": "fail",
+        "detail": "Missing or undersized framing evidence; fail closed rather than inventing composition confidence."
+      },
+      {
+        "id": "USER",
+        "status": "fail",
+        "detail": "No explicit user approval signal supplied; fail closed before green."
+      }
+    ],
+    "user_signal": {
+      "provided": false,
+      "raw": null,
+      "status": "missing",
+      "approved": false
+    },
+    "related_receipt_ids": [],
+    "repair_loop": {
+      "failure_id": "FAIL-RENDER-20260918-fail-fixture",
+      "failure_pack_path": "sandbox-sessions/render-qa/fail-packs/FAIL-RENDER-20260918-fail-fixture.json",
+      "owner": "Code Bot",
+      "attempt_budget": 3,
+      "attempts_used": 0
+    }
+  },
+  "created_at": "2026-09-18T06:06:01+00:00"
+}

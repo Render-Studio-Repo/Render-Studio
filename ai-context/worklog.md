@@ -1,3 +1,13 @@
+## 2026-09-18 — Render QA loop receipts, fail packs, and PM feed shape
+
+- Added `backend/services/render_qa_service.py` and thin `backend/main.py` hooks on scene render + render region edit.
+- Every emitted render QA receipt binds `render_id` + `project_id` + source content hash, includes export metadata for STEP/STL/glTF and meters `layout.json` when present, and writes `sandbox-sessions/receipts/latest.json`.
+- Fail-closed gates are `IDENTITY`, `UPRIGHT`, `FRAMING`, and `USER`; failed receipts also emit `FAIL-RENDER-*` packs with a documented Code Bot -> CAD re-gate -> escalate loop (auto-repair transport still TODO).
+- Added `tools/receipts/update-receipt.js`, pass/fail receipt fixtures, `sandbox-sessions/render-qa/` anchors, and `ai-context/RENDER-QA-LOOP.md` with the `HARNESS_WAKE UPDATE_RECEIPT` note.
+- Added focused backend tests for hash binding, pass/fail fixtures, fail-pack emission, and empty PM chart feed shape.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

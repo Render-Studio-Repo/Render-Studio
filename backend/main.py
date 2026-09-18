@@ -46,6 +46,7 @@ from backend.services import (
     project_shares_service,
     project_store,
     prompt_history_service,
+    render_qa_service,
     feedback_service,
     new_user_alert_service,
     onboarding_email_service,
@@ -467,6 +468,8 @@ class SceneRenderRequest(BaseModel):
     viewport_image: str = Field(..., max_length=10_000_000)
     base_filename: str | None = Field(None, max_length=240)
     speed: str = "fast"
+    source_up_axis: str | None = Field(None, max_length=32, description="Explicit source up-axis evidence for render QA.")
+    user_signal: str | None = Field(None, max_length=64, description="Explicit user approval signal for render QA.")
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
 
@@ -477,6 +480,8 @@ class RenderRegionEditRequest(BaseModel):
     source_filename: str | None = Field(None, max_length=240)
     region: dict[str, Any] | None = None
     save_mode: str = Field(default="new", description="new or replace")
+    source_up_axis: str | None = Field(None, max_length=32, description="Explicit source up-axis evidence for render QA.")
+    user_signal: str | None = Field(None, max_length=64, description="Explicit user approval signal for render QA.")
     ai_key_id: str | None = Field(default=None, max_length=64)
     ai_key_source: str | None = Field(default=None, description="personal or team")
     speed: str = "fast"
@@ -19821,6 +19826,24 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
             project_id=project_id,
             meta={"render_filename": filename, "base_filename": body.base_filename},
         )
+    try:
+        render_qa = render_qa_service.evaluate_render(
+            project_path,
+            project_id=project_id,
+            render_filename=filename,
+            source_filename=body.base_filename,
+            prompt=body.prompt,
+            kind="scene_render",
+            request_image_bytes=viewport_bytes,
+            log_id=hist_entry.get("id") if hist_entry else trace_id,
+            trace_id=trace_id,
+            user=user,
+            source_up_axis=body.source_up_axis,
+            user_signal=body.user_signal,
+        )
+    except Exception as exc:
+        trace_add("error", f"Render QA emit failed: {exc}", trace_id=trace_id)
+        render_qa = {"status": "error", "message": f"Render QA emit failed: {exc}"}
     return {
         "kind": "scene_render",
         "filename": filename,
@@ -19836,6 +19859,7 @@ def render_scene_image(project_id: str, body: SceneRenderRequest, request: Reque
         "file_kind": "image",
         "section": "renders",
         "base_filename": body.base_filename,
+        "render_qa": render_qa,
     }
 
 
@@ -19957,6 +19981,24 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
         provider="openai",
         usage=render_usage or None,
     )
+    try:
+        render_qa = render_qa_service.evaluate_render(
+            project_path,
+            project_id=project_id,
+            render_filename=filename,
+            source_filename=body.source_filename,
+            prompt=body.prompt,
+            kind="render_region_edit",
+            request_image_bytes=full_bytes,
+            log_id=hist_entry.get("id") if hist_entry else trace_id,
+            trace_id=trace_id,
+            user=user,
+            source_up_axis=body.source_up_axis,
+            user_signal=body.user_signal,
+        )
+    except Exception as exc:
+        trace_add("error", f"Render QA emit failed: {exc}", trace_id=trace_id)
+        render_qa = {"status": "error", "message": f"Render QA emit failed: {exc}"}
     return {
         "kind": "render_region_edit",
         "filename": filename,
@@ -19972,6 +20014,7 @@ def render_region_edit(project_id: str, body: RenderRegionEditRequest, request: 
         "file_kind": "image",
         "section": "renders",
         "save_mode": save_mode,
+        "render_qa": render_qa,
     }
 
 
