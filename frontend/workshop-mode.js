@@ -1,7 +1,10 @@
 import * as THREE from "three";
 
 const WORKSHOP_HASH = "#workshop";
+const WORKSHOP_ROUTE_RE = /^\/(?:sandbox|workshop)(?:\/|$)/;
+const WORKSHOP_MOBILE_QUERY = "(max-width: 820px), (pointer: coarse) and (max-width: 1024px)";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
+const PREVIEW_STORAGE_ID = "__preview__";
 const PLACE_PRESETS = [
   {
     id: "part-bin",
@@ -409,10 +412,10 @@ export function createWorkshopMode(options = {}) {
   launcher.type = "button";
   launcher.className = "workshop-enter-affordance";
   launcher.innerHTML = `
-    <span class="workshop-enter-affordance-icon">PC</span>
+    <span class="workshop-enter-affordance-icon">3D</span>
     <span class="workshop-enter-affordance-copy">
-      <strong>Workshop</strong>
-      <small>Desktop scene</small>
+      <strong>Open workshop</strong>
+      <small>Room preview and layout walk</small>
     </span>
   `;
   viewportEl.appendChild(launcher);
@@ -457,19 +460,116 @@ export function createWorkshopMode(options = {}) {
   let voiceDraft = "";
   const keysDown = new Set();
   const lookState = { yaw: Math.PI / 2, pitch: -0.08 };
+  const centeredPointerNdc = new THREE.Vector2(0, 0);
   const savedCamera = {
     position: new THREE.Vector3(),
     target: new THREE.Vector3(),
   };
   let lastDebugResult = null;
   let placedItems = [];
+  let placedStorageId = PREVIEW_STORAGE_ID;
+  let previewMode = false;
+  let mobilePanelOpen = false;
+  let mobileGateDismissed = false;
+  const mobileMoveState = { pointerId: null, x: 0, y: 0 };
+  const mobileLookState = { pointerId: null, lastX: 0, lastY: 0 };
 
   function currentProjectName() {
     return String(getProjectName?.() || activeProjectId || "Project").trim() || "Project";
   }
 
+  function isWorkshopRoutePath() {
+    return WORKSHOP_ROUTE_RE.test(window.location.pathname || "");
+  }
+
+  function isMobileWorkshop() {
+    return !!window.matchMedia?.(WORKSHOP_MOBILE_QUERY)?.matches;
+  }
+
+  function shouldAutoEnterWorkshop() {
+    return window.location.hash === WORKSHOP_HASH || isWorkshopRoutePath();
+  }
+
+  function canPreviewWithoutProject() {
+    return isWorkshopRoutePath() || isMobileWorkshop();
+  }
+
+  function hasProjectContext() {
+    return !!String(getProjectId?.() || "").trim();
+  }
+
+  function isSignedIn() {
+    return !!document.getElementById("btn-auth")?.classList.contains("signed-in");
+  }
+
+  function usesCenteredReticle() {
+    return active && (pointerLocked || isMobileWorkshop());
+  }
+
+  function activeTopTabMeta() {
+    return [
+      { id: "editor", label: "Workshop" },
+      { id: "projects", label: "Crew" },
+      { id: "lab", label: "Bot bench" },
+    ];
+  }
+
+  function subtabMeta() {
+    if (activeTopTab === "projects") {
+      return [
+        { id: "create", label: "Build" },
+        { id: "train", label: "Train" },
+        { id: "approvals", label: "Approvals" },
+      ];
+    }
+    if (activeTopTab === "lab") {
+      return [
+        { id: "agents", label: "Bots" },
+        { id: "queue", label: "Queue" },
+        { id: "debug", label: "Debug" },
+      ];
+    }
+    return [
+      { id: "place", label: "Layout" },
+      { id: "voice", label: "Prompt" },
+      { id: "god", label: "Status" },
+    ];
+  }
+
+  function activeSubtabId() {
+    if (activeTopTab === "projects") return activeProjectTab;
+    if (activeTopTab === "lab") return activeLabTab;
+    return activeEditorTab;
+  }
+
+  function setActiveSubtab(next) {
+    if (!next) return;
+    if (activeTopTab === "projects") activeProjectTab = next;
+    else if (activeTopTab === "lab") activeLabTab = next;
+    else activeEditorTab = next;
+  }
+
+  function mobileRoomTitle() {
+    if (previewMode) return "Workshop preview";
+    return workshopState.project_label || currentProjectName();
+  }
+
+  function mobileRouteCopy() {
+    if (previewMode) return "Walk the room now. Sign in and open a project to save it.";
+    return "Walk with the left stick. Drag the right pad to look.";
+  }
+
   function updateRoute(activeRoute) {
     const url = new URL(window.location.href);
+    if (isWorkshopRoutePath()) {
+      const next = activeRoute
+        ? `${url.pathname}${url.search}${WORKSHOP_HASH}`
+        : `/${url.search || ""}`;
+      if (activeRoute && url.hash === WORKSHOP_HASH) return;
+      if (!activeRoute && url.pathname === "/" && !url.hash) return;
+      window.history.replaceState({}, "", next || "/");
+      return;
+    }
     const next = activeRoute
       ? `${url.pathname}${url.search}${WORKSHOP_HASH}`
       : `${url.pathname}${url.search}`;
@@ -479,12 +579,9 @@ export function createWorkshopMode(options = {}) {
   }
 
   function loadPlacedItems(projectId) {
-    if (!projectId) {
-      placedItems = [];
-      return;
-    }
+    placedStorageId = projectId || PREVIEW_STORAGE_ID;
     try {
-      const raw = localStorage.getItem(storageKey(projectId));
+      const raw = localStorage.getItem(storageKey(placedStorageId));
       const parsed = raw ? JSON.parse(raw) : [];
       placedItems = Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object") : [];
     } catch {
@@ -493,9 +590,9 @@ export function createWorkshopMode(options = {}) {
   }
 
   function savePlacedItems() {
-    if (!activeProjectId) return;
+    if (!placedStorageId) return;
     try {
-      localStorage.setItem(storageKey(activeProjectId), JSON.stringify(placedItems));
+      localStorage.setItem(storageKey(placedStorageId), JSON.stringify(placedItems));
     } catch {
       /* optional */
     }
@@ -642,11 +739,14 @@ export function createWorkshopMode(options = {}) {
     loadPlacedItems(projectId);
     rebuildPlacedScene();
     if (!projectId) {
-      workshopState = seededWorkshopState(currentProjectName());
-      workshopError = "Open a project to load this workshop.";
+      previewMode = canPreviewWithoutProject();
+      workshopState = seededWorkshopState(previewMode ? "Workshop preview" : currentProjectName());
+      workshopError = previewMode ? "" : "Open a project to load this workshop.";
+      loadedProjectId = "";
       render();
       return;
     }
+    previewMode = false;
     if (!force && loadedProjectId === projectId && workshopState.project_label === currentProjectName()) {
       render();
       return;
@@ -669,7 +769,10 @@ export function createWorkshopMode(options = {}) {
 
   async function approveItem(itemId) {
     const projectId = String(getProjectId?.() || "").trim();
-    if (!projectId || !itemId) return;
+    if (!projectId || !itemId) {
+      setStatus?.("error", "Log in and open a project to save crew approvals.");
+      return;
+    }
     try {
       const data = await api(`/api/projects/${projectId}/workshop/approvals/${encodeURIComponent(itemId)}/approve`, {
         method: "POST",
@@ -684,7 +787,10 @@ export function createWorkshopMode(options = {}) {
 
   async function runDebugRow(rowId) {
     const projectId = String(getProjectId?.() || "").trim();
-    if (!projectId || !rowId) return;
+    if (!projectId || !rowId) {
+      setStatus?.("error", "Log in and open a project to send bench jobs to debug.");
+      return;
+    }
     const row = (workshopState.queue || []).find((entry) => entry.id === rowId);
     try {
       const data = await api(`/api/projects/${projectId}/workshop/debug`, {
@@ -710,6 +816,10 @@ export function createWorkshopMode(options = {}) {
     const text = String(input?.value || "").trim();
     if (!text) {
       setStatus?.("error", "Say or enter a prompt first.");
+      return;
+    }
+    if (submit && !hasProjectContext()) {
+      setStatus?.("error", "Open a project before sending room prompts into AI.");
       return;
     }
     setStudioPromptText?.(text, { submit });
@@ -756,7 +866,7 @@ export function createWorkshopMode(options = {}) {
 
   function projectCards(items = [], kind = "generic") {
     if (!items.length) return `<p class="muted small">No ${kind} items queued right now.</p>`;
-    return items.map((item) => `
+    return `<div class="workshop-card-rail">${items.map((item) => `
       <article class="workshop-card">
         <div class="workshop-card-head">
           <strong>${esc(item.title || item.label || "Untitled")}</strong>
@@ -764,7 +874,7 @@ export function createWorkshopMode(options = {}) {
         </div>
         <p>${esc(item.summary || item.detail || "")}</p>
       </article>
-    `).join("");
+    `).join("")}</div>`;
   }
 
   function renderAgents(showNote = false) {
@@ -773,7 +883,7 @@ export function createWorkshopMode(options = {}) {
     const note = showNote && workshopState.agents_source !== "live"
       ? `<p class="muted small workshop-soft-note">Example room activity is shown until a live room feed is connected.</p>`
       : "";
-    return `${note}${agents.map((agent) => `
+    return `${note}<div class="workshop-card-rail">${agents.map((agent) => `
       <article class="workshop-card workshop-agent-card">
         <div class="workshop-card-head">
           <strong>${esc(agent.name || agent.id || "Agent")}</strong>
@@ -788,13 +898,13 @@ export function createWorkshopMode(options = {}) {
           `).join("")}
         </ul>
       </article>
-    `).join("")}`;
+    `).join("")}</div>`;
   }
 
   function renderQueue() {
     const queue = Array.isArray(workshopState.queue) ? workshopState.queue : [];
     if (!queue.length) return `<p class="muted small">No queue items yet.</p>`;
-    return queue.map((row) => `
+    return `<div class="workshop-card-rail">${queue.map((row) => `
       <article class="workshop-card workshop-queue-card workshop-queue-card--${esc(String(row.status || "waiting").toLowerCase())}">
         <div class="workshop-card-head">
           <strong>${esc(row.label || row.title || row.id || "Queue item")}</strong>
@@ -802,7 +912,17 @@ export function createWorkshopMode(options = {}) {
         </div>
         <p>${esc(row.detail || "")}</p>
       </article>
-    `).join("");
+    `).join("")}</div>`;
+  }
+
+  function renderCopyBlock(value, className = "") {
+    const text = String(value ?? "").trim();
+    if (!text) return "";
+    const classes = className ? ` class="${className}"` : "";
+    if (/[\r\n]/.test(text) || /^[\[{]/.test(text)) {
+      return `<pre class="workshop-data-block${className ? ` ${className}` : ""}">${esc(text)}</pre>`;
+    }
+    return `<p${classes}>${esc(text)}</p>`;
   }
 
   function renderDebugRows() {
@@ -812,34 +932,44 @@ export function createWorkshopMode(options = {}) {
       ${result ? `
         <div class="workshop-debug-result workshop-debug-result--${esc(String(result.status || "waiting").toLowerCase())}">
           <strong>${esc(result.status || "waiting")}</strong>
-          <span>${esc(result.message || "Latest debug handoff saved.")}</span>
+          ${renderCopyBlock(result.message || "Latest debug handoff saved.", "workshop-debug-copy")}
         </div>
       ` : ""}
       ${workshopState.debug?.hook_available
         ? `<p class="muted small">Live debug handoff is connected for this room.</p>`
         : `<p class="muted small">No live debug harness is connected, so requests are saved here for the next run.</p>`}
-      <div class="workshop-debug-list">
+      <div class="workshop-debug-list workshop-card-rail">
         ${queue.map((row) => `
           <article class="workshop-card workshop-debug-card">
             <div>
               <strong>${esc(row.label || row.id || "Queue row")}</strong>
-              <p>${esc(row.detail || "")}</p>
+              ${renderCopyBlock(row.detail || "")}
             </div>
-            <button type="button" class="btn secondary btn-compact" data-workshop-debug="${esc(row.id)}">Send to Debug</button>
+            <button type="button" class="btn secondary btn-compact" data-workshop-debug="${esc(row.id)}"${!hasProjectContext() ? " disabled" : ""}>Send to Debug</button>
           </article>
         `).join("")}
       </div>
     `;
   }
 
-  function renderBody() {
+  function renderSubtabs() {
+    return `
+      <div class="workshop-subtabs" role="tablist" aria-label="${esc(activeTopTab === "projects" ? "Crew" : activeTopTab === "lab" ? "Bot bench" : "Workshop")} panel tabs">
+        ${subtabMeta().map((tab) => `
+          <button
+            type="button"
+            class="workshop-subtab${activeSubtabId() === tab.id ? " active" : ""}"
+            data-workshop-subtab="${esc(tab.id)}"
+            aria-selected="${activeSubtabId() === tab.id ? "true" : "false"}"
+          >${esc(tab.label)}</button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderPanelBody() {
     if (activeTopTab === "projects") {
       return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop project tabs">
-          <button type="button" class="workshop-subtab${activeProjectTab === "create" ? " active" : ""}" data-workshop-project-tab="create">Create</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "train" ? " active" : ""}" data-workshop-project-tab="train">Train</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "approvals" ? " active" : ""}" data-workshop-project-tab="approvals">Approvals</button>
-        </div>
         <div class="workshop-panel-scroll">
           ${activeProjectTab === "create" ? projectCards(workshopState.projects?.create || [], "create") : ""}
           ${activeProjectTab === "train" ? projectCards(workshopState.projects?.train || [], "train") : ""}
@@ -849,10 +979,10 @@ export function createWorkshopMode(options = {}) {
                 <strong>${esc(item.title || item.id || "Approval")}</strong>
                 <span class="workshop-pill workshop-pill--${esc(String(item.status || "pending").toLowerCase())}">${esc(item.status || "pending")}</span>
               </div>
-              <p>${esc(item.summary || "")}</p>
+              ${renderCopyBlock(item.summary || "")}
               ${String(item.status || "").toLowerCase() === "approved"
                 ? `<span class="workshop-inline-ok">Approved</span>`
-                : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}">Approve</button>`}
+                : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}"${!hasProjectContext() ? " disabled" : ""}>Approve</button>`}
             </article>
           `).join("") : ""}
         </div>
@@ -861,11 +991,6 @@ export function createWorkshopMode(options = {}) {
 
     if (activeTopTab === "lab") {
       return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop lab tabs">
-          <button type="button" class="workshop-subtab${activeLabTab === "agents" ? " active" : ""}" data-workshop-lab-tab="agents">Manage Agents</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "queue" ? " active" : ""}" data-workshop-lab-tab="queue">Queue</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "debug" ? " active" : ""}" data-workshop-lab-tab="debug">Debug</button>
-        </div>
         <div class="workshop-panel-scroll">
           ${activeLabTab === "agents" ? renderAgents(true) : ""}
           ${activeLabTab === "queue" ? renderQueue() : ""}
@@ -875,14 +1000,9 @@ export function createWorkshopMode(options = {}) {
     }
 
     return `
-      <div class="workshop-subtabs" role="tablist" aria-label="Workshop editor tabs">
-        <button type="button" class="workshop-subtab${activeEditorTab === "place" ? " active" : ""}" data-workshop-editor-tab="place">Editor</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "voice" ? " active" : ""}" data-workshop-editor-tab="voice">Voice Prompt</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "god" ? " active" : ""}" data-workshop-editor-tab="god">God Mode</button>
-      </div>
       <div class="workshop-panel-scroll">
         ${activeEditorTab === "place" ? `
-          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk.</p>
+          <p class="muted small workshop-soft-note">${isMobileWorkshop() ? "Walk with the left stick and drag the right pad to look. The placement ghost follows the center reticle." : "Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk."}</p>
           <div class="workshop-preset-grid">
             ${PLACE_PRESETS.map((preset) => `
               <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
@@ -895,7 +1015,7 @@ export function createWorkshopMode(options = {}) {
             <button type="button" class="btn accent btn-compact" data-workshop-place>Place here</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-clear-selection>Clear selection</button>
           </div>
-          <p class="muted small">${selectedPlacedItem() ? `${esc(selectedPlacedItem()?.label || "Item")} is selected.` : "Click a placed item to move it with the transform handles."}</p>
+          <p class="muted small">${selectedPlacedItem() ? `${esc(selectedPlacedItem()?.label || "Item")} is selected.` : `${isMobileWorkshop() ? "Tap a placed item to select it, then drag its handles." : "Click a placed item to move it with the transform handles."}`}</p>
         ` : ""}
         ${activeEditorTab === "voice" ? `
           <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt, so words appear here while you speak.</p>
@@ -903,10 +1023,78 @@ export function createWorkshopMode(options = {}) {
           <div class="workshop-inline-actions">
             <button type="button" class="btn secondary btn-compact${pointerLocked ? " hidden" : ""}" data-workshop-dictate>Mic</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-copy-prompt>Use in AI prompt</button>
-            <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
+            <button type="button" class="btn accent btn-compact" data-workshop-run-prompt${!hasProjectContext() ? " disabled" : ""}>Run in AI prompt</button>
           </div>
         ` : ""}
         ${activeEditorTab === "god" ? renderAgents(true) : ""}
+      </div>
+    `;
+  }
+
+  function renderMobileGate() {
+    if (!isMobileWorkshop() || mobilePanelOpen || mobileGateDismissed || (isSignedIn() && hasProjectContext())) return "";
+    const title = !isSignedIn()
+      ? "Preview room is live."
+      : "Preview room is live until you open a project.";
+    const detail = !isSignedIn()
+      ? "Log in to save layouts, keep crew tasks in sync, and send bench jobs."
+      : "Open or create a project when you want this room saved with real crew data.";
+    return `
+      <div class="workshop-mobile-gate">
+        <div class="workshop-mobile-gate-copy">
+          <strong>${esc(title)}</strong>
+          <small>${esc(detail)}</small>
+        </div>
+        <div class="workshop-mobile-gate-actions">
+          ${!isSignedIn() ? `<button type="button" class="workshop-mobile-gate-btn workshop-mobile-gate-btn--accent" data-workshop-open-login>Log in</button>` : ""}
+          <button type="button" class="workshop-mobile-gate-btn" data-workshop-dismiss-gate>Keep exploring</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMobilePanel() {
+    if (!isMobileWorkshop()) return "";
+    return `
+      <section class="workshop-mobile-panel${mobilePanelOpen ? "" : " hidden"}" aria-label="Workshop details">
+        <div class="workshop-mobile-panel-card">
+          <div class="workshop-mobile-panel-head">
+            <div>
+              <strong>${esc(activeTopTabMeta().find((tab) => tab.id === activeTopTab)?.label || "Workshop")}</strong>
+              <small>${esc(subtabMeta().find((tab) => tab.id === activeSubtabId())?.label || "")}</small>
+            </div>
+            <button type="button" class="workshop-mobile-close" data-workshop-panel-toggle aria-label="Close workshop details">&times;</button>
+          </div>
+          ${renderSubtabs()}
+          ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
+          ${renderPanelBody()}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderMobileHud() {
+    if (!isMobileWorkshop()) return "";
+    return `
+      <div class="workshop-mobile-hud">
+        ${renderMobilePanel()}
+        ${renderMobileGate()}
+        <div class="workshop-mobile-thumbbar">
+          <button type="button" class="workshop-mobile-thumb${mobilePanelOpen ? " active" : ""}" data-workshop-panel-toggle>${mobilePanelOpen ? "Hide panel" : "Panel"}</button>
+          <button type="button" class="workshop-mobile-thumb${activeTopTab === "editor" && activeEditorTab === "place" ? " active" : ""}" data-workshop-mobile-place>Place</button>
+          <button type="button" class="workshop-mobile-thumb${activeTopTab === "editor" && activeEditorTab === "voice" ? " active" : ""}" data-workshop-mobile-prompt>Prompt</button>
+          <button type="button" class="workshop-mobile-thumb" data-workshop-exit>Studio</button>
+        </div>
+        <div class="workshop-mobile-stick" data-workshop-stick>
+          <span class="workshop-mobile-pad-label">Move</span>
+          <span class="workshop-mobile-stick-base">
+            <span class="workshop-mobile-stick-knob" data-workshop-stick-knob></span>
+          </span>
+        </div>
+        <div class="workshop-mobile-look-zone" data-workshop-look-zone>
+          <span class="workshop-mobile-pad-label">Look</span>
+          <small>Drag</small>
+        </div>
       </div>
     `;
   }
@@ -915,24 +1103,13 @@ export function createWorkshopMode(options = {}) {
     root.querySelectorAll("[data-workshop-top-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         activeTopTab = btn.getAttribute("data-workshop-top-tab") || "editor";
+        if (isMobileWorkshop()) mobilePanelOpen = true;
         render();
       });
     });
-    root.querySelectorAll("[data-workshop-editor-tab]").forEach((btn) => {
+    root.querySelectorAll("[data-workshop-subtab]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        activeEditorTab = btn.getAttribute("data-workshop-editor-tab") || "place";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-project-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeProjectTab = btn.getAttribute("data-workshop-project-tab") || "create";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-lab-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeLabTab = btn.getAttribute("data-workshop-lab-tab") || "agents";
+        setActiveSubtab(btn.getAttribute("data-workshop-subtab") || "");
         render();
       });
     });
@@ -943,7 +1120,9 @@ export function createWorkshopMode(options = {}) {
         render();
       });
     });
-    root.querySelector("[data-workshop-exit]")?.addEventListener("click", () => exit());
+    root.querySelectorAll("[data-workshop-exit]").forEach((btn) => {
+      btn.addEventListener("click", () => exit());
+    });
     root.querySelector("[data-workshop-look]")?.addEventListener("click", async () => {
       if (pointerLocked) {
         document.exitPointerLock?.();
@@ -976,44 +1155,174 @@ export function createWorkshopMode(options = {}) {
     });
     root.querySelector("[data-workshop-copy-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: false }));
     root.querySelector("[data-workshop-run-prompt]")?.addEventListener("click", () => copyVoicePrompt({ submit: true }));
+    root.querySelectorAll("[data-workshop-open-login]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.getElementById("btn-auth")?.click();
+      });
+    });
+    root.querySelector("[data-workshop-dismiss-gate]")?.addEventListener("click", () => {
+      mobileGateDismissed = true;
+      render();
+    });
+    root.querySelectorAll("[data-workshop-panel-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mobilePanelOpen = !mobilePanelOpen;
+        render();
+      });
+    });
+    root.querySelector("[data-workshop-mobile-place]")?.addEventListener("click", () => {
+      if (activeTopTab !== "editor" || activeEditorTab !== "place") {
+        activeTopTab = "editor";
+        activeEditorTab = "place";
+        mobilePanelOpen = false;
+        render();
+        return;
+      }
+      placeSelectedPreset();
+    });
+    root.querySelector("[data-workshop-mobile-prompt]")?.addEventListener("click", () => {
+      activeTopTab = "editor";
+      activeEditorTab = "voice";
+      mobilePanelOpen = true;
+      render();
+    });
+    bindMobileHudEvents();
+  }
+
+  function resetMobileHudState() {
+    mobileMoveState.pointerId = null;
+    mobileMoveState.x = 0;
+    mobileMoveState.y = 0;
+    mobileLookState.pointerId = null;
+  }
+
+  function bindMobileHudEvents() {
+    const stick = root.querySelector("[data-workshop-stick]");
+    const knob = root.querySelector("[data-workshop-stick-knob]");
+    const lookZone = root.querySelector("[data-workshop-look-zone]");
+    if (!stick || !knob || !lookZone) return;
+    const setStickVisual = (x, y) => {
+      knob.style.transform = `translate(${Math.round(x * 26)}px, ${Math.round(-y * 26)}px)`;
+      stick.classList.toggle("active", Math.abs(x) > 0.02 || Math.abs(y) > 0.02);
+    };
+    const clearStick = () => {
+      mobileMoveState.pointerId = null;
+      mobileMoveState.x = 0;
+      mobileMoveState.y = 0;
+      setStickVisual(0, 0);
+    };
+    const updateStick = (clientX, clientY) => {
+      const rect = stick.getBoundingClientRect();
+      const rx = rect.left + rect.width / 2;
+      const ry = rect.top + rect.height / 2;
+      const dx = (clientX - rx) / Math.max(1, rect.width * 0.34);
+      const dy = (clientY - ry) / Math.max(1, rect.height * 0.34);
+      const len = Math.hypot(dx, dy) || 1;
+      const normX = len > 1 ? dx / len : dx;
+      const normY = len > 1 ? dy / len : dy;
+      mobileMoveState.x = clamp(normX, -1, 1);
+      mobileMoveState.y = clamp(-normY, -1, 1);
+      setStickVisual(mobileMoveState.x, mobileMoveState.y);
+    };
+    stick.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      mobileMoveState.pointerId = event.pointerId;
+      stick.setPointerCapture?.(event.pointerId);
+      updateStick(event.clientX, event.clientY);
+    });
+    stick.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== mobileMoveState.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      updateStick(event.clientX, event.clientY);
+    });
+    stick.addEventListener("pointerup", (event) => {
+      if (event.pointerId !== mobileMoveState.pointerId) return;
+      clearStick();
+    });
+    stick.addEventListener("pointercancel", clearStick);
+    lookZone.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      mobileLookState.pointerId = event.pointerId;
+      mobileLookState.lastX = event.clientX;
+      mobileLookState.lastY = event.clientY;
+      lookZone.classList.add("active");
+      lookZone.setPointerCapture?.(event.pointerId);
+    });
+    lookZone.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== mobileLookState.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      lookState.yaw -= (event.clientX - mobileLookState.lastX) * 0.012;
+      lookState.pitch = clamp(lookState.pitch - (event.clientY - mobileLookState.lastY) * 0.01, -1.12, 0.7);
+      mobileLookState.lastX = event.clientX;
+      mobileLookState.lastY = event.clientY;
+      applyLook();
+    });
+    const clearLook = (event) => {
+      if (event && event.pointerId !== mobileLookState.pointerId) return;
+      mobileLookState.pointerId = null;
+      lookZone.classList.remove("active");
+    };
+    lookZone.addEventListener("pointerup", clearLook);
+    lookZone.addEventListener("pointercancel", clearLook);
   }
 
   function render() {
     const canOpen = !!String(getProjectId?.() || "").trim();
     launcher.hidden = active;
-    launcher.disabled = !canOpen;
-    launcher.title = canOpen ? "Open the Workshop desktop scene" : "Open a project first";
+    launcher.disabled = !canOpen && !canPreviewWithoutProject();
+    launcher.title = canOpen ? "Open the workshop room" : (canPreviewWithoutProject() ? "Open the workshop preview room" : "Open a project first");
     root.hidden = !active;
     root.classList.toggle("hidden", !active);
-    reticle.hidden = !(active && pointerLocked);
-    reticle.classList.toggle("hidden", !(active && pointerLocked));
+    reticle.hidden = !(active && usesCenteredReticle());
+    reticle.classList.toggle("hidden", !(active && usesCenteredReticle()));
     if (!active) return;
-    const projectName = workshopState.project_label || currentProjectName();
+    const projectName = mobileRoomTitle();
+    const mobileMode = isMobileWorkshop();
     root.innerHTML = `
-      <div class="workshop-shell-card">
+      <div class="workshop-shell-card${mobileMode ? " workshop-shell-card--mobile" : ""}">
         <div class="workshop-shell-head">
           <div>
             <span class="workshop-kicker">Workshop</span>
             <h2>${esc(projectName)}</h2>
-            <p>Desktop scene active · Route ${esc(WORKSHOP_HASH)}</p>
+            <p>${esc(mobileMode ? mobileRouteCopy() : (previewMode ? "Preview room active" : `Live room active · Route ${WORKSHOP_HASH}`))}</p>
           </div>
           <div class="workshop-shell-actions">
-            <button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
+            ${mobileMode
+              ? `${!isSignedIn() ? `<button type="button" class="btn secondary btn-compact" data-workshop-open-login>Log in</button>` : ""}
+                 <button type="button" class="btn secondary btn-compact" data-workshop-exit>Studio</button>`
+              : `<button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-exit>Back to Studio</button>
+              `}
           </div>
         </div>
         <div class="workshop-top-tabs" role="tablist" aria-label="Workshop">
-          <button type="button" class="workshop-top-tab${activeTopTab === "editor" ? " active" : ""}" data-workshop-top-tab="editor">Editor</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "projects" ? " active" : ""}" data-workshop-top-tab="projects">Project</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "lab" ? " active" : ""}" data-workshop-top-tab="lab">Studio Lab</button>
+          ${activeTopTabMeta().map((tab) => `
+            <button
+              type="button"
+              class="workshop-top-tab${activeTopTab === tab.id ? " active" : ""}"
+              data-workshop-top-tab="${esc(tab.id)}"
+              aria-selected="${activeTopTab === tab.id ? "true" : "false"}"
+            >${esc(tab.label)}</button>
+          `).join("")}
         </div>
-        ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
-        ${renderBody()}
-        <div class="workshop-footnote">
+        ${mobileMode ? "" : renderSubtabs()}
+        ${mobileMode ? "" : (workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : "")}
+        ${mobileMode ? renderMobileHud() : renderPanelBody()}
+        <div class="workshop-footnote${mobileMode ? " workshop-footnote--mobile" : ""}">
+          ${mobileMode ? `
+          <span>Left stick move</span>
+          <span>Right drag look</span>
+          <span>Bottom bar actions</span>
+          ` : `
           <span>WASD walk</span>
           <span>Mouse look</span>
           <span>Click to place</span>
           <span>Drag handles to move</span>
+          `}
         </div>
       </div>
     `;
@@ -1029,7 +1338,7 @@ export function createWorkshopMode(options = {}) {
 
   function handlePointerDown(event) {
     if (!active) return;
-    if (event.target?.closest?.(".workshop-shell")) return;
+    if (event.target?.closest?.(".workshop-shell, .workshop-mobile-panel, .workshop-mobile-thumbbar, .workshop-mobile-stick, .workshop-mobile-look-zone")) return;
     lastPointerEvent = event;
     updatePointerFromEvent(event);
     if (pointerLocked) {
@@ -1064,7 +1373,7 @@ export function createWorkshopMode(options = {}) {
 
   function handleCanvasClick(event) {
     if (!active) return;
-    if (event.target?.closest?.(".workshop-shell")) return;
+    if (event.target?.closest?.(".workshop-shell, .workshop-mobile-panel, .workshop-mobile-thumbbar, .workshop-mobile-stick, .workshop-mobile-look-zone")) return;
     if (pointerLocked) {
       if (activeTopTab === "editor" && activeEditorTab === "place") placeSelectedPreset();
       event.preventDefault();
@@ -1089,6 +1398,7 @@ export function createWorkshopMode(options = {}) {
       event.stopImmediatePropagation();
       return;
     }
+    if (isMobileWorkshop()) return;
     if (activeTopTab === "editor" && activeEditorTab === "place") {
       placeSelectedPreset();
       event.preventDefault();
@@ -1139,22 +1449,27 @@ export function createWorkshopMode(options = {}) {
 
   async function enter() {
     if (active) return;
-    if (!String(getProjectId?.() || "").trim()) {
+    if (!String(getProjectId?.() || "").trim() && !canPreviewWithoutProject()) {
       setStatus?.("error", "Open a project before entering the Workshop.");
       return;
     }
     clearStudioSelection?.();
+    window.Render3DMobileStudio?.closePanels?.();
+    window.Render3DMobileChrome?.closeMobileToolsPopup?.();
     controls.enabled = false;
     active = true;
     activeTopTab = "editor";
     activeEditorTab = "place";
     lastDebugResult = null;
+    mobilePanelOpen = false;
+    mobileGateDismissed = false;
+    resetMobileHudState();
     document.body.classList.add("workshop-mode-active");
     enterCameraPose();
     showWorkshopRoom();
     await loadWorkshopState(true);
     updateRoute(true);
-    setStatus?.("ok", "Workshop desktop mode active.");
+    setStatus?.("ok", previewMode ? "Workshop preview active." : "Workshop room active.");
     render();
   }
 
@@ -1167,6 +1482,10 @@ export function createWorkshopMode(options = {}) {
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
     selectedItemId = "";
+    previewMode = false;
+    mobilePanelOpen = false;
+    mobileGateDismissed = false;
+    resetMobileHudState();
     controls.enabled = true;
     hideWorkshopRoom();
     restoreCameraPose();
@@ -1180,9 +1499,17 @@ export function createWorkshopMode(options = {}) {
     const now = performance.now();
     const dt = lastFrameMs ? Math.min(0.05, (now - lastFrameMs) / 1000) : 0.016;
     lastFrameMs = now;
-    const speed = keysDown.has("ShiftLeft") || keysDown.has("ShiftRight") ? 6.2 : 3.2;
-    const forward = (keysDown.has("KeyW") || keysDown.has("ArrowUp") ? 1 : 0) - (keysDown.has("KeyS") || keysDown.has("ArrowDown") ? 1 : 0);
-    const strafe = (keysDown.has("KeyD") || keysDown.has("ArrowRight") ? 1 : 0) - (keysDown.has("KeyA") || keysDown.has("ArrowLeft") ? 1 : 0);
+    const speed = (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight") ? 6.2 : 3.2) * (isMobileWorkshop() ? 1.08 : 1);
+    const forward = clamp(
+      ((keysDown.has("KeyW") || keysDown.has("ArrowUp") ? 1 : 0) - (keysDown.has("KeyS") || keysDown.has("ArrowDown") ? 1 : 0)) + mobileMoveState.y,
+      -1,
+      1,
+    );
+    const strafe = clamp(
+      ((keysDown.has("KeyD") || keysDown.has("ArrowRight") ? 1 : 0) - (keysDown.has("KeyA") || keysDown.has("ArrowLeft") ? 1 : 0)) + mobileMoveState.x,
+      -1,
+      1,
+    );
     if (forward || strafe) {
       const moveForward = new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0);
       const moveRight = new THREE.Vector3(-Math.sin(lookState.yaw), Math.cos(lookState.yaw), 0);
@@ -1194,7 +1521,7 @@ export function createWorkshopMode(options = {}) {
     camera.position.z = 1.72;
     applyLook();
     controls.target.copy(camera.position).add(new THREE.Vector3(Math.cos(lookState.yaw), Math.sin(lookState.yaw), 0));
-    raycaster.setFromCamera(pointerLocked ? new THREE.Vector2(0, 0) : pointerNdc, camera);
+    raycaster.setFromCamera(usesCenteredReticle() ? centeredPointerNdc : pointerNdc, camera);
     updatePreviewMesh();
   }
 
@@ -1208,7 +1535,7 @@ export function createWorkshopMode(options = {}) {
     if (active) {
       workshopState = normalizeWorkshopState(workshopState, currentProjectName());
       loadWorkshopState(true);
-    } else if (window.location.hash === WORKSHOP_HASH && nextId) {
+    } else if (shouldAutoEnterWorkshop() && (nextId || canPreviewWithoutProject())) {
       void enter();
     } else {
       render();
@@ -1230,7 +1557,7 @@ export function createWorkshopMode(options = {}) {
     render();
   });
   window.addEventListener("hashchange", () => {
-    if (window.location.hash === WORKSHOP_HASH) {
+    if (shouldAutoEnterWorkshop()) {
       if (!active) void enter();
       return;
     }
@@ -1239,7 +1566,7 @@ export function createWorkshopMode(options = {}) {
   transformControls.addEventListener("objectChange", syncTransformSelection);
 
   render();
-  if (window.location.hash === WORKSHOP_HASH && String(getProjectId?.() || "").trim()) {
+  if (shouldAutoEnterWorkshop() && (String(getProjectId?.() || "").trim() || canPreviewWithoutProject())) {
     void enter();
   }
 
