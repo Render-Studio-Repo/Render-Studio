@@ -464,7 +464,15 @@ export function createWorkshopMode(options = {}) {
     plane.rotation.x = Math.PI / 2;
     plane.material = new THREE.MeshBasicMaterial({ map: texture });
     plane.material.toneMapped = false;
-    tvScreenById.set(item.id, { canvas, ctx, texture, slot: item.streamSlot || "", label: item.label || "TV" });
+    tvScreenById.set(item.id, {
+      canvas,
+      ctx,
+      texture,
+      slot: item.streamSlot || "",
+      label: item.label || "TV",
+      agentId: item.metadata?.agentId || "",
+      todo: item.metadata?.todo || "",
+    });
   }
 
   function buildItemMesh(item) {
@@ -500,27 +508,38 @@ export function createWorkshopMode(options = {}) {
       label.position.set(0, 0, (dims.height || 0.74) + 0.48);
       rootMesh.add(label);
     } else if (item.type === "tv") {
+      const screenCenterZ = item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight;
+      const screenHeight = dims.height || 0.86;
+      const standBaseZ = item.metadata?.mount === "desk" ? WORKSHOP_DIMENSIONS_M.desk.height : 0;
+      const standHeight = Math.max(0.18, screenCenterZ - standBaseZ - (screenHeight / 2) + 0.08);
+      const standFootprint = (dims.width || 1.4) <= 0.7 ? WORKSHOP_DIMENSIONS_M.deskMonitor.standFootprint : WORKSHOP_DIMENSIONS_M.tv.standFootprint;
       const stand = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.06, item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight, 18),
+        new THREE.CylinderGeometry(0.026, 0.034, standHeight, 18),
         new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.6, metalness: 0.2 }),
       );
-      stand.position.z = (item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight) / 2;
+      stand.position.z = standBaseZ + (standHeight / 2);
       rootMesh.add(stand);
+      const standBase = new THREE.Mesh(
+        new THREE.CylinderGeometry(standFootprint / 2, standFootprint / 2, 0.03, 18),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.56, metalness: 0.2 }),
+      );
+      standBase.position.z = standBaseZ + 0.015;
+      rootMesh.add(standBase);
       const bezel = new THREE.Mesh(
         new THREE.BoxGeometry((dims.width || 1.4) + 0.08, dims.depth || 0.12, (dims.height || 0.86) + 0.08),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.32, metalness: 0.18 }),
       );
-      bezel.position.z = item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight;
+      bezel.position.z = screenCenterZ;
       rootMesh.add(bezel);
       const screen = new THREE.Mesh(
         new THREE.PlaneGeometry(dims.width || 1.4, dims.height || 0.86),
         new THREE.MeshBasicMaterial({ color: 0x0f172a }),
       );
-      screen.position.set(0, -((dims.depth || 0.12) / 2 + 0.005), item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight);
+      screen.position.set(0, -((dims.depth || 0.12) / 2 + 0.005), screenCenterZ);
       rootMesh.add(screen);
       registerTvScreen(item, screen);
       const label = createLabelPlane(item.label || "TV", { w: 1.3, h: 0.34 });
-      label.position.set(0, 0.16, (item.pose?.z || WORKSHOP_DIMENSIONS_M.tv.standHeight) + (dims.height || 0.86) / 2 + 0.34);
+      label.position.set(0, 0.16, screenCenterZ + (screenHeight / 2) + 0.34);
       rootMesh.add(label);
     } else if (item.type === "robot-bay") {
       const marker = createRingMarker(dims.width || 4.2, dims.depth || 3.0, 0x3b82f6);
@@ -872,7 +891,7 @@ export function createWorkshopMode(options = {}) {
     const queueCount = (workshopState.queue || []).length;
     const pendingApprovals = (workshopState.approvals || []).filter((item) => String(item.status || "").toLowerCase() !== "approved").length;
     tvScreenById.forEach((entry) => {
-      const { canvas, ctx, texture, slot, label } = entry;
+      const { canvas, ctx, texture, slot, label, agentId, todo } = entry;
       const w = canvas.width;
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
@@ -888,7 +907,17 @@ export function createWorkshopMode(options = {}) {
       ctx.fillText(label, 46, 72);
       ctx.fillStyle = "#e2e8f0";
       ctx.font = "600 26px Inter, sans-serif";
-      if (slot === "openarm-telemetry") {
+      if (slot === "sales-interactions" || agentId === "sales") {
+        ctx.fillText("Mock CRM panel", 52, 126);
+        ctx.fillText("Recent deal: Midwest pilot", 52, 182);
+        ctx.fillText("Outreach: 8 touches this week", 52, 226);
+        ctx.fillText("Summary: Needs workshop demo", 52, 270);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillRect(52, 314, 328, 18);
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "600 21px Inter, sans-serif";
+        ctx.fillText(todo || "TODO: connect live CRM", 52, 380);
+      } else if (slot === "openarm-telemetry") {
         const sweep = (Math.sin(now / 1200) * 18 + 42).toFixed(1);
         const load = (Math.cos(now / 1500) * 8 + 54).toFixed(1);
         const fps = (29 + ((now / 100) % 4)).toFixed(0);
@@ -985,7 +1014,13 @@ export function createWorkshopMode(options = {}) {
           <strong>${esc(item.label)}</strong>
           <span class="workshop-pill">${esc(item.streamSlot || "stream")}</span>
         </div>
-        <p>${esc(item.streamSlot === "openarm-telemetry" ? "Mock OpenArm telemetry feed." : "Queue and room activity feed.")}</p>
+        <p>${esc(
+          item.streamSlot === "sales-interactions"
+            ? "Mock Sales interactions panel for the Sales seat. TODO: hook up HubSpot or live CRM."
+            : item.streamSlot === "openarm-telemetry"
+            ? "Mock OpenArm telemetry feed."
+            : "Queue and room activity feed."
+        )}</p>
       </article>
     `).join("");
   }
@@ -1239,7 +1274,7 @@ export function createWorkshopMode(options = {}) {
         <div class="workshop-footnote">
           <span>1 unit = 1 meter</span>
           <span>Click placed items to move or rotate</span>
-          <span>PM wrap monitor + Sales monitor are live shell surfaces</span>
+          <span>PM wrap monitor + Sales agent monitor are live shell surfaces</span>
           <span>Route ${esc(WORKSHOP_HASH)}</span>
         </div>
       </div>

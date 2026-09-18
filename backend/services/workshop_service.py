@@ -49,6 +49,12 @@ WORKSHOP_PARTNER_OPTIONS = [
         "summary": "Build partner for code and editor updates.",
     },
     {
+        "id": "sales",
+        "label": "Sales",
+        "kind": "agent",
+        "summary": "Tracks recent deals, outreach, and CRM follow-up.",
+    },
+    {
         "id": "projects-manager",
         "label": "Projects Manager",
         "kind": "agent",
@@ -86,6 +92,13 @@ WORKSHOP_AGENT_SEATS = [
         "id": "code-bot",
         "label": "Code Bot",
         "deskLabel": "Code Bot desk",
+        "role": "agent",
+        "status": "Ready",
+    },
+    {
+        "id": "sales",
+        "label": "Sales",
+        "deskLabel": "Sales desk",
         "role": "agent",
         "status": "Ready",
     },
@@ -210,6 +223,14 @@ def _seed_agents() -> list[dict[str, Any]]:
             "status": "Ready",
             "tasks": [
                 {"id": "code-bot-ide", "title": "Write notes into the collab editor", "status": "queued"},
+            ],
+        },
+        {
+            "id": "sales",
+            "name": "Sales",
+            "status": "Ready",
+            "tasks": [
+                {"id": "sales-contacts", "title": "Show recent deals and outreach follow-up", "status": "queued"},
             ],
         },
         {

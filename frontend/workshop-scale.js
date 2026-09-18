@@ -29,6 +29,13 @@ export const WORKSHOP_DIMENSIONS_M = {
     standHeight: 1.45,
     standFootprint: 0.48,
   },
+  deskMonitor: {
+    width: 0.6,
+    depth: 0.08,
+    height: 0.34,
+    standHeight: 1.08,
+    standFootprint: 0.22,
+  },
   robotBay: {
     width: 4.2,
     depth: 3.0,
@@ -58,6 +65,12 @@ export const WORKSHOP_PARTNER_OPTIONS = [
     label: "Code Bot",
     kind: "agent",
     summary: "Build partner for code and editor updates.",
+  },
+  {
+    id: "sales",
+    label: "Sales",
+    kind: "agent",
+    summary: "Tracks recent deals, outreach, and CRM follow-up.",
   },
   {
     id: "projects-manager",
@@ -98,6 +111,13 @@ export const WORKSHOP_AGENT_SEATS = [
     id: "code-bot",
     label: "Code Bot",
     deskLabel: "Code Bot desk",
+    role: "agent",
+    status: "Ready",
+  },
+  {
+    id: "sales",
+    label: "Sales",
+    deskLabel: "Sales desk",
     role: "agent",
     status: "Ready",
   },
@@ -240,17 +260,19 @@ export function createWorkshopObject({
 export function buildDefaultWorkshopLayout() {
   const desk = WORKSHOP_DIMENSIONS_M.desk;
   const tv = WORKSHOP_DIMENSIONS_M.tv;
+  const deskMonitor = WORKSHOP_DIMENSIONS_M.deskMonitor;
   const robotBay = WORKSHOP_DIMENSIONS_M.robotBay;
   const wiringBay = WORKSHOP_DIMENSIONS_M.wiringBay;
   const djZone = WORKSHOP_DIMENSIONS_M.djZone;
   const seatPositions = [
-    { x: -5.2, y: -2.6, yaw: 0 },
-    { x: 0, y: -2.6, yaw: 0 },
-    { x: 5.2, y: -2.6, yaw: 0 },
-    { x: -5.2, y: 2.6, yaw: Math.PI },
-    { x: 0, y: 2.6, yaw: Math.PI },
-    { x: 5.2, y: 2.6, yaw: Math.PI },
-    { x: 0, y: 5.0, yaw: Math.PI },
+    { x: -6.2, y: -2.9, yaw: 0 },
+    { x: -2.1, y: -2.9, yaw: 0 },
+    { x: 2.1, y: -2.9, yaw: 0 },
+    { x: 6.2, y: -2.9, yaw: 0 },
+    { x: -6.2, y: 2.9, yaw: Math.PI },
+    { x: -2.1, y: 2.9, yaw: Math.PI },
+    { x: 2.1, y: 2.9, yaw: Math.PI },
+    { x: 6.2, y: 2.9, yaw: Math.PI },
   ];
 
   const objects = WORKSHOP_AGENT_SEATS.map((seat, index) => createWorkshopObject({
@@ -279,14 +301,16 @@ export function buildDefaultWorkshopLayout() {
       pose: { x: 0, y: 6.15, z: tv.standHeight, yaw: Math.PI },
       dimensions: { width: tv.width, depth: tv.depth, height: tv.height },
       streamSlot: "openarm-telemetry",
+      metadata: { panelType: "pm-wrap", agentId: "projects-manager" },
     }),
     createWorkshopObject({
-      id: "tv-sales",
+      id: "tv-sales-desk",
       type: "tv",
-      label: "Sales monitor",
-      pose: { x: -6.1, y: 0.2, z: tv.standHeight, yaw: Math.PI / 2 },
-      dimensions: { width: tv.width, depth: tv.depth, height: tv.height },
-      streamSlot: "room-queue",
+      label: "Sales agent monitor",
+      pose: { x: 2.1, y: -2.62, z: deskMonitor.standHeight, yaw: 0 },
+      dimensions: { width: deskMonitor.width, depth: deskMonitor.depth, height: deskMonitor.height },
+      streamSlot: "sales-interactions",
+      metadata: { panelType: "sales-interactions", agentId: "sales", mount: "desk", todo: "Hook up HubSpot or live CRM feed." },
     }),
     createWorkshopObject({
       id: "robot-bay-main",
@@ -351,6 +375,11 @@ export function normalizeWorkshopLayout(input) {
       });
     })
     : fallback.objects;
+  const existingIds = new Set(objects.map((item) => item.id));
+  const mergedObjects = [
+    ...objects,
+    ...fallback.objects.filter((item) => !existingIds.has(item.id)),
+  ];
 
   return {
     version: WORKSHOP_LAYOUT_VERSION,
@@ -360,7 +389,7 @@ export function normalizeWorkshopLayout(input) {
       scene_unit_m: WORKSHOP_SCENE_UNIT_METERS,
     },
     warehouse: { ...WORKSHOP_DIMENSIONS_M.warehouse, ...(value.warehouse || {}) },
-    objects,
+    objects: mergedObjects,
   };
 }
 
