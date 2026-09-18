@@ -933,6 +933,31 @@ export function createWorkshopMode(options = {}) {
     `).join("");
   }
 
+  function renderMonitorHighlights() {
+    const highlightIds = ["projects-manager", "sales"];
+    return highlightIds.map((deskId) => {
+      const desk = WORKSHOP_DESKS.find((entry) => entry.id === deskId);
+      if (!desk) return "";
+      return `
+        <article class="workshop-card workshop-monitor-highlight">
+          <div class="workshop-card-head">
+            <strong>${esc(desk.label)}</strong>
+            <span class="workshop-pill">${esc(desk.zone)}</span>
+          </div>
+          <p>${esc(desk.panel?.title || "Monitor highlight")}</p>
+          <div class="workshop-monitor-list">
+            ${(desk.monitors || []).map((monitor) => `
+              <div class="workshop-monitor-chip">
+                <strong>${esc(monitor.title)}</strong>
+                <span>${esc((monitor.lines || []).join(" · "))}</span>
+              </div>
+            `).join("")}
+          </div>
+        </article>
+      `;
+    }).join("");
+  }
+
   function renderGodView() {
     const partnerSeat = getWorkshopSeat(partnerSeatId);
     const voiceSeat = getWorkshopSeat(voiceSeatId);
@@ -969,6 +994,10 @@ export function createWorkshopMode(options = {}) {
           <h3 class="workshop-section-title">Projects</h3>
           ${projectCards(workshopState.projects?.create || [], "create")}
           ${projectCards(workshopState.projects?.train || [], "train")}
+        </section>
+        <section class="workshop-section-block">
+          <h3 class="workshop-section-title">Monitor highlights</h3>
+          ${renderMonitorHighlights()}
         </section>
         <section class="workshop-section-block">
           <h3 class="workshop-section-title">Approvals</h3>
