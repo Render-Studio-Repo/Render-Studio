@@ -52,6 +52,7 @@ from backend.services import (
     workspace_log_service,
     ai_credit_service,
     wiring_debug_job_service,
+    workshop_service,
 )
 from backend.services import kernel_bridge
 from backend.services.design_service import is_custom_sketch_structural_request
@@ -1004,6 +1005,12 @@ class WiringDiagnoseRequest(BaseModel):
     speed: str = "fast"
     ai_key_id: str | None = None
     ai_key_source: str | None = None
+
+
+class WorkshopDebugRequest(BaseModel):
+    row_id: str = Field(..., min_length=1, max_length=120)
+    label: str | None = Field(default=None, max_length=200)
+    detail: str | None = Field(default=None, max_length=1000)
 
 
 class RiggingSaveRequest(BaseModel):
@@ -17528,6 +17535,48 @@ def wiring_diagnose_photo_cancel(
 ):
     path = _require_project_read(user, project_id)
     return wiring_debug_job_service.request_cancel(path)
+
+
+@app.get("/api/projects/{project_id}/workshop")
+def get_project_workshop_state(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project_read(user, project_id)
+    return workshop_service.get_state(path)
+
+
+@app.post("/api/projects/{project_id}/workshop/approvals/{item_id}/approve")
+def approve_project_workshop_item(
+    project_id: str,
+    item_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        workshop_service.approve(path, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"workshop": workshop_service.get_state(path)}
+
+
+@app.post("/api/projects/{project_id}/workshop/debug")
+async def run_project_workshop_debug(
+    project_id: str,
+    body: WorkshopDebugRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    result = await workshop_service.run_debug(
+        path,
+        body.row_id,
+        label=body.label or "",
+        detail=body.detail or "",
+    )
+    return {
+        "result": result,
+        "workshop": workshop_service.get_state(path),
+    }
 
 
 @app.post("/api/projects/{project_id}/design/demo/gear-train")

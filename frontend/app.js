@@ -76,7 +76,7 @@ import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
 import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
 import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
-import { createViewportXR } from "./viewport-xr.js?v=20260731-xr-robots2";
+import { createViewportXR } from "./viewport-xr.js?v=20260918-workshop-vr";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";
 import { createAuthUI, authHeaders, getToken, getStoredUser } from "./auth.js?v=20260723-invite-claim";
@@ -146,6 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3141,6 +3142,56 @@ transformControls.addEventListener("objectChange", () => {
 });
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
+
+const workshopMode = createWorkshopMode({
+  viewportEl: viewport,
+  renderer,
+  scene,
+  camera,
+  controls,
+  transformControls,
+  getMeshRoot: () => {
+    try {
+      const root = projectAssembly?.getRoot?.();
+      if (root && (projectAssembly?.count?.() || 0) > 0) return root;
+      return currentMesh || root || null;
+    } catch {
+      return currentMesh || null;
+    }
+  },
+  getProjectId: () => projectId,
+  getProjectName: () => {
+    const current = (allProjects || []).find((entry) => entry.id === projectId);
+    return current?.name || projectId || "Project";
+  },
+  api,
+  setStatus: setEditStatus,
+  toggleDictation: (targetId, btn) => togglePromptDictation(targetId, btn),
+  setStudioPromptText: (text, { submit = false } = {}) => {
+    const input = document.getElementById("prompt-input");
+    if (!input) {
+      setEditStatus("error", "AI prompt field is not available.");
+      return { ok: false, error: "prompt missing" };
+    }
+    input.value = String(text || "");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.focus?.({ preventScroll: true });
+    if (!submit) {
+      setEditStatus("ok", "Copied the workshop voice prompt into AI.");
+      return { ok: true };
+    }
+    void submitPromptFromXr();
+    setEditStatus("ok", "Sent the workshop voice prompt to AI.");
+    return { ok: true };
+  },
+  clearStudioSelection: () => {
+    try {
+      objectTools?.clearSelection?.({ detachGizmo: true });
+      transformControls.detach();
+      gizmoPanel?.hide?.();
+    } catch (_) {}
+  },
+});
 
 /** XR Folders tab: personal + shared folder roots, then projects inside a folder. */
 function buildXrFolderBrowserItems(folderId = null) {
@@ -14810,8 +14861,11 @@ const promptTargetBodyCache = new Map();
 
 function animate() {
   const xrOn = Boolean(renderer?.xr?.isPresenting || viewportXR?.isPresenting?.());
-  if (!xrOn) {
+  const workshopOn = !!workshopMode?.isActive?.();
+  if (!xrOn && !workshopOn) {
     controls.update();
+  } else if (workshopOn) {
+    workshopMode.update();
   } else {
     viewportXR.update();
   }
@@ -24063,6 +24117,9 @@ async function loadProject(id) {
     // whatever project we open next during the async load gap.
     saveActiveModelPromptState();
     const prevProjectId = projectId;
+    if (prevProjectId !== id && workshopMode?.isActive?.()) {
+      workshopMode.exit();
+    }
     prefetchWiringForProject(id);
     projectId = id;
     if (prevProjectId !== id) {
@@ -24120,6 +24177,7 @@ async function loadProject(id) {
     if (loadGen !== loadProjectGeneration) return;
 
   setProjectHeader(data.name, id);
+    workshopMode.setProjectContext?.();
     syncRemixButtonVisibility();
     timelineData = data.timeline;
   const cur = timelineData?.current_index ?? -1;

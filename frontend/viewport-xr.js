@@ -4081,15 +4081,15 @@ export function createViewportXR(opts) {
       buttonEl.classList.toggle("hidden", !supported);
       buttonEl.disabled = !supported;
       const span = buttonEl.querySelector("span");
-      if (span) span.textContent = sessionMode === "immersive-ar" ? "AR" : "VR";
+      if (span) span.textContent = "VR";
       if (supported && !buttonBound) {
         buttonBound = true;
         buttonEl.addEventListener("click", (e) => {
           e.preventDefault();
           // Require a model
           if (!getLiveMesh()) {
-            buttonEl.title = "Load a CAD model first, then enter AR";
-            console.warn("[viewport-xr] load a model before AR");
+            buttonEl.title = "Load a CAD model first, then enter VR";
+            console.warn("[viewport-xr] load a model before VR");
           }
           toggle().catch((err) => console.warn("[viewport-xr]", err));
         });
