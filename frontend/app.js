@@ -120,7 +120,7 @@ import {
 import { createDxfViewer } from "./dxf-viewer.js?v=20260714-doc-tabs";
 import { createReferenceFilesViewer, isReferenceFilename } from "./reference-files.js?v=20260730-ref-share";
 import { createProjectAssembly, filesToBrowserComponents } from "./project-assembly.js?v=20260725-bright-cad";
-import { createWorkspaceModes } from "./workspace-modes.js?v=20260724-pick-row2";
+import { createWorkspaceModes } from "./workspace-modes.js?v=20260918-workshop-v2";
 import { createRoboticSimulator } from "./robotic-simulator.js?v=20260723-zup-floor4";
 import { createWiringSimulator } from "./wiring-simulator.js?v=20260719-empty-prefetch-retry";
 import { createWiringDebugPanel } from "./wiring-photo-debug.js?v=20260715-diagnose-status";
@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v2";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3143,6 +3143,7 @@ transformControls.addEventListener("objectChange", () => {
 // Add only the gizmo helper — adding TransformControls itself to the scene causes runaway rotation
 scene.add(transformControls.getHelper());
 
+let workspaceModes = null;
 const workshopMode = createWorkshopMode({
   viewportEl: viewport,
   renderer,
@@ -3190,6 +3191,10 @@ const workshopMode = createWorkshopMode({
       transformControls.detach();
       gizmoPanel?.hide?.();
     } catch (_) {}
+  },
+  requestModeChange: (mode) => {
+    if (!workspaceModes || !mode) return;
+    workspaceModes.setMode(mode);
   },
 });
 
@@ -23005,6 +23010,8 @@ function applyWorkspaceMode(mode) {
   const wiringWorkspace = document.getElementById("wiring-workspace");
   app?.classList.toggle("wiring-mode", mode === "wiring");
   document.body.classList.toggle("wiring-mode", mode === "wiring");
+  const leavingWorkshop = workshopMode?.isActive?.() && mode !== "workshop";
+  if (leavingWorkshop) workshopMode.exit({ keepRoute: true });
   if (mode === "wiring") {
     exitSketchMode();
     exitRiggingMode();
@@ -23015,6 +23022,20 @@ function applyWorkspaceMode(mode) {
     wiringPromptHistory.setTab("compose");
     enterWiringMode();
     wiringSim.show();
+    window.dispatchEvent(new Event("resize"));
+  } else if (mode === "workshop") {
+    exitSketchMode();
+    exitRiggingMode();
+    exitArchitectMode();
+    exitCanvasTab();
+    catalogPanel?.close?.();
+    texturePanel?.close?.();
+    wiringWorkspace?.classList.add("hidden");
+    clearWiringPrompts();
+    wiringSim.hide();
+    setRightTab("prompt");
+    promptHistory.setTab("compose");
+    void workshopMode.enter();
     window.dispatchEvent(new Event("resize"));
   } else {
     catalogPanel?.close?.();
@@ -23050,7 +23071,7 @@ function applyWorkspaceMode(mode) {
   }
 }
 
-const workspaceModes = createWorkspaceModes({
+workspaceModes = createWorkspaceModes({
   barEl: document.getElementById("workspace-mode-btn"),
   menuEl: document.getElementById("workspace-mode-menu"),
   tabsEl: document.getElementById("workspace-tabs"),

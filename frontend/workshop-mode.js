@@ -1,7 +1,18 @@
 import * as THREE from "three";
+import {
+  WORKSHOP_DESKS,
+  buildWorkshopLayoutExport,
+  createWorkshopDeskScene,
+  getWorkshopSeat,
+  renderWorkshopDeskCards,
+  renderWorkshopSeatPicker,
+  workshopMockAgents,
+  workshopUsesLegacyAgents,
+} from "./workshop-desks.js?v=20260918-workshop-v2";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
+const SESSION_LS_PREFIX = "render3d:workshop-session:v1:";
 const PLACE_PRESETS = [
   {
     id: "part-bin",
@@ -59,64 +70,41 @@ function storageKey(projectId) {
   return `${PLACED_LS_PREFIX}${projectId || "none"}`;
 }
 
+function sessionStorageKey(projectId) {
+  return `${SESSION_LS_PREFIX}${projectId || "none"}`;
+}
+
 function seededWorkshopState(projectName = "Project") {
   return {
     project_label: projectName,
     agents_source: "mock",
-    agents: [
-      {
-        id: "floor-lead",
-        name: "Floor lead",
-        status: "In room",
-        tasks: [
-          { id: "prep-bay", title: "Stage the print bay", status: "active" },
-          { id: "material-check", title: "Check incoming materials", status: "queued" },
-        ],
-      },
-      {
-        id: "printer-tech",
-        name: "Printer tech",
-        status: "Watching",
-        tasks: [
-          { id: "watch-queue", title: "Watch overnight print queue", status: "active" },
-          { id: "plate-swap", title: "Prepare next plate swap", status: "queued" },
-        ],
-      },
-      {
-        id: "review-assistant",
-        name: "Review assistant",
-        status: "Ready",
-        tasks: [
-          { id: "qa-handoff", title: "Collect approval notes", status: "ready" },
-        ],
-      },
-    ],
+    agents: workshopMockAgents(),
     projects: {
       create: [
         {
           id: "create-layout",
-          title: `${projectName} setup`,
-          summary: "Lay out the printer bay, prep cart, and handoff area for this build.",
+          title: `${projectName} desk layout`,
+          summary: "Place the operator desks, voice booth, and handoff monitors around the room.",
           status: "upcoming",
         },
         {
-          id: "create-fixture",
-          title: "Fixture check",
-          summary: "Place a simple fixture stand beside the active workbench for fast test fits.",
+          id: "create-receipts",
+          title: "Receipt lane",
+          summary: "Keep the fleet receipt, PR URL, and harness wake note visible beside the room.",
           status: "queued",
         },
       ],
       train: [
         {
           id: "train-ops",
-          title: "Operator walkthrough",
-          summary: "Train the room on first article checks and next-step handoff language.",
+          title: "Desk handoff walkthrough",
+          summary: "Teach the room who owns approvals, sales follow-ups, CAD scale, and voice prompts.",
           status: "upcoming",
         },
         {
-          id: "train-review",
-          title: "Review flow",
-          summary: "Teach the room which jobs can ship and which need a second look.",
+          id: "train-sketchup",
+          title: "SketchUp to CAD board",
+          summary: "Keep the PM teach board current for architecture intake and CAD conversion.",
           status: "planned",
         },
       ],
@@ -167,10 +155,13 @@ function normalizeWorkshopState(input, projectName = "Project") {
   const value = input && typeof input === "object" ? input : {};
   const projects = value.projects && typeof value.projects === "object" ? value.projects : {};
   const debug = value.debug && typeof value.debug === "object" ? value.debug : {};
+  const agents = Array.isArray(value.agents) && value.agents.length
+    ? (workshopUsesLegacyAgents(value.agents) ? seed.agents : value.agents)
+    : seed.agents;
   return {
     project_label: String(value.project_label || projectName || "Project"),
     agents_source: value.agents_source === "live" ? "live" : "mock",
-    agents: Array.isArray(value.agents) && value.agents.length ? value.agents : seed.agents,
+    agents,
     projects: {
       create: Array.isArray(projects.create) && projects.create.length ? projects.create : seed.projects.create,
       train: Array.isArray(projects.train) && projects.train.length ? projects.train : seed.projects.train,
@@ -282,6 +273,7 @@ export function createWorkshopMode(options = {}) {
     toggleDictation,
     setStudioPromptText,
     clearStudioSelection,
+    requestModeChange,
   } = options;
 
   if (!viewportEl || !renderer || !scene || !camera || !controls || !transformControls) {
@@ -405,6 +397,9 @@ export function createWorkshopMode(options = {}) {
   previewGlow.visible = false;
   roomGroup.add(previewGlow);
 
+  const deskScene = createWorkshopDeskScene(THREE);
+  roomGroup.add(deskScene.group);
+
   const launcher = document.createElement("button");
   launcher.type = "button";
   launcher.className = "workshop-enter-affordance";
@@ -443,10 +438,12 @@ export function createWorkshopMode(options = {}) {
   let activeProjectId = "";
   let loadedProjectId = "";
   let selectedPlacePreset = PLACE_PRESETS[0].id;
-  let activeTopTab = "editor";
+  let activeTopTab = "god";
   let activeEditorTab = "place";
-  let activeProjectTab = "create";
-  let activeLabTab = "agents";
+  let selectedDeskId = WORKSHOP_DESKS[0]?.id || "sam";
+  let partnerSeatId = "sam";
+  let voiceSeatId = "astra";
+  let showSeatPicker = false;
   let selectedItemId = "";
   let workshopError = "";
   let previewPoint = null;
@@ -501,6 +498,33 @@ export function createWorkshopMode(options = {}) {
     }
   }
 
+  function loadSeatSession(projectId) {
+    const fallback = { partnerSeatId: "sam", voiceSeatId: "astra" };
+    if (!projectId) return { ...fallback };
+    try {
+      const raw = localStorage.getItem(sessionStorageKey(projectId));
+      const parsed = raw ? JSON.parse(raw) : {};
+      return {
+        partnerSeatId: getWorkshopSeat(parsed?.partnerSeatId || fallback.partnerSeatId).id,
+        voiceSeatId: getWorkshopSeat(parsed?.voiceSeatId || fallback.voiceSeatId).id,
+      };
+    } catch {
+      return { ...fallback };
+    }
+  }
+
+  function saveSeatSession() {
+    if (!activeProjectId) return;
+    try {
+      localStorage.setItem(sessionStorageKey(activeProjectId), JSON.stringify({
+        partnerSeatId,
+        voiceSeatId,
+      }));
+    } catch {
+      /* optional */
+    }
+  }
+
   function clearPlacedScene() {
     for (const child of [...placedGroup.children]) {
       placedGroup.remove(child);
@@ -541,6 +565,49 @@ export function createWorkshopMode(options = {}) {
 
   function selectedPlacedItem() {
     return placedItems.find((item) => item.id === selectedItemId) || null;
+  }
+
+  function selectedDesk() {
+    return WORKSHOP_DESKS.find((desk) => desk.id === selectedDeskId) || WORKSHOP_DESKS[0] || null;
+  }
+
+  function focusDesk(deskId, { announce = true } = {}) {
+    const next = WORKSHOP_DESKS.find((desk) => desk.id === deskId);
+    if (!next) return false;
+    selectedDeskId = next.id;
+    deskScene.setActiveDesk(next.id);
+    if (announce) setStatus?.("ok", `${next.label} desk focused.`);
+    return true;
+  }
+
+  function requestMode(mode) {
+    if (typeof requestModeChange === "function") {
+      requestModeChange(mode);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("render3d:workshop-mode-request", {
+      detail: { mode },
+    }));
+  }
+
+  function downloadLayoutJson() {
+    const payload = buildWorkshopLayoutExport({
+      projectId: activeProjectId,
+      projectName: currentProjectName(),
+      partnerSeatId,
+      voiceSeatId,
+      placedItems,
+    });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(activeProjectId || "workshop").replace(/[^a-z0-9_-]+/gi, "-")}-layout.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+    setStatus?.("ok", "Workshop layout JSON downloaded in meters.");
   }
 
   function updatePreviewMesh() {
@@ -639,6 +706,9 @@ export function createWorkshopMode(options = {}) {
   async function loadWorkshopState(force = false) {
     const projectId = String(getProjectId?.() || "").trim();
     activeProjectId = projectId;
+    const savedSession = loadSeatSession(projectId);
+    partnerSeatId = savedSession.partnerSeatId;
+    voiceSeatId = savedSession.voiceSeatId;
     loadPlacedItems(projectId);
     rebuildPlacedScene();
     if (!projectId) {
@@ -754,6 +824,20 @@ export function createWorkshopMode(options = {}) {
     return true;
   }
 
+  function selectDeskFromHit(object) {
+    let node = object;
+    while (node && !node.userData?.workshopDeskId) node = node.parent;
+    const deskId = node?.userData?.workshopDeskId;
+    if (!deskId) return false;
+    if (!focusDesk(deskId, { announce: false })) return false;
+    activeTopTab = "desks";
+    selectedItemId = "";
+    transformControls.detach();
+    render();
+    setStatus?.("ok", `${selectedDesk()?.label || "Desk"} panel ready.`);
+    return true;
+  }
+
   function projectCards(items = [], kind = "generic") {
     if (!items.length) return `<p class="muted small">No ${kind} items queued right now.</p>`;
     return items.map((item) => `
@@ -832,57 +916,126 @@ export function createWorkshopMode(options = {}) {
     `;
   }
 
-  function renderBody() {
-    if (activeTopTab === "projects") {
-      return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop project tabs">
-          <button type="button" class="workshop-subtab${activeProjectTab === "create" ? " active" : ""}" data-workshop-project-tab="create">Create</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "train" ? " active" : ""}" data-workshop-project-tab="train">Train</button>
-          <button type="button" class="workshop-subtab${activeProjectTab === "approvals" ? " active" : ""}" data-workshop-project-tab="approvals">Approvals</button>
+  function renderApprovalCards() {
+    const approvals = Array.isArray(workshopState.approvals) ? workshopState.approvals : [];
+    if (!approvals.length) return `<p class="muted small">No approvals queued right now.</p>`;
+    return approvals.map((item) => `
+      <article class="workshop-card">
+        <div class="workshop-card-head">
+          <strong>${esc(item.title || item.id || "Approval")}</strong>
+          <span class="workshop-pill workshop-pill--${esc(String(item.status || "pending").toLowerCase())}">${esc(item.status || "pending")}</span>
         </div>
+        <p>${esc(item.summary || "")}</p>
+        ${String(item.status || "").toLowerCase() === "approved"
+          ? `<span class="workshop-inline-ok">Approved</span>`
+          : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}">Approve</button>`}
+      </article>
+    `).join("");
+  }
+
+  function renderGodView() {
+    const partnerSeat = getWorkshopSeat(partnerSeatId);
+    const voiceSeat = getWorkshopSeat(voiceSeatId);
+    const desk = selectedDesk();
+    return `
+      <div class="workshop-panel-scroll">
+        <article class="workshop-card workshop-room-summary">
+          <div class="workshop-card-head">
+            <strong>God View room summary</strong>
+            <span class="workshop-pill">Meters</span>
+          </div>
+          <p>The Workshop room is now laid out with labeled desks for Sam, Code Bot, Projects Manager, Concrete CAD, and Sales, plus an Astra voice booth stub.</p>
+          <div class="workshop-inline-actions">
+            <button type="button" class="btn secondary btn-compact" data-workshop-change-seats>Change seats</button>
+            <button type="button" class="btn accent btn-compact" data-workshop-export-layout>Export layout JSON</button>
+          </div>
+          <div class="workshop-room-tags">
+            <span>Partner seat: <strong>${esc(partnerSeat.label)}</strong></span>
+            <span>Voice seat: <strong>${esc(voiceSeat.label)}</strong></span>
+            <span>Focused desk: <strong>${esc(desk?.label || "None")}</strong></span>
+          </div>
+        </article>
+        <article class="workshop-card">
+          <div class="workshop-card-head">
+            <strong>Focused desk</strong>
+            <span class="workshop-pill">${esc(desk?.zone || "Room")}</span>
+          </div>
+          <p>${esc(desk?.panel?.title || "Select a desk to inspect its monitor stubs and task focus.")}</p>
+          <ul class="workshop-desk-bullets">
+            ${((desk?.panel?.bullets) || ["Select any desk monitor in the room to focus it."]).map((item) => `<li>${esc(item)}</li>`).join("")}
+          </ul>
+        </article>
+        <section class="workshop-section-block">
+          <h3 class="workshop-section-title">Projects</h3>
+          ${projectCards(workshopState.projects?.create || [], "create")}
+          ${projectCards(workshopState.projects?.train || [], "train")}
+        </section>
+        <section class="workshop-section-block">
+          <h3 class="workshop-section-title">Approvals</h3>
+          ${renderApprovalCards()}
+        </section>
+        <section class="workshop-section-block">
+          <h3 class="workshop-section-title">Room queue</h3>
+          ${renderQueue()}
+        </section>
+        <section class="workshop-section-block">
+          <h3 class="workshop-section-title">Harness / debug lane</h3>
+          ${renderDebugRows()}
+        </section>
+      </div>
+    `;
+  }
+
+  function renderBody() {
+    if (activeTopTab === "god") {
+      return renderGodView();
+    }
+
+    if (activeTopTab === "desks") {
+      return `
         <div class="workshop-panel-scroll">
-          ${activeProjectTab === "create" ? projectCards(workshopState.projects?.create || [], "create") : ""}
-          ${activeProjectTab === "train" ? projectCards(workshopState.projects?.train || [], "train") : ""}
-          ${activeProjectTab === "approvals" ? (workshopState.approvals || []).map((item) => `
-            <article class="workshop-card">
-              <div class="workshop-card-head">
-                <strong>${esc(item.title || item.id || "Approval")}</strong>
-                <span class="workshop-pill workshop-pill--${esc(String(item.status || "pending").toLowerCase())}">${esc(item.status || "pending")}</span>
-              </div>
-              <p>${esc(item.summary || "")}</p>
-              ${String(item.status || "").toLowerCase() === "approved"
-                ? `<span class="workshop-inline-ok">Approved</span>`
-                : `<button type="button" class="btn accent btn-compact" data-workshop-approve="${esc(item.id)}">Approve</button>`}
-            </article>
-          `).join("") : ""}
+          <p class="muted small workshop-soft-note">Click a desk in the room or use Focus on any card to light it up. The Projects Manager corner desk carries the wrap monitors; Sales keeps a dedicated interactions screen.</p>
+          ${renderWorkshopDeskCards({
+            selectedDeskId,
+            partnerSeatId,
+            voiceSeatId,
+          })}
         </div>
       `;
     }
 
-    if (activeTopTab === "lab") {
+    if (activeTopTab === "wiring") {
       return `
-        <div class="workshop-subtabs" role="tablist" aria-label="Workshop lab tabs">
-          <button type="button" class="workshop-subtab${activeLabTab === "agents" ? " active" : ""}" data-workshop-lab-tab="agents">Manage Agents</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "queue" ? " active" : ""}" data-workshop-lab-tab="queue">Queue</button>
-          <button type="button" class="workshop-subtab${activeLabTab === "debug" ? " active" : ""}" data-workshop-lab-tab="debug">Debug</button>
-        </div>
         <div class="workshop-panel-scroll">
-          ${activeLabTab === "agents" ? renderAgents(true) : ""}
-          ${activeLabTab === "queue" ? renderQueue() : ""}
-          ${activeLabTab === "debug" ? renderDebugRows() : ""}
+          <article class="workshop-card">
+            <div class="workshop-card-head">
+              <strong>Wiring Sim handoff</strong>
+              <span class="workshop-pill">From Workshop</span>
+            </div>
+            <p>Workshop does not re-implement the wiring simulator. Use the existing Wiring Simulator workspace so circuit work stays on the mature path.</p>
+            <div class="workshop-inline-actions">
+              <button type="button" class="btn accent btn-compact" data-workshop-open-wiring>Open Wiring Simulator</button>
+            </div>
+          </article>
+          <article class="workshop-card">
+            <div class="workshop-card-head">
+              <strong>Current room agents</strong>
+              <span class="workshop-pill">${esc(workshopState.agents_source || "mock")}</span>
+            </div>
+            ${renderAgents(true)}
+          </article>
         </div>
       `;
     }
 
     return `
       <div class="workshop-subtabs" role="tablist" aria-label="Workshop editor tabs">
-        <button type="button" class="workshop-subtab${activeEditorTab === "place" ? " active" : ""}" data-workshop-editor-tab="place">Editor</button>
+        <button type="button" class="workshop-subtab${activeEditorTab === "place" ? " active" : ""}" data-workshop-editor-tab="place">Layout</button>
         <button type="button" class="workshop-subtab${activeEditorTab === "voice" ? " active" : ""}" data-workshop-editor-tab="voice">Voice Prompt</button>
-        <button type="button" class="workshop-subtab${activeEditorTab === "god" ? " active" : ""}" data-workshop-editor-tab="god">God Mode</button>
       </div>
       <div class="workshop-panel-scroll">
         ${activeEditorTab === "place" ? `
-          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or desk.</p>
+          <p class="muted small workshop-soft-note">Move through the room with WASD. When mouse look is off, the placement preview follows your cursor across the floor or central workbench. Desk footprints remain meter-true.</p>
           <div class="workshop-preset-grid">
             ${PLACE_PRESETS.map((preset) => `
               <button type="button" class="workshop-preset${selectedPlacePreset === preset.id ? " active" : ""}" data-workshop-preset="${esc(preset.id)}">
@@ -898,15 +1051,15 @@ export function createWorkshopMode(options = {}) {
           <p class="muted small">${selectedPlacedItem() ? `${esc(selectedPlacedItem()?.label || "Item")} is selected.` : "Click a placed item to move it with the transform handles."}</p>
         ` : ""}
         ${activeEditorTab === "voice" ? `
-          <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt, so words appear here while you speak.</p>
-          <textarea id="${esc(dictationInputId)}" class="workshop-voice-input" rows="5" placeholder="Describe the next workshop step or placement...">${esc(voiceDraft)}</textarea>
+          <p class="muted small workshop-soft-note">This uses the same live dictation path as the main AI prompt. Spoken prompts are aimed at <strong>${esc(getWorkshopSeat(voiceSeatId).label)}</strong>.</p>
+          <textarea id="${esc(dictationInputId)}" class="workshop-voice-input" rows="5" placeholder="Describe the next workshop step, placement, or desk handoff...">${esc(voiceDraft)}</textarea>
           <div class="workshop-inline-actions">
             <button type="button" class="btn secondary btn-compact${pointerLocked ? " hidden" : ""}" data-workshop-dictate>Mic</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-copy-prompt>Use in AI prompt</button>
             <button type="button" class="btn accent btn-compact" data-workshop-run-prompt>Run in AI prompt</button>
+            <button type="button" class="btn secondary btn-compact" data-workshop-change-seats>Change seats</button>
           </div>
         ` : ""}
-        ${activeEditorTab === "god" ? renderAgents(true) : ""}
       </div>
     `;
   }
@@ -914,7 +1067,7 @@ export function createWorkshopMode(options = {}) {
   function bindRootEvents() {
     root.querySelectorAll("[data-workshop-top-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        activeTopTab = btn.getAttribute("data-workshop-top-tab") || "editor";
+        activeTopTab = btn.getAttribute("data-workshop-top-tab") || "god";
         render();
       });
     });
@@ -924,26 +1077,18 @@ export function createWorkshopMode(options = {}) {
         render();
       });
     });
-    root.querySelectorAll("[data-workshop-project-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeProjectTab = btn.getAttribute("data-workshop-project-tab") || "create";
-        render();
-      });
-    });
-    root.querySelectorAll("[data-workshop-lab-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeLabTab = btn.getAttribute("data-workshop-lab-tab") || "agents";
-        render();
-      });
-    });
     root.querySelectorAll("[data-workshop-preset]").forEach((btn) => {
       btn.addEventListener("click", () => {
         selectedPlacePreset = btn.getAttribute("data-workshop-preset") || selectedPlacePreset;
         activeEditorTab = "place";
+        activeTopTab = "editor";
         render();
       });
     });
-    root.querySelector("[data-workshop-exit]")?.addEventListener("click", () => exit());
+    root.querySelector("[data-workshop-exit]")?.addEventListener("click", () => {
+      requestMode("design");
+      exit();
+    });
     root.querySelector("[data-workshop-look]")?.addEventListener("click", async () => {
       if (pointerLocked) {
         document.exitPointerLock?.();
@@ -967,6 +1112,45 @@ export function createWorkshopMode(options = {}) {
     root.querySelectorAll("[data-workshop-debug]").forEach((btn) => {
       btn.addEventListener("click", () => runDebugRow(btn.getAttribute("data-workshop-debug")));
     });
+    root.querySelectorAll("[data-workshop-focus-desk]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!focusDesk(btn.getAttribute("data-workshop-focus-desk") || "")) return;
+        activeTopTab = "desks";
+        render();
+      });
+    });
+    root.querySelectorAll("[data-workshop-change-seats]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        showSeatPicker = true;
+        render();
+      });
+    });
+    root.querySelector("[data-workshop-export-layout]")?.addEventListener("click", () => downloadLayoutJson());
+    root.querySelector("[data-workshop-open-wiring]")?.addEventListener("click", () => {
+      requestMode("wiring");
+      exit({ keepRoute: true });
+    });
+    root.querySelectorAll("[data-workshop-seat-kind][data-workshop-seat-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const kind = btn.getAttribute("data-workshop-seat-kind") || "";
+        const seatId = getWorkshopSeat(btn.getAttribute("data-workshop-seat-id") || "").id;
+        if (kind === "partner") {
+          partnerSeatId = seatId;
+          if (WORKSHOP_DESKS.some((desk) => desk.id === seatId)) selectedDeskId = seatId;
+        } else if (kind === "voice") {
+          voiceSeatId = seatId;
+        }
+        saveSeatSession();
+        render();
+      });
+    });
+    root.querySelector("[data-workshop-seat-confirm]")?.addEventListener("click", () => {
+      showSeatPicker = false;
+      if (WORKSHOP_DESKS.some((desk) => desk.id === partnerSeatId)) focusDesk(partnerSeatId, { announce: false });
+      saveSeatSession();
+      render();
+      setStatus?.("ok", `Workshop ready with ${getWorkshopSeat(partnerSeatId).label} and ${getWorkshopSeat(voiceSeatId).label}.`);
+    });
     dictationBtn = root.querySelector("[data-workshop-dictate]");
     root.querySelector("[data-workshop-dictate]")?.addEventListener("click", async () => {
       await toggleDictation?.(dictationInputId, dictationBtn);
@@ -989,29 +1173,36 @@ export function createWorkshopMode(options = {}) {
     reticle.classList.toggle("hidden", !(active && pointerLocked));
     if (!active) return;
     const projectName = workshopState.project_label || currentProjectName();
+    deskScene.setActiveDesk(selectedDeskId);
     root.innerHTML = `
+      ${showSeatPicker ? renderWorkshopSeatPicker({ partnerSeatId, voiceSeatId }) : ""}
       <div class="workshop-shell-card">
         <div class="workshop-shell-head">
           <div>
             <span class="workshop-kicker">Workshop</span>
             <h2>${esc(projectName)}</h2>
-            <p>Desktop scene active · Route ${esc(WORKSHOP_HASH)}</p>
+            <p>God View / desks / wiring handoff · Route ${esc(WORKSHOP_HASH)}</p>
           </div>
           <div class="workshop-shell-actions">
+            <button type="button" class="btn secondary btn-compact" data-workshop-change-seats>Seat picker</button>
+            <button type="button" class="btn secondary btn-compact" data-workshop-export-layout>Export JSON</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-look>${pointerLocked ? "Exit mouse look" : "Mouse look"}</button>
             <button type="button" class="btn secondary btn-compact" data-workshop-exit>Back to Studio</button>
           </div>
         </div>
         <div class="workshop-top-tabs" role="tablist" aria-label="Workshop">
-          <button type="button" class="workshop-top-tab${activeTopTab === "editor" ? " active" : ""}" data-workshop-top-tab="editor">Editor</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "projects" ? " active" : ""}" data-workshop-top-tab="projects">Project</button>
-          <button type="button" class="workshop-top-tab${activeTopTab === "lab" ? " active" : ""}" data-workshop-top-tab="lab">Studio Lab</button>
+          <button type="button" class="workshop-top-tab${activeTopTab === "god" ? " active" : ""}" data-workshop-top-tab="god">God View</button>
+          <button type="button" class="workshop-top-tab${activeTopTab === "desks" ? " active" : ""}" data-workshop-top-tab="desks">Agent Desks</button>
+          <button type="button" class="workshop-top-tab${activeTopTab === "editor" ? " active" : ""}" data-workshop-top-tab="editor">Layout Editor</button>
+          <button type="button" class="workshop-top-tab${activeTopTab === "wiring" ? " active" : ""}" data-workshop-top-tab="wiring">Wiring Sim</button>
         </div>
         ${workshopError ? `<div class="workshop-inline-error">${esc(workshopError)}</div>` : ""}
         ${renderBody()}
         <div class="workshop-footnote">
+          <span>True scale meters</span>
           <span>WASD walk</span>
           <span>Mouse look</span>
+          <span>Click monitors to focus desks</span>
           <span>Click to place</span>
           <span>Drag handles to move</span>
         </div>
@@ -1046,6 +1237,12 @@ export function createWorkshopMode(options = {}) {
         return;
       }
     }
+    raycaster.setFromCamera(pointerNdc, camera);
+    const deskHit = raycaster.intersectObjects(deskScene.clickables, true)[0];
+    if (deskHit?.object && selectDeskFromHit(deskHit.object)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
   }
 
   function handlePointerMove(event) {
@@ -1079,6 +1276,12 @@ export function createWorkshopMode(options = {}) {
       activeEditorTab = "place";
       setStatus?.("ok", "Workshop editor ready.");
       render();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const deskHit = raycaster.intersectObjects(deskScene.clickables, true)[0];
+    if (deskHit?.object && selectDeskFromHit(deskHit.object)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
@@ -1144,15 +1347,21 @@ export function createWorkshopMode(options = {}) {
       return;
     }
     clearStudioSelection?.();
+    const savedSession = loadSeatSession(String(getProjectId?.() || "").trim());
+    partnerSeatId = savedSession.partnerSeatId;
+    voiceSeatId = savedSession.voiceSeatId;
+    if (WORKSHOP_DESKS.some((desk) => desk.id === partnerSeatId)) selectedDeskId = partnerSeatId;
     controls.enabled = false;
     active = true;
-    activeTopTab = "editor";
+    activeTopTab = "god";
     activeEditorTab = "place";
+    showSeatPicker = true;
     lastDebugResult = null;
     document.body.classList.add("workshop-mode-active");
     enterCameraPose();
     showWorkshopRoom();
     await loadWorkshopState(true);
+    focusDesk(selectedDeskId, { announce: false });
     updateRoute(true);
     setStatus?.("ok", "Workshop desktop mode active.");
     render();
@@ -1167,8 +1376,10 @@ export function createWorkshopMode(options = {}) {
     document.body.classList.remove("workshop-mode-active");
     transformControls.detach();
     selectedItemId = "";
+    showSeatPicker = false;
     controls.enabled = true;
     hideWorkshopRoom();
+    deskScene.setActiveDesk("");
     restoreCameraPose();
     if (!keepRoute) updateRoute(false);
     render();
@@ -1203,13 +1414,18 @@ export function createWorkshopMode(options = {}) {
     if (nextId === activeProjectId) return;
     activeProjectId = nextId;
     voiceDraft = "";
+    const savedSession = loadSeatSession(nextId);
+    partnerSeatId = savedSession.partnerSeatId;
+    voiceSeatId = savedSession.voiceSeatId;
+    if (WORKSHOP_DESKS.some((desk) => desk.id === partnerSeatId)) selectedDeskId = partnerSeatId;
     loadPlacedItems(nextId);
     rebuildPlacedScene();
     if (active) {
       workshopState = normalizeWorkshopState(workshopState, currentProjectName());
       loadWorkshopState(true);
     } else if (window.location.hash === WORKSHOP_HASH && nextId) {
-      void enter();
+      if (typeof requestModeChange === "function") requestMode("workshop");
+      else void enter();
     } else {
       render();
     }
@@ -1217,7 +1433,8 @@ export function createWorkshopMode(options = {}) {
 
   launcher.addEventListener("click", () => {
     if (active) return;
-    void enter();
+    if (typeof requestModeChange === "function") requestMode("workshop");
+    else void enter();
   });
 
   renderer.domElement.addEventListener("pointerdown", handlePointerDown, true);
@@ -1231,7 +1448,10 @@ export function createWorkshopMode(options = {}) {
   });
   window.addEventListener("hashchange", () => {
     if (window.location.hash === WORKSHOP_HASH) {
-      if (!active) void enter();
+      if (!active) {
+        if (typeof requestModeChange === "function") requestMode("workshop");
+        else void enter();
+      }
       return;
     }
     if (active) exit({ keepRoute: true });
@@ -1240,7 +1460,8 @@ export function createWorkshopMode(options = {}) {
 
   render();
   if (window.location.hash === WORKSHOP_HASH && String(getProjectId?.() || "").trim()) {
-    void enter();
+    if (typeof requestModeChange === "function") requestMode("workshop");
+    else void enter();
   }
 
   return {

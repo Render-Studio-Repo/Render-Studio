@@ -1,0 +1,35 @@
+{
+  "receipt_id": "RCPT-WORKSHOP-20260918-god-view",
+  "log_id": "workshop-god-view-20260918",
+  "pr_url": "https://github.com/wprojects/Render-Studio/pull/13",
+  "pr_number": 13,
+  "color": "yellow",
+  "guard_note": "PR #13 is still open. Treat this sample as upstream workshop context until the dedicated follow-on desk/receipt PR supersedes it.",
+  "mule_hop": "render-studio://workshop/god-view",
+  "rmq": "workshop.god-view.followup",
+  "status": "awaiting_guard",
+  "failure_id": null,
+  "payload": {
+    "title": "Workshop God View shell",
+    "accept_bars": [
+      "A. Workshop tab / route with God View | Editor | Wiring Sim",
+      "B. Entry partner selection UI + persisted metadata + mock/not-connected state",
+      "C. God view warehouse shell with desks, TVs, robotics bay, DJ zone, wiring bay",
+      "D. Fullscreen editor shell with placement preview, voice hook, and collab editor stub",
+      "E. Wiring simulator Workshop tab / shell",
+      "F. Layout export JSON in meters",
+      "G. Plain-English UI strings"
+    ],
+    "dependencies": [
+      "#11",
+      "#9"
+    ],
+    "supersession_note": "Still open as of 2026-09-18; use this payload as a workshop baseline, not as a merge target.",
+    "verified": [
+      "Sample payload shape matches fleet_update_receipts migration columns."
+    ],
+    "gaps": [
+      "No guard decision has been re-run against the follow-on desk wiring work yet."
+    ]
+  }
+}

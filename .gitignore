@@ -16,6 +16,12 @@ milestones/
 **/*.backup-*/
 *.bak
 
+# Sandbox receipt outputs
+sandbox-sessions/receipts/*
+!sandbox-sessions/receipts/.gitkeep
+!sandbox-sessions/receipts/examples/
+!sandbox-sessions/receipts/examples/**
+
 # Temp vendor / experiment checkouts
 tmp_*/
 tmp-*/

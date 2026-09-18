@@ -1,3 +1,13 @@
+## 2026-09-18 — Fleet receipts SoR + Workshop desk wiring
+
+- Added `supabase/migrations/002_fleet_receipts_sor.sql` with `fleet_failures`, `fleet_update_receipts`, and `fleet_fix_receipts`, prefixed IDs, timestamps, RLS, authenticated admin/Sam read policies, and service-role grants.
+- Added `tools/receipts/update-receipt.js` plus `sandbox-sessions/receipts/` examples so harness/ops runs can write `latest.json` + per-receipt JSON and upsert the same payload into Supabase.
+- Added `ai-context/UPDATE-RECEIPT-PLAN.md` and `ai-context/PROMPT-receipt-guard.md` documenting the guard color contract, no-merge policy, merge order `#11 -> #9 -> feature PRs`, and `HARNESS_WAKE UPDATE_RECEIPT`.
+- Workshop now exposes first-class desk wiring: labeled Sam, Code Bot, Projects Manager, Concrete CAD, and Sales desks, Astra voice booth stub, seat picker on enter, layout JSON export in meters, wiring handoff tab, and monitor stub panels for PM queue / SketchUp->CAD / Sales interactions.
+- Added `frontend/workshop-desks.js`; thin hooks only in `workshop-mode.js`, `workspace-modes.js`, and `app.js`; bumped `styles.css` cache-bust across all frontend HTML pages.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

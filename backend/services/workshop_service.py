@@ -16,6 +16,7 @@ DEBUG_HOOK_ENV_KEYS = (
     "WORKSHOP_DEBUG_HOOK_URL",
 )
 VALID_QUEUE_STATUSES = {"pass", "fail", "waiting"}
+LEGACY_AGENT_IDS = {"floor-lead", "printer-tech", "review-assistant"}
 
 
 def _now_iso() -> str:
@@ -42,29 +43,54 @@ def _seed_state(project_path: Path, meta: dict[str, Any] | None = None) -> dict[
         "agents_source": "mock",
         "agents": [
             {
-                "id": "floor-lead",
-                "name": "Floor lead",
-                "status": "In room",
+                "id": "sam",
+                "name": "Sam",
+                "status": "Reviewing",
                 "tasks": [
-                    {"id": "prep-bay", "title": "Stage the print bay", "status": "active"},
-                    {"id": "material-check", "title": "Check incoming materials", "status": "queued"},
+                    {"id": "sam-receipt", "title": "Read the latest fleet receipt", "status": "active"},
+                    {"id": "sam-order", "title": "Keep merge order pinned", "status": "ready"},
                 ],
             },
             {
-                "id": "printer-tech",
-                "name": "Printer tech",
-                "status": "Watching",
+                "id": "code-bot",
+                "name": "Code Bot",
+                "status": "Patching",
                 "tasks": [
-                    {"id": "watch-queue", "title": "Watch overnight print queue", "status": "active"},
-                    {"id": "plate-swap", "title": "Prepare next plate swap", "status": "queued"},
+                    {"id": "code-bot-diff", "title": "Wire the Workshop desk follow-up", "status": "active"},
+                    {"id": "code-bot-cache", "title": "Bump cache-busts for touched assets", "status": "queued"},
                 ],
             },
             {
-                "id": "review-assistant",
-                "name": "Review assistant",
-                "status": "Ready",
+                "id": "projects-manager",
+                "name": "Projects Manager",
+                "status": "Sequencing",
                 "tasks": [
-                    {"id": "qa-handoff", "title": "Collect approval notes", "status": "ready"},
+                    {"id": "pm-queue", "title": "Sort architecture trial queue", "status": "active"},
+                    {"id": "pm-teach", "title": "Refresh SketchUp to CAD board", "status": "queued"},
+                ],
+            },
+            {
+                "id": "concrete-cad",
+                "name": "Concrete CAD",
+                "status": "Checking scale",
+                "tasks": [
+                    {"id": "concrete-layout", "title": "Verify meter-true desk layout", "status": "active"},
+                ],
+            },
+            {
+                "id": "sales",
+                "name": "Sales",
+                "status": "Following up",
+                "tasks": [
+                    {"id": "sales-intake", "title": "Watch sales interactions monitor", "status": "active"},
+                ],
+            },
+            {
+                "id": "astra",
+                "name": "Astra",
+                "status": "Stub voice seat",
+                "tasks": [
+                    {"id": "astra-voice", "title": "Stand by for spoken workshop prompts", "status": "ready"},
                 ],
             },
         ],
@@ -72,28 +98,28 @@ def _seed_state(project_path: Path, meta: dict[str, Any] | None = None) -> dict[
             "create": [
                 {
                     "id": "create-layout",
-                    "title": f"{label} setup",
-                    "summary": "Lay out the printer bay, prep cart, and handoff area for this build.",
+                    "title": f"{label} desk layout",
+                    "summary": "Place the operator desks, voice booth, and handoff monitors around the room.",
                     "status": "upcoming",
                 },
                 {
-                    "id": "create-fixture",
-                    "title": "Fixture check",
-                    "summary": "Place a simple fixture stand beside the active workbench for fast test fits.",
+                    "id": "create-receipts",
+                    "title": "Receipt lane",
+                    "summary": "Keep the fleet receipt, PR URL, and harness wake note visible beside the room.",
                     "status": "queued",
                 },
             ],
             "train": [
                 {
                     "id": "train-ops",
-                    "title": "Operator walkthrough",
-                    "summary": "Train the room on first article checks and next-step handoff language.",
+                    "title": "Desk handoff walkthrough",
+                    "summary": "Teach the room who owns approvals, sales follow-ups, CAD scale, and voice prompts.",
                     "status": "upcoming",
                 },
                 {
-                    "id": "train-review",
-                    "title": "Review flow",
-                    "summary": "Teach the room which jobs can ship and which need a second look.",
+                    "id": "train-sketchup",
+                    "title": "SketchUp to CAD board",
+                    "summary": "Keep the PM teach board current for architecture intake and CAD conversion.",
                     "status": "planned",
                 },
             ],
@@ -154,10 +180,14 @@ def _normalize_state(value: Any, project_path: Path, meta: dict[str, Any] | None
     data = value if isinstance(value, dict) else {}
     projects = data.get("projects") if isinstance(data.get("projects"), dict) else {}
     debug = data.get("debug") if isinstance(data.get("debug"), dict) else {}
+    agents = data.get("agents") if isinstance(data.get("agents"), list) else []
+    normalized_agents = _normalize_project_entries(agents, seed["agents"])
+    if normalized_agents and all(str(item.get("id") or "") in LEGACY_AGENT_IDS for item in normalized_agents):
+        normalized_agents = [dict(item) for item in seed["agents"]]
     return {
         "project_label": str(data.get("project_label") or seed["project_label"]),
         "agents_source": "live" if data.get("agents_source") == "live" else "mock",
-        "agents": _normalize_project_entries(data.get("agents"), seed["agents"]),
+        "agents": normalized_agents,
         "projects": {
             "create": _normalize_project_entries(projects.get("create"), seed["projects"]["create"]),
             "train": _normalize_project_entries(projects.get("train"), seed["projects"]["train"]),
