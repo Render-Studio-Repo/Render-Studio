@@ -146,7 +146,7 @@ import { createPlanetaryGearRuntime, detectPlanetaryGearAssembly } from "./plane
 import { createStepModuleRuntime } from "./step-module-runtime.js?v=20260710-step-module";
 import { createSectionView } from "./section-view.js?v=20260715-section-no-silhouette-shell";
 import { installRealtimePopupApi } from "./workspace-realtime-popup.js?v=20260715-fusion-browser";
-import { createWorkshopMode } from "./workshop-mode.js?v=20260918-workshop-v1";
+import { createWorkshopMode } from "./workshop-sandbox.js?v=20260918-sandbox-redesign";
 
 const API = "";
 const PROMPT_TIMEOUT_MS = null; // no client-side model time limit — runs until done or canceled
@@ -3164,6 +3164,7 @@ const workshopMode = createWorkshopMode({
     const current = (allProjects || []).find((entry) => entry.id === projectId);
     return current?.name || projectId || "Project";
   },
+  getTimelineState: () => timelineData,
   api,
   setStatus: setEditStatus,
   toggleDictation: (targetId, btn) => togglePromptDictation(targetId, btn),
@@ -3190,6 +3191,9 @@ const workshopMode = createWorkshopMode({
       transformControls.detach();
       gizmoPanel?.hide?.();
     } catch (_) {}
+  },
+  applyLatestTimelineMutation: async (data, { successMessage = "" } = {}) => {
+    await syncProjectAfterLatestHistoryChange(data, { successMessage });
   },
 });
 
@@ -26823,50 +26827,60 @@ async function restoreTimeline(index, entry = null) {
   }
 }
 
+async function syncProjectAfterLatestHistoryChange(data, { successMessage = "" } = {}) {
+  saveActiveModelPromptState();
+  if (data.timeline) {
+    timelineData = data.timeline;
+  } else if (timelineData && data.index != null) {
+    timelineData = { ...timelineData, current_index: data.index };
+  }
+  const activeIndex = data.index ?? timelineData?.current_index ?? -1;
+  if (timelineData) {
+    timeline.setTimeline(timelineData, { scroll: true, scrollAlign: "end" });
+    if (activeIndex >= 0) {
+      timeline.goToIndex(activeIndex, { preview: true, scroll: true, scrollAlign: "end" });
+    }
+  }
+  projectAssembly.clear();
+  prepareViewportForModels();
+  selectedFile = data.filename || selectedFile;
+  bumpModelCacheEpoch();
+  await refreshFiles();
+  const browser = normalizeBrowser(await api(`/api/projects/${projectId}`));
+  renderProjectBrowser(browser);
+  const comps = browser.components || [];
+  if (comps.length) {
+    await loadProjectComponents(comps, {
+      projectId,
+      latestFile: data.filename || null,
+      fitView: true,
+      cacheBust: true,
+    });
+  } else {
+    await reloadViewportFromProject({ fitView: true, latestFile: data.filename || null });
+  }
+  if (timelineData) {
+    timeline.setTimeline(timelineData, { scroll: true, scrollAlign: "end" });
+    if (activeIndex >= 0) {
+      timeline.goToIndex(activeIndex, { preview: true, scroll: true, scrollAlign: "end" });
+    }
+  }
+  await refreshObjectHistory();
+  objectHistory.highlightActive(activeIndex);
+  gizmoPanel.resetDragBaseline?.();
+  viewerOverlay.clearError();
+  if (successMessage) setEditStatus("ok", successMessage);
+}
+
 async function restoreTimelineAsLatest(index) {
   if (!projectId || restoringTimeline) return;
   restoringTimeline = true;
   try {
     const data = await api(`/api/projects/${projectId}/timeline/${index}/restore-latest`, { method: "POST" });
-    saveActiveModelPromptState();
-    if (data.timeline) {
-      timelineData = data.timeline;
-    } else if (timelineData && data.index != null) {
-      timelineData = { ...timelineData, current_index: data.index };
-    }
-    const activeIndex = data.index ?? timelineData?.current_index ?? index;
-    if (timelineData) {
-      timeline.setTimeline(timelineData, { scroll: true, scrollAlign: "end" });
-      timeline.goToIndex(activeIndex, { preview: true, scroll: true, scrollAlign: "end" });
-    }
-    projectAssembly.clear();
-    prepareViewportForModels();
-    selectedFile = data.filename || selectedFile;
-    bumpModelCacheEpoch();
-    await refreshFiles();
-    const browser = normalizeBrowser(await api(`/api/projects/${projectId}`));
-    renderProjectBrowser(browser);
-    const comps = browser.components || [];
-    if (comps.length) {
-      await loadProjectComponents(comps, {
-        projectId,
-        latestFile: data.filename || null,
-        fitView: true,
-        cacheBust: true,
-      });
-    } else {
-      await reloadViewportFromProject({ fitView: true, latestFile: data.filename || null });
-    }
-    if (timelineData) {
-      timeline.setTimeline(timelineData, { scroll: true, scrollAlign: "end" });
-      timeline.goToIndex(activeIndex, { preview: true, scroll: true, scrollAlign: "end" });
-    }
-    await refreshObjectHistory();
-    objectHistory.highlightActive(activeIndex);
-    gizmoPanel.resetDragBaseline?.();
-    viewerOverlay.clearError();
     const restoredFrom = data.restored_from?.label ? ` from ${data.restored_from.label}` : "";
-    setEditStatus("ok", `Restored timeline state${restoredFrom} as the latest step.`);
+    await syncProjectAfterLatestHistoryChange(data, {
+      successMessage: `Restored timeline state${restoredFrom} as the latest step.`,
+    });
   } catch (err) {
     setEditStatus("error", err.message || "Timeline restore failed.");
     viewerOverlay.showError(err.message || "Timeline restore failed.");

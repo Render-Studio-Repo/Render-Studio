@@ -42910,3 +42910,404 @@ body.xr-presenting .xr-capture-ready-banner {
   }
 }
 
+/* ── Sandbox redesign (large-viewport Workshop route) ───────────────────── */
+body.sandbox-mode-active #app {
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 1fr !important;
+  grid-template-areas: "main-col" !important;
+}
+
+body.sandbox-mode-active .toolbar,
+body.sandbox-mode-active #workspace-mode-bar,
+body.sandbox-mode-active #ribbon-container,
+body.sandbox-mode-active .sidebar.left,
+body.sandbox-mode-active .sidebar.right,
+body.sandbox-mode-active .panel-gutter-v,
+body.sandbox-mode-active #timeline-panel,
+body.sandbox-mode-active .timeline-expand-tab,
+body.sandbox-mode-active .right-panel-tabs,
+body.sandbox-mode-active #doc-tab-bar,
+body.sandbox-mode-active #activity-log-panel {
+  display: none !important;
+}
+
+body.sandbox-mode-active .main-column,
+body.sandbox-mode-active #viewport {
+  min-height: 100vh;
+}
+
+.workshop-enter-affordance--sandbox {
+  left: auto;
+  right: 18px;
+  bottom: 18px;
+  padding: 12px 14px;
+  border-color: rgba(96, 165, 250, 0.42);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(37, 99, 235, 0.2), transparent 50%),
+    linear-gradient(180deg, rgba(5, 11, 24, 0.98), rgba(15, 23, 42, 0.98));
+}
+
+.workshop-shell--sandbox {
+  position: absolute;
+  inset: 14px;
+  width: auto;
+  pointer-events: none;
+}
+
+.workshop-shell-card--sandbox {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  background:
+    linear-gradient(180deg, rgba(2, 6, 23, 0.12), rgba(2, 6, 23, 0.08)),
+    radial-gradient(120% 140% at 0% 0%, rgba(59, 130, 246, 0.1), transparent 55%);
+  box-shadow: none;
+  backdrop-filter: blur(8px);
+}
+
+.workshop-shell-head--sandbox,
+.workshop-sidebar,
+.workshop-action-bar,
+.workshop-stage-copy,
+.workshop-stage-metrics,
+.workshop-compare-showcase,
+.workshop-compare-card,
+.workshop-route-pill {
+  pointer-events: auto;
+}
+
+.workshop-shell-head--sandbox {
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(7, 12, 26, 0.9), rgba(15, 23, 42, 0.82));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 24px 44px rgba(2, 6, 23, 0.3);
+}
+
+.workshop-shell-head--sandbox h2 {
+  margin: 6px 0 8px;
+  font-size: clamp(1.3rem, 2vw, 1.75rem);
+}
+
+.workshop-shell-head--sandbox p {
+  max-width: 760px;
+  font-size: 0.92rem;
+}
+
+.workshop-route-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workshop-shell-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.workshop-stage-surface {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+}
+
+.workshop-stage-copy,
+.workshop-stage-metrics,
+.workshop-compare-showcase,
+.workshop-sidebar,
+.workshop-action-bar {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  background: linear-gradient(180deg, rgba(7, 12, 26, 0.88), rgba(15, 23, 42, 0.76));
+  box-shadow: 0 20px 36px rgba(2, 6, 23, 0.24);
+  backdrop-filter: blur(14px);
+}
+
+.workshop-stage-copy {
+  align-self: start;
+  max-width: 720px;
+  padding: 16px 18px;
+  border-radius: 20px;
+}
+
+.workshop-stage-copy h3 {
+  margin: 6px 0 10px;
+  font-size: clamp(1.15rem, 1.8vw, 1.5rem);
+}
+
+.workshop-stage-copy p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.workshop-stage-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 18px;
+}
+
+.workshop-stage-metrics span {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.66);
+  color: #dbeafe;
+  font-size: 0.82rem;
+}
+
+.workshop-compare-showcase {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+}
+
+.workshop-compare-showcase-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.workshop-compare-showcase-head strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 5px;
+}
+
+.workshop-compare-showcase-head span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  max-width: 620px;
+}
+
+.workshop-mode-switch,
+.workshop-ab-toggle {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workshop-mode-switch-btn,
+.workshop-ab-tab {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.82);
+  color: #cbd5e1;
+  border-radius: 999px;
+  padding: 9px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.workshop-mode-switch-btn.active,
+.workshop-ab-tab.active {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(37, 99, 235, 0.22);
+  color: #eff6ff;
+}
+
+.workshop-compare-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workshop-compare-card {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.workshop-compare-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.workshop-compare-card-head strong,
+.workshop-compare-card-head span {
+  display: block;
+}
+
+.workshop-compare-card-head span {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.workshop-compare-media {
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(2, 6, 23, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.workshop-compare-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  object-fit: cover;
+}
+
+.workshop-preview-placeholder {
+  min-height: 240px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 20px;
+  color: #cbd5e1;
+}
+
+.workshop-preview-placeholder span {
+  color: #94a3b8;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  max-width: 320px;
+}
+
+.workshop-sidebar {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border-radius: 22px;
+}
+
+.workshop-panel-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.workshop-session-card {
+  padding: 14px;
+}
+
+.workshop-stat-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workshop-stat-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.46);
+}
+
+.workshop-stat-list span {
+  color: #94a3b8;
+  font-size: 0.76rem;
+}
+
+.workshop-stat-list strong {
+  color: #eff6ff;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.workshop-checklist {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  font-size: 0.85rem;
+}
+
+.workshop-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 20px;
+}
+
+.workshop-action-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.workshop-action-copy strong {
+  font-size: 0.95rem;
+}
+
+.workshop-action-copy span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.workshop-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 1180px) {
+  .workshop-shell-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workshop-sidebar {
+    max-height: 40vh;
+  }
+}
+
+@media (max-width: 860px) {
+  .workshop-shell--sandbox {
+    inset: 10px;
+  }
+
+  .workshop-shell-card--sandbox {
+    padding: 12px;
+  }
+
+  .workshop-shell-head--sandbox,
+  .workshop-action-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .workshop-compare-showcase-head,
+  .workshop-compare-grid {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}

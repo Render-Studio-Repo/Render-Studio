@@ -1013,6 +1013,10 @@ class WorkshopDebugRequest(BaseModel):
     detail: str | None = Field(default=None, max_length=1000)
 
 
+class WorkshopSessionRequest(BaseModel):
+    session_key: str | None = Field(default=None, max_length=120)
+
+
 class RiggingSaveRequest(BaseModel):
     bones: list[dict[str, Any]] = Field(default_factory=list)
     animations: list[dict[str, Any]] = Field(default_factory=list)
@@ -17544,6 +17548,100 @@ def get_project_workshop_state(
 ):
     path = _require_project_read(user, project_id)
     return workshop_service.get_state(path)
+
+
+@app.post("/api/projects/{project_id}/workshop/session")
+def start_project_workshop_session(
+    project_id: str,
+    body: WorkshopSessionRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    return {
+        "workshop": workshop_service.start_sandbox_session(path, body.session_key),
+        "timeline": history_service.timeline_summary(path),
+    }
+
+
+@app.post("/api/projects/{project_id}/workshop/session/restore")
+def restore_project_workshop_session(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        result = workshop_service.restore_sandbox_checkpoint(
+            path,
+            user_id=user["id"],
+            user_name=user["display_name"],
+            end_session=False,
+        )
+        project_store.touch_project(path)
+    except (IndexError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    restore = result.get("restore") or {}
+    _notify_project(
+        project_id,
+        {
+            "type": "model.reload",
+            "filename": restore.get("filename"),
+            "url": f"/api/projects/{project_id}/files/{restore.get('filename')}",
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+            "action": "workshop.restore",
+            "timeline_entry": restore.get("entry"),
+        },
+    )
+    return result
+
+
+@app.post("/api/projects/{project_id}/workshop/session/discard")
+def discard_project_workshop_session(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        result = workshop_service.restore_sandbox_checkpoint(
+            path,
+            user_id=user["id"],
+            user_name=user["display_name"],
+            end_session=True,
+        )
+        project_store.touch_project(path)
+    except (IndexError, FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    restore = result.get("restore") or {}
+    _notify_project(
+        project_id,
+        {
+            "type": "model.reload",
+            "filename": restore.get("filename"),
+            "url": f"/api/projects/{project_id}/files/{restore.get('filename')}",
+            "by": user["display_name"],
+            "by_user_id": user["id"],
+            "action": "workshop.discard",
+            "timeline_entry": restore.get("entry"),
+        },
+    )
+    return result
+
+
+@app.post("/api/projects/{project_id}/workshop/session/publish")
+def publish_project_workshop_session(
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    path = _require_project(user, project_id)
+    try:
+        workshop = workshop_service.publish_sandbox_session(path)
+        project_store.touch_project(path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "workshop": workshop,
+        "timeline": history_service.timeline_summary(path),
+    }
 
 
 @app.post("/api/projects/{project_id}/workshop/approvals/{item_id}/approve")

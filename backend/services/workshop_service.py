@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.services import project_store
+from backend.services import history_service, project_store
 
 META_KEY = "workshop"
 DEBUG_HOOK_ENV_KEYS = (
@@ -149,6 +150,28 @@ def _normalize_project_entries(values: Any, fallback: list[dict[str, Any]]) -> l
     return out or [dict(item) for item in fallback]
 
 
+def _normalize_sandbox_session(value: Any) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    checkpoint_index = data.get("checkpoint_index")
+    try:
+        checkpoint_index = int(checkpoint_index)
+    except (TypeError, ValueError):
+        checkpoint_index = -1
+    return {
+        "active": bool(data.get("active")),
+        "session_key": str(data.get("session_key") or "").strip(),
+        "checkpoint_id": str(data.get("checkpoint_id") or "").strip(),
+        "checkpoint_index": checkpoint_index,
+        "checkpoint_label": str(data.get("checkpoint_label") or "").strip(),
+        "checkpoint_filename": str(data.get("checkpoint_filename") or "").strip(),
+        "checkpoint_entry_id": str(data.get("checkpoint_entry_id") or "").strip(),
+        "entered_at": str(data.get("entered_at") or "").strip(),
+        "last_action": str(data.get("last_action") or "").strip(),
+        "last_action_at": str(data.get("last_action_at") or "").strip(),
+        "last_restored_at": str(data.get("last_restored_at") or "").strip(),
+    }
+
+
 def _normalize_state(value: Any, project_path: Path, meta: dict[str, Any] | None = None) -> dict[str, Any]:
     seed = _seed_state(project_path, meta)
     data = value if isinstance(value, dict) else {}
@@ -168,6 +191,7 @@ def _normalize_state(value: Any, project_path: Path, meta: dict[str, Any] | None
             "hook_available": bool(_debug_hook_url()),
             "last_result": debug.get("last_result"),
         },
+        "sandbox": _normalize_sandbox_session(data.get("sandbox")),
     }
 
 
@@ -185,6 +209,116 @@ def get_state(project_path: Path) -> dict[str, Any]:
     if meta.get(META_KEY) != normalized:
         _save_state(project_path, normalized)
     return normalized
+
+
+def _checkpoint_payload(project_path: Path, session: dict[str, Any]) -> dict[str, Any]:
+    checkpoint_index = int(session.get("checkpoint_index", -1))
+    timeline = history_service.timeline_summary(project_path)
+    entries = timeline.get("entries") or []
+    entry = entries[checkpoint_index] if 0 <= checkpoint_index < len(entries) else None
+    return {
+        "active": bool(session.get("active")),
+        "session_key": session.get("session_key") or "",
+        "checkpoint_id": session.get("checkpoint_id") or "",
+        "checkpoint_index": checkpoint_index,
+        "checkpoint_label": session.get("checkpoint_label") or "Restore point",
+        "checkpoint_filename": session.get("checkpoint_filename") or "",
+        "checkpoint_entry_id": session.get("checkpoint_entry_id") or "",
+        "entered_at": session.get("entered_at") or "",
+        "last_action": session.get("last_action") or "",
+        "last_action_at": session.get("last_action_at") or "",
+        "last_restored_at": session.get("last_restored_at") or "",
+        "timeline_entries": len(entries),
+        "current_index": timeline.get("current_index", -1),
+        "changes_since_checkpoint": max(0, int(timeline.get("current_index", -1)) - checkpoint_index) if checkpoint_index >= 0 else max(0, len(entries) - 1),
+        "current_label": str((entries[timeline.get("current_index", -1)] or {}).get("label") or "") if entries and 0 <= int(timeline.get("current_index", -1)) < len(entries) else "",
+        "checkpoint_entry": entry,
+    }
+
+
+def _state_with_sandbox(project_path: Path, state: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(state)
+    enriched["sandbox"] = _checkpoint_payload(project_path, _normalize_sandbox_session(state.get("sandbox")))
+    return enriched
+
+
+def start_sandbox_session(project_path: Path, session_key: str | None = None) -> dict[str, Any]:
+    state = get_state(project_path)
+    current = _normalize_sandbox_session(state.get("sandbox"))
+    desired_key = str(session_key or current.get("session_key") or secrets.token_hex(8)).strip()
+    if current.get("active") and current.get("session_key") == desired_key:
+        return _state_with_sandbox(project_path, state)
+
+    timeline = history_service.timeline_summary(project_path)
+    entries = timeline.get("entries") or []
+    checkpoint_index = int(timeline.get("current_index", -1))
+    checkpoint_entry = entries[checkpoint_index] if 0 <= checkpoint_index < len(entries) else {}
+    state["sandbox"] = {
+        "active": True,
+        "session_key": desired_key,
+        "checkpoint_id": secrets.token_hex(6),
+        "checkpoint_index": checkpoint_index,
+        "checkpoint_label": str(checkpoint_entry.get("label") or checkpoint_entry.get("filename") or "Starting point"),
+        "checkpoint_filename": str(checkpoint_entry.get("filename") or ""),
+        "checkpoint_entry_id": str(checkpoint_entry.get("id") or ""),
+        "entered_at": _now_iso(),
+        "last_action": "entered",
+        "last_action_at": _now_iso(),
+        "last_restored_at": "",
+    }
+    _save_state(project_path, state)
+    return _state_with_sandbox(project_path, state)
+
+
+def restore_sandbox_checkpoint(
+    project_path: Path,
+    *,
+    user_id: str | None = None,
+    user_name: str | None = None,
+    end_session: bool = False,
+) -> dict[str, Any]:
+    state = get_state(project_path)
+    session = _normalize_sandbox_session(state.get("sandbox"))
+    checkpoint_index = int(session.get("checkpoint_index", -1))
+    if checkpoint_index < 0:
+        raise ValueError("This sandbox session does not have a saved restore point yet.")
+    restore = history_service.restore_as_latest(
+        project_path,
+        checkpoint_index,
+        user_id=user_id,
+        user_name=user_name,
+    )
+    state["sandbox"] = {
+        **session,
+        "active": False if end_session else True,
+        "last_action": "discarded" if end_session else "restored",
+        "last_action_at": _now_iso(),
+        "last_restored_at": _now_iso(),
+    }
+    if end_session:
+        state["sandbox"]["session_key"] = ""
+    _save_state(project_path, state)
+    return {
+        "restore": restore,
+        "workshop": _state_with_sandbox(project_path, state),
+        "timeline": history_service.timeline_summary(project_path),
+    }
+
+
+def publish_sandbox_session(project_path: Path) -> dict[str, Any]:
+    state = get_state(project_path)
+    session = _normalize_sandbox_session(state.get("sandbox"))
+    if not session.get("active"):
+        raise ValueError("Sandbox is not active for this project.")
+    state["sandbox"] = {
+        **session,
+        "active": False,
+        "session_key": "",
+        "last_action": "pushed_live",
+        "last_action_at": _now_iso(),
+    }
+    _save_state(project_path, state)
+    return _state_with_sandbox(project_path, state)
 
 
 def approve(project_path: Path, item_id: str) -> dict[str, Any]:
