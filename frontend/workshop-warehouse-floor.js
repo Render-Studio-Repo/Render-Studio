@@ -206,7 +206,7 @@ export function createWorkshopWarehouseFloor(options = {}) {
       entry.outline.material.opacity = active ? 0.95 : 0.72;
       entry.fill.material.color.setHex(palette.fill);
       entry.fill.material.opacity = active ? 0.17 : 0.1;
-      if (entry.label?.material) entry.label.material.opacity = active ? 1 : 0.9;
+      if (entry.labelSprite?.material) entry.labelSprite.material.opacity = active ? 1 : 0.9;
     });
   }
 
@@ -258,18 +258,18 @@ export function createWorkshopWarehouseFloor(options = {}) {
     group.add(surface);
 
     if (bay.id !== "bay_robot_sim") {
-      const label = makeLabelSprite(bay.label, { bg: palette.textBg, fg: palette.textFg });
-      label.position.set(bay.rect.centerX, bay.rect.centerY, 2.1);
-      label.renderOrder = 30;
-      group.add(label);
-      baysById.set(bay.id, { ...bay, group, outline, fill, label, surface, palette });
+      const labelSprite = makeLabelSprite(bay.label, { bg: palette.textBg, fg: palette.textFg });
+      labelSprite.position.set(bay.rect.centerX, bay.rect.centerY, 2.1);
+      labelSprite.renderOrder = 30;
+      group.add(labelSprite);
+      baysById.set(bay.id, { ...bay, group, outline, fill, labelSprite, surface, palette });
     } else {
       baysById.set(bay.id, {
         ...bay,
         group,
         outline,
         fill,
-        label: new THREE.Object3D(),
+        labelSprite: new THREE.Object3D(),
         surface,
         palette,
       });

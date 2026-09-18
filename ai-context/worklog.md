@@ -1,3 +1,15 @@
+## 2026-09-18 — Warehouse MVP workshop ingest + wiring bay
+
+- Added `sandbox-sessions/warehouse-mvp/` floor-pack assets (walkable floor GLB, 4 wall-shell GLBs, refreshed `layout.json`, `latest.json`, `gate_notes.json`) and forced the committed GLBs past the repo-wide binary ignore.
+- Workshop now serves sandbox assets through `/api/sandbox-sessions/{session}/{file}` and loads the warehouse floor from `layout.json` first, then the 4 wall shells as editable Workshop props.
+- Replaced the old Workshop editor path with a **Public room** bring-in stub (plain-English selector + fail-closed button) that spawns placeholder props into the exact `bay_public_pods` rect from the refreshed layout.
+- Added **God View** bay cards from the refreshed rects and lit exactly one live training bay: **Wiring training bay**, including the existing Wiring Simulator hook.
+- Verification in this cloud pod used a temporary headless browser harness against the real frontend modules + committed sandbox assets (systemd/local app runtime was unavailable here). Captured proof screenshots:
+  - `/tmp/pw-warehouse-2.png` — Wiring training bay shown in God View after the wiring hook fired.
+  - `/tmp/pw-warehouse-public.png` — Public room selector visible with the 3D **Public room bring-in** floor label.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).

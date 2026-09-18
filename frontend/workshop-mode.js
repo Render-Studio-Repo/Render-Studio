@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { createWorkshopWarehouseFloor } from "./workshop-warehouse-floor.js?v=20260918-warehouse-mvp";
+import { createWorkshopWarehouseFloor } from "./workshop-warehouse-floor.js?v=20260918-warehouse-mvp2";
 
 const WORKSHOP_HASH = "#workshop";
 const PLACED_LS_PREFIX = "render3d:workshop-placed:v1:";
