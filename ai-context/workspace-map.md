@@ -65,6 +65,9 @@ Served statically by FastAPI. Every save is instantly live for users (subject to
 | `milestones/` | Golden frontend snapshots (`LATEST/`, `v1/`) |
 | `backups/` | snapshots / latest / golden / quarantine |
 | `deploy/`, `services/` (root) | Deployment artifacts |
+| `integrations/` | Third-party CAD/robotics/cloud connectors (DiMOS, Fusion bridge, MoveIt2, OAuth setup docs). Install via `python integrations/install.py`. See `integrations/README.md`. |
+| `fusion360-plugin/`, `tools/moveit2_server/`, `services/premium-agent-service/` | Compatibility stubs → `integrations/` |
+
 
 ## PM / planning
 

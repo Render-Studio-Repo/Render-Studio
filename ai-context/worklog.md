@@ -1,4 +1,18 @@
+## 2026-09-08 — `integrations/` folder + DiMOS vendor
+
+- Added root [`integrations/`](../integrations/) with catalog README, `MANIFEST.json`, `paths.py`, `install.py` / `install.sh`.
+- DiMOS from [dimensionalOS/dimos](https://github.com/dimensionalOS/dimos): **clone-on-install** into `integrations/dimos/` (`bash integrations/install.sh dimos`). Stub README is tracked; full checkout is gitignored (upstream Git LFS would block pushes of a blind vendor).
+- Moved Fusion bridge → `integrations/fusion360/`, MoveIt2 → `integrations/moveit2/`, premium-agent docs → `integrations/premium-agent/`; old paths are stubs/wrappers (`fusion360-plugin/`, `tools/moveit2_server/`, `services/premium-agent-service/`).
+- Docs-only stubs for Onshape / Autodesk / Supabase / Discord / LinkedIn / Stripe / Slack / Twitter-X with upstream links; OAuth clients stay in `backend/services/`.
+- CAD viewer skill keeps a bundled MoveIt2 copy under `backend/skills/.../moveit2_server/` for offline packaging; README points at `integrations/moveit2/`.
+- Portable roots: `RENDER_STUDIO_ROOT` / `INTEGRATIONS_ROOT`; scripts + gif demos no longer hard-code `/home/ubuntu` or `/Users/og/...`.
+- `backend.config.settings.integrations_dir` resolves repo-relative (or `INTEGRATIONS_ROOT`).
+- Branch: `cursor/integrations-folder-dimos-cacf`.
+
+---
+
 ## 2026-09-08 — Loading screen enable/disable (5s hold)
+
 
 - Server Settings + setup wizard: toggle “Show loading screen for 5 seconds”.
 - Branding API stores `loading_screen_enabled` / `loading_screen_duration_ms` (default ON / 5000).

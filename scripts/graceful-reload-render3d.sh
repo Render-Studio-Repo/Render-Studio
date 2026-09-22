@@ -9,8 +9,14 @@
 #   scripts/graceful-reload-render3d.sh --status  # show live generations only
 set -euo pipefail
 
-ROOT="/home/ubuntu"
-PY="${ROOT}/.venv/bin/python3"
+ROOT="${RENDER_STUDIO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+if [[ -x "${ROOT}/.venv/bin/python3" ]]; then
+  PY="${ROOT}/.venv/bin/python3"
+elif [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  PY="${ROOT}/.venv/bin/python"
+else
+  PY="python3"
+fi
 SERVICE="render3d.service"
 # Match systemd TimeoutStopSec / uvicorn --timeout-graceful-shutdown (seconds).
 DRAIN_SEC="${RENDER3D_SHUTDOWN_DRAIN_SEC:-3600}"
@@ -29,10 +35,12 @@ for arg in "$@"; do
 done
 
 live_jobs_json() {
-  "${PY}" - <<'PY'
+  RENDER_STUDIO_ROOT="${ROOT}" "${PY}" - <<'PY'
+import os
 from pathlib import Path
 from backend.services.generation_service import count_all_live_running_jobs
-jobs = count_all_live_running_jobs(Path("/home/ubuntu/projects"))
+root = Path(os.environ["RENDER_STUDIO_ROOT"]).resolve()
+jobs = count_all_live_running_jobs(root / "projects")
 for j in jobs:
     print(
         f"{j.get('project_id')}\t{j.get('trace_id')}\t{j.get('model') or '-'}\t"

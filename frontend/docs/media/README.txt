@@ -25,8 +25,8 @@ Files (served at /docs/media/*.gif):
   timeline-render-history.png — timeline: 2.0 yellow / Render purple + cost
   management-feedback-dms.png — admin feedback follow-up → realtime DM
 
-Re-record:
-  PYTHONUNBUFFERED=1 /home/ubuntu/.venv/bin/python -u \
-    /home/ubuntu/scripts/gif-demos/record_getting_started_gifs.py [demo...]
+Re-record (from repo root; paths are portable):
+  PYTHONUNBUFFERED=1 "${RENDER_STUDIO_ROOT:-.}/.venv/bin/python" -u \
+    scripts/gif-demos/record_getting_started_gifs.py [demo...]
   # Light unique captures (multi-gen, link-to-prompt, solid-tools, sketch, rigging-urdf):
   #   /tmp/js_record_gs.py

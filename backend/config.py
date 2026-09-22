@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,10 +49,21 @@ class Settings(BaseSettings):
     port: int = 8000
     projects_dir: str = "projects"
     data_dir: str = "data"
+    # Third-party / CAD integrations (DiMOS, Fusion bridge, MoveIt2, …)
+    integrations_dir: str = "integrations"
     jwt_secret: str = "change-me-in-production-render3d"
     jwt_expire_hours: int = 168
 
-    @field_validator("projects_dir", "data_dir", mode="after")
+    @field_validator("integrations_dir", mode="before")
+    @classmethod
+    def _integrations_root_alias(cls, value: object) -> object:
+        # Prefer INTEGRATIONS_ROOT (documented for portable installs) over the field default.
+        override = (os.environ.get("INTEGRATIONS_ROOT") or "").strip()
+        if override:
+            return override
+        return value if value not in (None, "") else "integrations"
+
+    @field_validator("projects_dir", "data_dir", "integrations_dir", mode="after")
     @classmethod
     def _abs_dirs(cls, value: str) -> str:
         return _absolute_under_root(value)

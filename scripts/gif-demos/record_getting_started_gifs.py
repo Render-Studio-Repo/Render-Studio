@@ -15,6 +15,8 @@ import subprocess
 import traceback
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 from playwright.async_api import Browser, Page, async_playwright
 
 BASE = "http://127.0.0.1:8001"
@@ -22,9 +24,9 @@ EMAIL = "demo.docs.gif@r3d-studios.com"
 PASSWORD = "DemoGif2026!"
 PROJECT_ID = "2a5e7651"  # fallback; record_demo prefers seeded Robot Arm
 ROBOT_ARM_SOURCE = "505279e3"
-OUT = Path("/home/ubuntu/frontend/docs/media")
-RAW = Path("/home/ubuntu/scripts/gif-demos/raw-v2")
-BLUEPRINT = Path("/home/ubuntu/scripts/gif-demos/demo-blueprint.png")
+OUT = _REPO_ROOT / "frontend" / "docs" / "media"
+RAW = _REPO_ROOT / "scripts" / "gif-demos" / "raw-v2"
+BLUEPRINT = _REPO_ROOT / "scripts" / "gif-demos" / "demo-blueprint.png"
 USER_ID = "4d950fbd-b44"
 
 OUT.mkdir(parents=True, exist_ok=True)
@@ -638,7 +640,7 @@ async def demo_reference_markup(page: Page):
           }
         }"""
     )
-    pdf_path = Path("/home/ubuntu/scripts/gif-demos/demo-drawing.pdf")
+    pdf_path = _REPO_ROOT / "scripts" / "gif-demos" / "demo-drawing.pdf"
     if not pdf_path.exists():
         pdf_path = BLUEPRINT
 

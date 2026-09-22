@@ -12,7 +12,8 @@ Code continues to use local rolling snapshots via backup-code.sh
 (which does not include projects/).
 
 One-time auth (browser required):
-  /home/ubuntu/.venv/bin/python3 /home/ubuntu/scripts/backup-to-drive.py --auth
+  python3 scripts/backup-to-drive.py --auth
+  # or: $RENDER_STUDIO_ROOT/.venv/bin/python3 scripts/backup-to-drive.py --auth
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-ROOT = Path("/home/ubuntu")
+_ROOT_ENV = (os.environ.get("RENDER_STUDIO_ROOT") or os.environ.get("RENDER3D_ROOT") or "").strip()
+ROOT = Path(_ROOT_ENV).expanduser().resolve() if _ROOT_ENV else Path(__file__).resolve().parents[1]
 # Staging only — deleted after a successful Drive upload.
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
 RETENTION_DAYS = 10
@@ -45,7 +47,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-TOKEN_DIR = Path(os.getenv("GOOGLE_TOKEN_DIR", "/home/ubuntu/.config/ohio"))
+_default_token = Path.home() / ".config" / "ohio"
+TOKEN_DIR = Path(os.getenv("GOOGLE_TOKEN_DIR", str(_default_token))).expanduser()
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = TOKEN_DIR / "token_google_drive_backup.pickle"
 CREDENTIALS_FILE = TOKEN_DIR / "credentials_google_drive_backup.json"

@@ -2,7 +2,7 @@
 # Restore Render3D source from a backup folder.
 set -euo pipefail
 
-ROOT="/home/ubuntu"
+ROOT="${RENDER_STUDIO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BACKUP_ROOT="${ROOT}/backups"
 
 usage() {

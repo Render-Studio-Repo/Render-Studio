@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "integrations_root": "integrations",
+  "integrations": [
+    {
+      "id": "dimos",
+      "name": "DiMOS (Dimensional OS)",
+      "kind": "git_shallow_checkout",
+      "path": "dimos",
+      "github": "https://github.com/dimensionalOS/dimos",
+      "docs": "https://docs.dimensionalos.com",
+      "install": "git_shallow",
+      "default_ref": "main",
+      "optional": true,
+      "summary": "Agentic OS for physical robots \u2014 clone via install.sh (not vendored; upstream uses Git LFS)."
+    },
+    {
+      "id": "fusion360",
+      "name": "Fusion 360 local bridge",
+      "kind": "plugin",
+      "path": "fusion360",
+      "github": null,
+      "docs": "integrations/fusion360/README.md",
+      "install": "local",
+      "optional": true,
+      "summary": "Fusion add-in that bridges localhost scripts into the active design."
+    },
+    {
+      "id": "moveit2",
+      "name": "MoveIt2 motion server",
+      "kind": "local_service",
+      "path": "moveit2",
+      "github": "https://github.com/moveit/moveit2",
+      "docs": "integrations/moveit2/README.md",
+      "install": "local",
+      "optional": true,
+      "summary": "Local WebSocket motion-planning helper for CAD Viewer / SRDF workflows."
+    },
+    {
+      "id": "premium-agent",
+      "name": "Premium agent service",
+      "kind": "service_boundary",
+      "path": "premium-agent",
+      "github": null,
+      "docs": "integrations/premium-agent/README.md",
+      "install": "local",
+      "optional": true,
+      "summary": "Billing/worker boundary for paid agent apps."
+    },
+    {
+      "id": "onshape",
+      "name": "Onshape",
+      "kind": "cloud_oauth",
+      "path": "onshape",
+      "github": "https://github.com/onshape-public",
+      "docs": "integrations/onshape/README.md",
+      "backend_modules": [
+        "backend.services.onshape_oauth"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Onshape OAuth + cloud CAD sync."
+    },
+    {
+      "id": "autodesk",
+      "name": "Autodesk Platform Services / Fusion cloud",
+      "kind": "cloud_oauth",
+      "path": "autodesk",
+      "github": "https://github.com/autodesk-platform-services",
+      "docs": "integrations/autodesk/README.md",
+      "backend_modules": [
+        "backend.services.autodesk_oauth"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Autodesk OAuth, Fusion Data Panel export/import."
+    },
+    {
+      "id": "supabase",
+      "name": "Supabase",
+      "kind": "cloud_backend",
+      "path": "supabase",
+      "github": "https://github.com/supabase/supabase",
+      "docs": "integrations/supabase/README.md",
+      "backend_modules": [
+        "backend.services.supabase_client",
+        "backend.services.supabase_auth_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Optional auth/DB/storage backend."
+    },
+    {
+      "id": "discord",
+      "name": "Discord",
+      "kind": "social",
+      "path": "discord",
+      "github": "https://github.com/discord",
+      "docs": "integrations/discord/README.md",
+      "backend_modules": [
+        "backend.services.discord_link_service",
+        "backend.services.discord_updates_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Account link + product update announcements."
+    },
+    {
+      "id": "linkedin",
+      "name": "LinkedIn",
+      "kind": "social",
+      "path": "linkedin",
+      "github": "https://github.com/linkedin",
+      "docs": "integrations/linkedin/README.md",
+      "backend_modules": [
+        "backend.services.linkedin_updates_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Scheduled product-update posts."
+    },
+    {
+      "id": "stripe",
+      "name": "Stripe",
+      "kind": "payments",
+      "path": "stripe",
+      "github": "https://github.com/stripe/stripe-python",
+      "docs": "integrations/stripe/README.md",
+      "backend_modules": [
+        "backend.services.marketplace_payments_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Marketplace fees and AI credit checkout."
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "kind": "social",
+      "path": "slack",
+      "github": "https://github.com/slackapi",
+      "docs": "integrations/slack/README.md",
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Optional webhook/channel publishing for server updates."
+    },
+    {
+      "id": "twitter",
+      "name": "Twitter / X",
+      "kind": "social",
+      "path": "twitter",
+      "github": "https://github.com/twitterdev",
+      "docs": "integrations/twitter/README.md",
+      "backend_modules": [
+        "backend.services.twitter_link_service"
+      ],
+      "install": "docs_only",
+      "optional": true,
+      "summary": "Connect X / Share to X for viewport videos."
+    }
+  ]
+}

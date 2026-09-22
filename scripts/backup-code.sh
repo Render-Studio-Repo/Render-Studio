@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-ROOT="/home/ubuntu"
+ROOT="${RENDER_STUDIO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BACKUP_ROOT="${ROOT}/backups"
 SNAPSHOTS="${BACKUP_ROOT}/snapshots"
 LATEST="${BACKUP_ROOT}/latest"

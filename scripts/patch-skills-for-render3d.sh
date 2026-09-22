@@ -2,7 +2,7 @@
 # Append Render3D runtime notes to synced text-to-cad SKILL.md files.
 set -euo pipefail
 
-ROOT="/home/ubuntu"
+ROOT="${RENDER_STUDIO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SKILLS="${ROOT}/backend/skills"
 MARKER="<!-- render3d-studio -->"
 

@@ -84,3 +84,9 @@ scripts/credentials_google*.json
 # Local tool installs (do not commit)
 /.bun/
 /.agents/
+
+# Integrations — DiMOS is cloned per machine (upstream uses Git LFS; do not vendor)
+integrations/dimos/
+integrations/**/*.egg-info/
+integrations/**/.clone-tmp/
+integrations/**/.*.clone-tmp/
