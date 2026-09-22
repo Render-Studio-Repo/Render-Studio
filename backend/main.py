@@ -60,6 +60,16 @@ from backend.services import teams_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
+from backend.services import branding_service
+from backend.services import server_config_service
+from backend.services import server_setup_service
+from backend.services import server_secrets_vault
+from backend.services import marketplace_ecosystem_service
+
+try:
+    server_secrets_vault.load_vault_into_environ()
+except Exception:
+    pass
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
 from backend.ws.manager import hub
 from backend.auth import decode_token
@@ -990,6 +1000,25 @@ class AdminFeedbackReviewRequest(BaseModel):
 
 class AdminFeedbackMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
+
+
+class AdminServerSettingsUpdateRequest(BaseModel):
+    product_name: str | None = Field(default=None, max_length=64)
+    loading_screen_enabled: bool | None = None
+    loading_screen_duration_ms: int | None = Field(default=None, ge=0, le=60_000)
+
+
+class AdminServerConfigUpdateRequest(BaseModel):
+    product_name: str | None = Field(default=None, max_length=64)
+    update_publishing: dict[str, Any] | None = None
+    permissions: dict[str, Any] | None = None
+    marketplace: dict[str, Any] | None = None
+
+
+class AdminServerConfigPublishRequest(BaseModel):
+    dry_run: bool = False
+    force: bool = False
+    update_id: str | None = None
 
 
 class AdminNewUserReviewRequest(BaseModel):
@@ -6295,6 +6324,359 @@ def admin_changelog(user: dict[str, Any] = Depends(get_current_user)):
         "bytes": len(markdown.encode("utf-8")),
         "mtime": mtime,
     }
+
+
+@app.get("/api/branding")
+def get_public_branding():
+    """Public site branding used by boot screen, toolbar, and info pages."""
+    return branding_service.public_branding()
+
+
+@app.get("/api/branding/assets/{filename}")
+def get_branding_asset(filename: str):
+    resolved = branding_service.resolve_asset(filename)
+    if not resolved:
+        raise HTTPException(404, "Branding asset not found")
+    path, media = resolved
+    return FileResponse(path, media_type=media)
+
+
+@app.get("/api/admin/server-settings")
+def admin_get_server_settings(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.admin_branding()
+
+
+@app.put("/api/admin/server-settings")
+def admin_update_server_settings(
+    body: AdminServerSettingsUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    if (
+        body.product_name is None
+        and body.loading_screen_enabled is None
+        and body.loading_screen_duration_ms is None
+    ):
+        raise HTTPException(
+            400,
+            "Provide product_name, loading_screen_enabled, and/or loading_screen_duration_ms.",
+        )
+    try:
+        result = None
+        if body.product_name is not None:
+            result = branding_service.update_product_name(body.product_name)
+        if body.loading_screen_enabled is not None or body.loading_screen_duration_ms is not None:
+            result = branding_service.update_loading_screen_prefs(
+                enabled=body.loading_screen_enabled,
+                duration_ms=body.loading_screen_duration_ms,
+            )
+        return result or branding_service.admin_branding()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/admin/server-settings/logo")
+async def admin_upload_branding_logo(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    data = await file.read()
+    try:
+        return branding_service.save_logo_upload(
+            filename=file.filename or "logo.png",
+            content_type=file.content_type or "",
+            data=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/admin/server-settings/logo")
+def admin_clear_branding_logo(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.clear_logo()
+
+
+@app.post("/api/admin/server-settings/loading-screen")
+async def admin_upload_loading_screen(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    data = await file.read()
+    try:
+        return branding_service.save_loading_screen_upload(
+            filename=file.filename or "loading.png",
+            content_type=file.content_type or "",
+            data=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/admin/server-settings/loading-screen")
+def admin_clear_loading_screen(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.clear_loading_screen()
+
+
+@app.post("/api/admin/server-settings/reset")
+def admin_reset_server_settings(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.reset_all()
+
+
+@app.get("/api/admin/server-config")
+def admin_get_server_config(user: dict[str, Any] = Depends(get_current_user)):
+    """Local server config + public profile catalog (gitignored local settings)."""
+    _require_a1projects_admin(user)
+    return server_config_service.admin_view()
+
+
+@app.put("/api/admin/server-config")
+def admin_update_server_config(
+    body: AdminServerConfigUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    patch: dict[str, Any] = {}
+    if body.product_name is not None:
+        patch["product_name"] = body.product_name
+    if body.update_publishing is not None:
+        patch["update_publishing"] = body.update_publishing
+    if body.permissions is not None:
+        patch["permissions"] = body.permissions
+    if body.marketplace is not None:
+        patch["marketplace"] = body.marketplace
+    if not patch:
+        raise HTTPException(400, "No server-config fields to update.")
+    try:
+        server_config_service.save_local_settings(patch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # Keep branding product name in sync when renamed here.
+    if body.product_name is not None:
+        try:
+            branding_service.update_product_name(body.product_name)
+        except ValueError:
+            pass
+    return server_config_service.admin_view()
+
+
+@app.post("/api/admin/server-config/profiles/{profile_id}/import")
+def admin_import_server_config_profile(
+    profile_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        view = server_config_service.import_profile(profile_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    product_name = (view.get("local") or {}).get("product_name")
+    if product_name:
+        try:
+            branding_service.update_product_name(product_name)
+        except ValueError:
+            pass
+    return view
+
+
+@app.get("/api/admin/server-config/profiles/{profile_id}/readme")
+def admin_server_config_profile_readme(
+    profile_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        markdown = server_config_service.profile_readme(profile_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"profile_id": profile_id, "markdown": markdown}
+
+
+@app.get("/api/admin/server-config/profiles/{profile_id}/assets/{filename}")
+def admin_server_config_profile_asset(
+    profile_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    path = server_config_service.profile_asset_path(profile_id, filename)
+    if not path:
+        raise HTTPException(404, "Asset not found")
+    return FileResponse(path)
+
+
+@app.post("/api/admin/server-config/publish-updates")
+def admin_publish_server_updates(
+    body: AdminServerConfigPublishRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Run the update publisher (same as scripts/publish-server-updates.py)."""
+    _require_a1projects_admin(user)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "publish_server_updates",
+        ROOT / "scripts" / "publish-server-updates.py",
+    )
+    if spec is None or spec.loader is None:
+        raise HTTPException(500, "Publisher script not found")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.publish(dry_run=body.dry_run, force=body.force, only_id=body.update_id)
+
+
+class AdminServerSetupUpdateRequest(BaseModel):
+    setup_complete: bool | None = None
+    current_step: str | None = None
+    server_name: str | None = Field(default=None, max_length=80)
+    ecosystem_mode: str | None = None
+    storage_backend: str | None = None
+    dashboard_ready: bool | None = None
+    authorized_apps: dict[str, Any] | None = None
+    notes: str | None = None
+
+
+class AdminServerSetupHarnessRequest(BaseModel):
+    intent: str = Field(default="", max_length=4000)
+
+
+class AdminServerSetupBulkSecretsRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=200000)
+
+
+class AdminBackupOwnerCheckRequest(BaseModel):
+    email: str | None = None
+    github: str | None = None
+    token: str | None = None
+
+
+class AdminEcosystemSyncRequest(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@app.get("/api/admin/server-setup")
+def admin_get_server_setup(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return server_setup_service.admin_view()
+
+
+@app.put("/api/admin/server-setup")
+def admin_update_server_setup(
+    body: AdminServerSetupUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(400, "No setup fields to update.")
+    try:
+        server_setup_service.save_state(patch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return server_setup_service.admin_view()
+
+
+@app.post("/api/admin/server-setup/complete")
+def admin_complete_server_setup(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    server_setup_service.mark_complete()
+    return server_setup_service.admin_view()
+
+
+@app.post("/api/admin/server-setup/harness-prompt")
+def admin_server_setup_harness_prompt(
+    body: AdminServerSetupHarnessRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return server_setup_service.build_harness_prompt(intent=body.intent)
+
+
+@app.get("/api/admin/server-setup/secrets")
+def admin_server_setup_secrets(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return server_secrets_vault.status_view()
+
+
+@app.post("/api/admin/server-setup/secrets/bulk")
+def admin_server_setup_secrets_bulk(
+    body: AdminServerSetupBulkSecretsRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return server_secrets_vault.apply_bulk_upload(body.text)
+
+
+@app.get("/api/admin/server-setup/secrets/example.txt")
+def admin_server_setup_secrets_example(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    server_secrets_vault.seed_public_templates()
+    path = ROOT / "server-configurations" / "secrets-templates" / "EXAMPLE-bulk-settings.txt"
+    if not path.is_file():
+        raise HTTPException(404, "Example bulk settings file not found")
+    return FileResponse(path, media_type="text/plain", filename="EXAMPLE-bulk-settings.txt")
+
+
+@app.get("/api/admin/server-setup/secrets/{app_id}")
+def admin_server_setup_secret_app(app_id: str, user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    try:
+        return server_secrets_vault.get_app_detail(app_id, reveal=False)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.put("/api/admin/server-setup/secrets/{app_id}")
+def admin_server_setup_secret_app_save(
+    app_id: str,
+    body: dict[str, Any],
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    values = body.get("values") if isinstance(body, dict) else None
+    if not isinstance(values, dict):
+        raise HTTPException(400, "Provide { values: { KEY: value } }")
+    try:
+        return server_secrets_vault.save_app_secrets(app_id, values)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/admin/backups/verify-owner")
+def admin_verify_backup_owner(
+    body: AdminBackupOwnerCheckRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Gate backups / premium push on configured owner identity."""
+    _require_a1projects_admin(user)
+    result = server_secrets_vault.verify_owner(
+        email=body.email or user.get("email"),
+        github=body.github,
+        token=body.token,
+    )
+    if not result.get("allowed"):
+        raise HTTPException(403, result.get("detail") or "Owner verification failed")
+    return result
+
+
+@app.get("/api/admin/ecosystem/sync")
+def admin_ecosystem_sync_status(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return marketplace_ecosystem_service.sync_status()
+
+
+@app.post("/api/admin/ecosystem/sync")
+def admin_ecosystem_sync_prepare(
+    body: AdminEcosystemSyncRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    return marketplace_ecosystem_service.prepare_public_payload(body.items)
 
 
 @app.get("/api/admin/new-users")

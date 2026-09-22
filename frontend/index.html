@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>Render3D — The AI &amp; Robotics Studio</title>
-  <meta name="description" content="Render3D — The AI &amp; Robotics Studio. AI CAD, photoreal rendering, robotics workflows, real-time collaboration, and a wiring simulator." />
+  <title>Render Studio — The AI &amp; Robotics Studio</title>
+  <meta name="description" content="Render Studio — The AI &amp; Robotics Studio. AI CAD, photoreal rendering, robotics workflows, real-time collaboration, and a wiring simulator." />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Render3D" />
-  <meta property="og:title" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta property="og:site_name" content="Render Studio" />
+  <meta property="og:title" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta property="og:description" content="AI CAD, robotics, photoreal rendering, and real-time collab — one studio to design and ship products." />
   <meta property="og:url" content="https://render3d.app/" />
   <meta property="og:image" content="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
@@ -17,9 +17,9 @@
   <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta property="og:image:alt" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta name="twitter:title" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta name="twitter:description" content="AI CAD, robotics, photoreal rendering, and real-time collab — one studio to design and ship products." />
   <meta name="twitter:image" content="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
   <link rel="image_src" href="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
@@ -37,6 +37,8 @@
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
+  <link rel="stylesheet" href="/studio-branding.css?v=20260908-loading-toggle" />
+  <link rel="stylesheet" href="/server-setup-wizard.css?v=20260908-loading-toggle" />
   <script type="importmap">
   {
     "imports": {
@@ -49,6 +51,10 @@
 </head>
 <body class="theme-dark studio-booting">
   <div id="studio-boot-screen" class="studio-boot-screen" role="status" aria-live="polite" aria-busy="true" style="--boot-progress: 8; --boot-progress-pct: 8%;">
+    <a id="studio-boot-attribution" class="studio-boot-attribution" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer" aria-label="Open Render Studio on GitHub">
+      <img class="studio-boot-attribution-logo" src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="Render Studio" width="36" height="36" />
+      <span class="studio-boot-attribution-word">Render Studio</span>
+    </a>
     <div class="studio-boot-card">
       <div class="studio-boot-stage" aria-hidden="true">
         <div class="studio-boot-grid"></div>
@@ -170,7 +176,7 @@
           <span class="studio-boot-spark studio-boot-spark--c"></span>
         </div>
       </div>
-      <p class="studio-boot-title">Loading <span class="studio-boot-title-metal">Render3D Studio</span></p>
+      <p class="studio-boot-title">Loading <span class="studio-boot-title-metal" data-brand-name>Render Studio</span></p>
       <p id="studio-boot-sub" class="studio-boot-sub">Preparing projects and editor...</p>
       <div class="studio-boot-tip" aria-live="polite">
         <span class="studio-boot-tip-kicker">Studio tip</span>
@@ -210,8 +216,8 @@
       </div>
       <p class="studio-boot-progress-copy"><span id="studio-boot-percent">8%</span> assembled</p>
       <div class="studio-boot-logo" aria-hidden="true">
-        <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
-        <span class="studio-boot-logo-word">Render3D</span>
+        <img data-brand-logo src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="" width="34" height="34" />
+        <span class="studio-boot-logo-word" data-brand-name>Render Studio</span>
         <span class="studio-boot-logo-gear" aria-hidden="true">
           <svg class="studio-boot-logo-gear-svg" viewBox="0 0 64 64" width="64" height="64">
             <defs>
@@ -251,17 +257,29 @@
     var timer = null;
     var tipIndex = 0;
     var BOOT_MIN_MS = 5000;
+    window.__studioBootPageStartedAt = Date.now();
     try {
-      var navEntry = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
       var logoutReload = sessionStorage.getItem(LOGOUT_RELOAD_KEY) === "1";
       sessionStorage.removeItem(LOGOUT_RELOAD_KEY);
-      // Always hold the studio boot screen for ~5s so the load animation can play,
-      // except when we intentionally skip boot (logout hop / back from docs).
-      if (!logoutReload) {
-        window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
+      var loadingPref = null;
+      try { loadingPref = localStorage.getItem("render3d:loadingScreenEnabled:v1"); } catch (prefErr) {}
+      // Server Settings can disable the boot splash. Cached pref only tentatively skips the
+      // 5s hold / hides the splash — branding fetch confirms and may restore if still enabled.
+      if (loadingPref === "0") {
+        window.__studioBootMinUntil = 0;
+        if (boot) {
+          boot.dataset.loadingPrefHidden = "1";
+          boot.style.opacity = "0";
+          boot.style.pointerEvents = "none";
+        }
+        document.body.classList.add("studio-boot-pref-off");
+      } else if (!logoutReload) {
+        // Default / enabled: hold the studio boot screen for ~5s so the load animation can play,
+        // except when we intentionally skip boot (logout hop / back from docs).
+        window.__studioBootMinUntil = window.__studioBootPageStartedAt + BOOT_MIN_MS;
       }
     } catch (e) {
-      window.__studioBootMinUntil = Date.now() + BOOT_MIN_MS;
+      window.__studioBootMinUntil = (window.__studioBootPageStartedAt || Date.now()) + BOOT_MIN_MS;
     }
     var randomWalkthroughs = [
       { id: "ai-generate", kicker: "AI Generate", label: "Build CAD from text" },
@@ -430,8 +448,8 @@
     <header class="toolbar">
       <div class="brand">
         <a href="/" class="brand-link">
-          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
-          <h1 class="brand-title-metal">Render3D</h1>
+          <img class="logo" data-brand-logo src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="Render Studio" />
+          <h1 class="brand-title-metal" data-brand-name>Render Studio</h1>
         </a>
       </div>
       <!-- Management button — admin only, shown by auth.js -->
@@ -2869,6 +2887,16 @@
     }
     function dismissBoot() {
       var el = document.getElementById("studio-boot-screen");
+      // Tentative localStorage "off" only hides the splash — wait for branding to confirm
+      // before tearing it down, so a stale cache cannot skip an enabled 5s boot.
+      if (
+        el &&
+        el.dataset.loadingPrefHidden === "1" &&
+        document.documentElement.dataset.loadingScreen !== "off"
+      ) {
+        setTimeout(dismissBoot, 50);
+        return;
+      }
       var minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
       if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
       el.dataset.dismissScheduled = "1";
@@ -2936,7 +2964,9 @@
       });
   })();
   </script>
-  <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
+  <script type="module" src="/studio-branding.js?v=20260908-loading-toggle4"></script>
+  <script type="module" src="/server-setup-wizard.js?v=20260908-loading-toggle"></script>
+  <script type="module" src="/early-boot.js?v=20260908-loading-toggle3"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="model-pick-recommend-modal" class="auth-modal model-pick-recommend-modal hidden" role="dialog" aria-modal="true" aria-labelledby="model-pick-recommend-title" aria-hidden="true">
     <div class="auth-backdrop" data-model-pick-close></div>

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "catalog_branch": "Server-Configurations",
+  "catalog_repo": "wprojects/Render-Studio",
+  "catalog_url": "https://github.com/wprojects/Render-Studio/tree/Server-Configurations",
+  "profiles": [
+    {
+      "id": "render-studio-cloud",
+      "name": "Render Studio Cloud",
+      "summary": "Public cloud defaults: docs auto-updates on, projects private by default, marketplace on.",
+      "popularity": 98,
+      "tags": ["public", "cloud", "docs"],
+      "path": "profiles/render-studio-cloud"
+    },
+    {
+      "id": "enterprise-private",
+      "name": "Enterprise Private",
+      "summary": "Locked-down enterprise: public projects off, stricter permissions, publishing off until configured.",
+      "popularity": 76,
+      "tags": ["enterprise", "private", "security"],
+      "path": "profiles/enterprise-private"
+    },
+    {
+      "id": "education-lab",
+      "name": "Education Lab",
+      "summary": "Classroom profile with shared credits guidance and docs-only update publishing.",
+      "popularity": 54,
+      "tags": ["education", "lab"],
+      "path": "profiles/education-lab"
+    }
+  ]
+}

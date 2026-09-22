@@ -66,6 +66,15 @@ function bootSpinner(message = "Loading Render Studio…") {
 
 function dismissStudioBoot() {
   const el = document.getElementById("studio-boot-screen");
+  // Tentative localStorage "off" only hides the splash — wait for branding to confirm
+  // before tearing it down, so a stale cache cannot skip an enabled 5s boot.
+  if (
+    el?.dataset.loadingPrefHidden === "1" &&
+    document.documentElement.dataset.loadingScreen !== "off"
+  ) {
+    window.setTimeout(() => dismissStudioBoot(), 50);
+    return;
+  }
   const minDelay = Math.max(0, Number(window.__studioBootMinUntil || 0) - Date.now());
   if (!el || el.classList.contains("is-done") || el.dataset.dismissScheduled === "1") return;
   el.dataset.dismissScheduled = "1";

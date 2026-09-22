@@ -11,6 +11,12 @@ import {
   adminNotificationsSectionHtml,
   createAdminNotificationsPager,
 } from "./admin-notifications.js?v=20260726-admin-notif";
+import {
+  serverSettingsSectionHtml,
+  bindServerSettingsSection,
+} from "./admin-server-settings.js?v=20260908-loading-toggle4";
+import { mountServerSetupEntry, maybeAutoOpenServerSetup } from "./server-setup-wizard.js?v=20260908-loading-toggle4";
+import { initStudioBranding } from "./studio-branding.js?v=20260908-loading-toggle4";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -793,9 +799,16 @@ function bindAdminViewToolbar(root) {
       scrollToView(view);
     });
   });
+  const hashAliases = {
+    "server-settings": "settings",
+    server: "settings",
+    "admin-section-settings": "settings",
+    "admin-section-server-settings": "settings",
+  };
   const initialHash = (window.location.hash || "").replace(/^#/, "");
-  if (initialHash && root.querySelector(`#admin-section-${CSS.escape(initialHash)}`)) {
-    window.setTimeout(() => scrollToView(initialHash, { updateHash: false }), 80);
+  const resolvedHash = hashAliases[initialHash] || initialHash;
+  if (resolvedHash && root.querySelector(`#admin-section-${CSS.escape(resolvedHash)}`)) {
+    window.setTimeout(() => scrollToView(resolvedHash, { updateHash: false }), 80);
   }
   const sections = [...root.querySelectorAll("[data-admin-section][id]")];
   const observer = new IntersectionObserver((entries) => {
@@ -938,6 +951,7 @@ function renderAdminViewToolbar() {
     ["prompts", "Prompts", "History and errors"],
     ["network", "Network", "Collaboration graph"],
     ["training", "Training", "Ready data"],
+    ["settings", "Server", "Name, logo, loading screen"],
   ];
   return `
     <nav class="admin-view-toolbar" aria-label="Management dashboard views">
@@ -1144,6 +1158,8 @@ function renderDashboard(root, data) {
       <div class="admin-pill-list">${countPills(data.project_format_counts, "format")}</div>
       <p class="muted small">Generated ${formatDate(data.generated_at)}</p>
     </section>
+
+    ${serverSettingsSectionHtml()}
   `;
 
   root.querySelector("#admin-refresh")?.addEventListener("click", () => loadDashboard(root));
@@ -1172,6 +1188,13 @@ function renderDashboard(root, data) {
   void loadNewUserAlerts(root);
   void loadTrialCredits(root);
   void loadFeedbackInbox(root);
+  bindServerSettingsSection(root, { api });
+  const setupMount =
+    root.querySelector("#admin-section-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-settings .admin-agent-head") ||
+    root.querySelector("#admin-section-settings");
+  mountServerSetupEntry(setupMount);
+  void maybeAutoOpenServerSetup();
   adminNotificationsPager?.destroy?.();
   adminNotificationsPager = createAdminNotificationsPager({
     api,
@@ -1766,6 +1789,7 @@ export function initAdminDashboard() {
   const root = document.getElementById("admin-dashboard-root");
   if (!root) return;
   adminDashboardRoot = root;
+  void initStudioBranding();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal();
   });

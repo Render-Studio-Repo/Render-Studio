@@ -1,3 +1,11 @@
+## 2026-09-08 — Loading screen enable/disable (5s hold)
+
+- Server Settings + setup wizard: toggle “Show loading screen for 5 seconds”.
+- Branding API stores `loading_screen_enabled` / `loading_screen_duration_ms` (default ON / 5000).
+- Studio boot honors the setting; localStorage cache tentatively hides splash when disabled, branding confirms (avoids stale-cache race).
+- Management `#settings` → Server section (aliases `#server-settings`); cache-bust `?v=20260908-loading-toggle4`.
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
@@ -1250,3 +1258,18 @@ Shipped the first real gameplay loop — not full instrumentation of every featu
 - Finished the Quest Book modal begun in a disconnected session: added the full modal CSS block to `frontend/styles.css`.
 - Fixed first-node tooltip clipping; gold menu button + Studio walkthrough already landed.
 - Plan `.cursor/plans/quest_book_menu_entry_b3ec02ac.plan.md` marked complete.
+
+## 2026-09-08 — Server update publishing + local settings
+
+- Added `server-configurations/` public templates (docs-only auto publish ON) vs gitignored `data/server-config/` local runtime.
+- Added `docs/UPDATE-PUBLISHING.md`, `instructions/server/UPDATE-DOCS.md`, and `instructions/actions/` playbooks.
+- Management dashboard Server Settings: branding + update-publishing toggles (docs/Slack/Discord/LinkedIn) + profile import.
+- Publisher: `scripts/publish-server-updates.py` with publication ledger; dry-run verified for docs channel.
+- Public push/pull must not overwrite private server settings (local files under `data/`).
+
+## 2026-09-08 — Server setup wizard + secrets vault
+
+- Added gitignored secrets vault under `data/server-config/secrets/<app>/` with per-app READMEs + bulk upload example in `server-configurations/secrets-templates/`.
+- First-run setup wizard (ecosystem privacy, authorized apps, storage, harness prompt export) + Render Agent `server-setup` skill.
+- Backup script owner identity gate; marketplace ecosystem sync policy stubs.
+- Local runtime remains in `data/server-config/` so public pull/push does not overwrite private server settings.
