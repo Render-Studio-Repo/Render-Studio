@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>Render3D — The AI &amp; Robotics Studio</title>
-  <meta name="description" content="Render3D — The AI &amp; Robotics Studio. AI CAD, photoreal rendering, robotics workflows, real-time collaboration, and a wiring simulator." />
+  <title>Render Studio — The AI &amp; Robotics Studio</title>
+  <meta name="description" content="Render Studio — The AI &amp; Robotics Studio. AI CAD, photoreal rendering, robotics workflows, real-time collaboration, and a wiring simulator." />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Render3D" />
-  <meta property="og:title" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta property="og:site_name" content="Render Studio" />
+  <meta property="og:title" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta property="og:description" content="AI CAD, robotics, photoreal rendering, and real-time collab — one studio to design and ship products." />
   <meta property="og:url" content="https://render3d.app/" />
   <meta property="og:image" content="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
@@ -17,9 +17,9 @@
   <meta property="og:image:type" content="image/jpeg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta property="og:image:alt" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Render3D — The AI &amp; Robotics Studio" />
+  <meta name="twitter:title" content="Render Studio — The AI &amp; Robotics Studio" />
   <meta name="twitter:description" content="AI CAD, robotics, photoreal rendering, and real-time collab — one studio to design and ship products." />
   <meta name="twitter:image" content="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
   <link rel="image_src" href="https://render3d.app/render3d-og-banner.jpg?v=20260722-product-studio" />
@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="/docs-marketplace-ui.css?v=20260715-mkt-payments" />
   <link rel="stylesheet" href="/user-profile.css?v=20260715-user-profile" />
   <link rel="stylesheet" href="/store-preferences.css?v=20260715-store-prefs" />
+  <link rel="stylesheet" href="/studio-branding.css?v=20260908-update-publishing" />
   <script type="importmap">
   {
     "imports": {
@@ -49,6 +50,10 @@
 </head>
 <body class="theme-dark studio-booting">
   <div id="studio-boot-screen" class="studio-boot-screen" role="status" aria-live="polite" aria-busy="true" style="--boot-progress: 8; --boot-progress-pct: 8%;">
+    <a id="studio-boot-attribution" class="studio-boot-attribution" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer" aria-label="Open Render Studio on GitHub">
+      <img class="studio-boot-attribution-logo" src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="Render Studio" width="36" height="36" />
+      <span class="studio-boot-attribution-word">Render Studio</span>
+    </a>
     <div class="studio-boot-card">
       <div class="studio-boot-stage" aria-hidden="true">
         <div class="studio-boot-grid"></div>
@@ -170,7 +175,7 @@
           <span class="studio-boot-spark studio-boot-spark--c"></span>
         </div>
       </div>
-      <p class="studio-boot-title">Loading <span class="studio-boot-title-metal">Render3D Studio</span></p>
+      <p class="studio-boot-title">Loading <span class="studio-boot-title-metal" data-brand-name>Render Studio</span></p>
       <p id="studio-boot-sub" class="studio-boot-sub">Preparing projects and editor...</p>
       <div class="studio-boot-tip" aria-live="polite">
         <span class="studio-boot-tip-kicker">Studio tip</span>
@@ -210,8 +215,8 @@
       </div>
       <p class="studio-boot-progress-copy"><span id="studio-boot-percent">8%</span> assembled</p>
       <div class="studio-boot-logo" aria-hidden="true">
-        <img src="/render3d-logo.png?v=20260715-new-logo" alt="" width="34" height="34" />
-        <span class="studio-boot-logo-word">Render3D</span>
+        <img data-brand-logo src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="" width="34" height="34" />
+        <span class="studio-boot-logo-word" data-brand-name>Render Studio</span>
         <span class="studio-boot-logo-gear" aria-hidden="true">
           <svg class="studio-boot-logo-gear-svg" viewBox="0 0 64 64" width="64" height="64">
             <defs>
@@ -430,8 +435,8 @@
     <header class="toolbar">
       <div class="brand">
         <a href="/" class="brand-link">
-          <img class="logo" src="/render3d-logo.png?v=20260715-new-logo" alt="Render3D" />
-          <h1 class="brand-title-metal">Render3D</h1>
+          <img class="logo" data-brand-logo src="/assets/loading-screen/render-studio-logo.png?v=20260908-branding" alt="Render Studio" />
+          <h1 class="brand-title-metal" data-brand-name>Render Studio</h1>
         </a>
       </div>
       <!-- Management button — admin only, shown by auth.js -->
@@ -2936,6 +2941,7 @@
       });
   })();
   </script>
+  <script type="module" src="/studio-branding.js?v=20260908-update-publishing"></script>
   <script type="module" src="/early-boot.js?v=20260716-boot-5s"></script>
   <div id="prompt-key-popup" class="prompt-key-popup hidden" role="dialog" aria-modal="false" aria-label="Select AI key"></div>
   <div id="model-pick-recommend-modal" class="auth-modal model-pick-recommend-modal hidden" role="dialog" aria-modal="true" aria-labelledby="model-pick-recommend-title" aria-hidden="true">

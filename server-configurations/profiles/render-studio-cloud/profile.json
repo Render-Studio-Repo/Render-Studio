@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "profile_id": "render-studio-cloud",
+  "name": "Render Studio Cloud",
+  "description": "Public cloud defaults with docs-only automatic update publishing.",
+  "popularity": 98,
+  "tags": ["public", "cloud", "docs"],
+  "branding": {
+    "product_name": "Render Studio"
+  },
+  "permissions": {
+    "default_project_visibility": "private",
+    "allow_public_projects": true,
+    "new_user_trial_credits_enabled": true
+  },
+  "marketplace": {
+    "enabled": true,
+    "platform_fee_bps": 1000
+  },
+  "authorized_apps": {
+    "stripe_connect": true,
+    "discord": true,
+    "twitter_x": true
+  },
+  "tools": {
+    "skills_enabled": true,
+    "wiring_simulator": true,
+    "fusion_sync": true,
+    "onshape_sync": true
+  },
+  "security": {
+    "require_jwt_secret": true,
+    "admin_emails_source": "env_or_local",
+    "store_secrets_in_git": false
+  },
+  "storage": {
+    "projects_dir": "projects",
+    "data_dir": "data",
+    "models_live_under": "projects/<user>/<project>/"
+  },
+  "backups": {
+    "code_snapshots": true,
+    "drive_backup": false
+  },
+  "mcp": {
+    "enabled": false,
+    "servers": []
+  },
+  "update_publishing": {
+    "enabled": true,
+    "auto_publish": true,
+    "trusted_release_branch": "master",
+    "workflow_doc": "docs/UPDATE-PUBLISHING.md",
+    "targets": {
+      "docs": true,
+      "slack": false,
+      "discord": false,
+      "linkedin": false
+    }
+  },
+  "prompts": {
+    "system": "prompts/system.md",
+    "instruction": "prompts/instruction.md"
+  }
+}

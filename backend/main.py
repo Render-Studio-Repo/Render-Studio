@@ -61,6 +61,8 @@ from backend.services import teams_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import skills_service, user_ai_keys_service
 from backend.services import part_profiles_service
+from backend.services import branding_service
+from backend.services import server_config_service
 from backend.services.trace_log import TraceTimer, add as trace_add, list_entries, new_trace_id
 from backend.ws.manager import hub
 from backend.auth import decode_token
@@ -991,6 +993,23 @@ class AdminFeedbackReviewRequest(BaseModel):
 
 class AdminFeedbackMessageRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
+
+
+class AdminServerSettingsUpdateRequest(BaseModel):
+    product_name: str | None = Field(default=None, max_length=64)
+
+
+class AdminServerConfigUpdateRequest(BaseModel):
+    product_name: str | None = Field(default=None, max_length=64)
+    update_publishing: dict[str, Any] | None = None
+    permissions: dict[str, Any] | None = None
+    marketplace: dict[str, Any] | None = None
+
+
+class AdminServerConfigPublishRequest(BaseModel):
+    dry_run: bool = False
+    force: bool = False
+    update_id: str | None = None
 
 
 class AdminNewUserReviewRequest(BaseModel):
@@ -6302,6 +6321,195 @@ def admin_changelog(user: dict[str, Any] = Depends(get_current_user)):
         "bytes": len(markdown.encode("utf-8")),
         "mtime": mtime,
     }
+
+
+@app.get("/api/branding")
+def get_public_branding():
+    """Public site branding used by boot screen, toolbar, and info pages."""
+    return branding_service.public_branding()
+
+
+@app.get("/api/branding/assets/{filename}")
+def get_branding_asset(filename: str):
+    resolved = branding_service.resolve_asset(filename)
+    if not resolved:
+        raise HTTPException(404, "Branding asset not found")
+    path, media = resolved
+    return FileResponse(path, media_type=media)
+
+
+@app.get("/api/admin/server-settings")
+def admin_get_server_settings(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.admin_branding()
+
+
+@app.put("/api/admin/server-settings")
+def admin_update_server_settings(
+    body: AdminServerSettingsUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    if body.product_name is None:
+        raise HTTPException(400, "Provide product_name to update.")
+    try:
+        return branding_service.update_product_name(body.product_name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/admin/server-settings/logo")
+async def admin_upload_branding_logo(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    data = await file.read()
+    try:
+        return branding_service.save_logo_upload(
+            filename=file.filename or "logo.png",
+            content_type=file.content_type or "",
+            data=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/admin/server-settings/logo")
+def admin_clear_branding_logo(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.clear_logo()
+
+
+@app.post("/api/admin/server-settings/loading-screen")
+async def admin_upload_loading_screen(
+    file: UploadFile = File(...),
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    data = await file.read()
+    try:
+        return branding_service.save_loading_screen_upload(
+            filename=file.filename or "loading.png",
+            content_type=file.content_type or "",
+            data=data,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.delete("/api/admin/server-settings/loading-screen")
+def admin_clear_loading_screen(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.clear_loading_screen()
+
+
+@app.post("/api/admin/server-settings/reset")
+def admin_reset_server_settings(user: dict[str, Any] = Depends(get_current_user)):
+    _require_a1projects_admin(user)
+    return branding_service.reset_all()
+
+
+@app.get("/api/admin/server-config")
+def admin_get_server_config(user: dict[str, Any] = Depends(get_current_user)):
+    """Local server config + public profile catalog (gitignored local settings)."""
+    _require_a1projects_admin(user)
+    return server_config_service.admin_view()
+
+
+@app.put("/api/admin/server-config")
+def admin_update_server_config(
+    body: AdminServerConfigUpdateRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    patch: dict[str, Any] = {}
+    if body.product_name is not None:
+        patch["product_name"] = body.product_name
+    if body.update_publishing is not None:
+        patch["update_publishing"] = body.update_publishing
+    if body.permissions is not None:
+        patch["permissions"] = body.permissions
+    if body.marketplace is not None:
+        patch["marketplace"] = body.marketplace
+    if not patch:
+        raise HTTPException(400, "No server-config fields to update.")
+    try:
+        server_config_service.save_local_settings(patch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # Keep branding product name in sync when renamed here.
+    if body.product_name is not None:
+        try:
+            branding_service.update_product_name(body.product_name)
+        except ValueError:
+            pass
+    return server_config_service.admin_view()
+
+
+@app.post("/api/admin/server-config/profiles/{profile_id}/import")
+def admin_import_server_config_profile(
+    profile_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        view = server_config_service.import_profile(profile_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    product_name = (view.get("local") or {}).get("product_name")
+    if product_name:
+        try:
+            branding_service.update_product_name(product_name)
+        except ValueError:
+            pass
+    return view
+
+
+@app.get("/api/admin/server-config/profiles/{profile_id}/readme")
+def admin_server_config_profile_readme(
+    profile_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    try:
+        markdown = server_config_service.profile_readme(profile_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"profile_id": profile_id, "markdown": markdown}
+
+
+@app.get("/api/admin/server-config/profiles/{profile_id}/assets/{filename}")
+def admin_server_config_profile_asset(
+    profile_id: str,
+    filename: str,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    _require_a1projects_admin(user)
+    path = server_config_service.profile_asset_path(profile_id, filename)
+    if not path:
+        raise HTTPException(404, "Asset not found")
+    return FileResponse(path)
+
+
+@app.post("/api/admin/server-config/publish-updates")
+def admin_publish_server_updates(
+    body: AdminServerConfigPublishRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    """Run the update publisher (same as scripts/publish-server-updates.py)."""
+    _require_a1projects_admin(user)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "publish_server_updates",
+        ROOT / "scripts" / "publish-server-updates.py",
+    )
+    if spec is None or spec.loader is None:
+        raise HTTPException(500, "Publisher script not found")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.publish(dry_run=body.dry_run, force=body.force, only_id=body.update_id)
 
 
 @app.get("/api/admin/new-users")
