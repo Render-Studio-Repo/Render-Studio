@@ -1,3 +1,13 @@
+## 2026-09-18 — Phone Workshop walk + touch layout
+
+- Added a mobile-only Workshop HUD for `<=430px`: left thumbstick walk, right drag-to-look pad, center reticle placement, and a bottom action rail for Menu / Place / Studio.
+- Workshop on phone now hides the regular mobile Studio FAB/pick tray/view-cube while active, and the Workshop sheet becomes a dismissible top panel sized to stay clear of the thumb zones.
+- Workshop launcher moves above the existing phone chrome, touch targets are 50px on the action rail, and desktop Workshop keeps its prior mouse-look / WASD path unchanged.
+- Cache-bust: `styles.css`, `app.js`, and `workshop-mode.js` now use `?v=20260918-workshop-phone`.
+- Verified in a mocked static browser harness at `390x844` and `1280x900`: no horizontal overflow, no control overlap, sheet dismiss works, walk/look change the scene on mobile, and desktop does not show the phone HUD.
+
+---
+
 ## 2026-08-01 — Design ribbon Create tools use VibeCAD icons
 
 - Replaced SOLID Create object-tool icons with FreeCAD/VibeCAD PartDesign SVGs (Box→Pad).
