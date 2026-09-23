@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from backend import database
 from backend.services import twitter_account_vault_service as vault
+from backend.services import twitter_repost_service
 
 
 def _seed_user(user_id: str) -> None:
@@ -70,6 +71,8 @@ def test_upsert_keeps_primary_and_encrypts_all_tokens(tmp_path, monkeypatch):
     auth = vault.get_account_auth(user_id, "Winstead_Works")
     assert auth["access_token"] == "secondary-access-token"
     assert auth["refresh_token"] == "oauth1:secondary-secret-token"
+    assert auth["oauth1_access_token"] == "secondary-access-token"
+    assert auth["oauth1_access_token_secret"] == "secondary-secret-token"
 
     with database.get_conn() as conn:
         row = conn.execute(
@@ -83,6 +86,8 @@ def test_upsert_keeps_primary_and_encrypts_all_tokens(tmp_path, monkeypatch):
     assert len(extras) == 1
     assert str(extras[0]["access_token_enc"]).startswith("gAAAAA")
     assert str(extras[0]["refresh_token_enc"]).startswith("gAAAAA")
+    assert str(extras[0]["oauth1_access_token_enc"]).startswith("gAAAAA")
+    assert str(extras[0]["oauth1_access_token_secret_enc"]).startswith("gAAAAA")
     assert "secondary-access-token" not in row["accounts_json"]
 
 
@@ -145,3 +150,61 @@ def test_listing_migrates_legacy_plaintext_tokens_to_ciphertext(tmp_path, monkey
     extras = json.loads(row["accounts_json"] or "[]")
     assert str(extras[0]["access_token_enc"]).startswith("gAAAAA")
     assert str(extras[0]["refresh_token_enc"]).startswith("gAAAAA")
+    assert str(extras[0]["oauth1_access_token_enc"]).startswith("gAAAAA")
+    assert str(extras[0]["oauth1_access_token_secret_enc"]).startswith("gAAAAA")
+
+
+def test_poll_and_repost_orders_oldest_first_and_tracks_state(monkeypatch):
+    reposted: list[str] = []
+    saved: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        twitter_repost_service,
+        "load_state",
+        lambda *args, **kwargs: {
+            "user_id": "sam-user",
+            "repost_as_username": "A1_Projects",
+            "source_username": "Winstead_Works",
+            "last_seen_id": None,
+            "reposted_ids": [],
+        },
+    )
+    monkeypatch.setattr(
+        twitter_repost_service,
+        "save_state",
+        lambda *args, **kwargs: saved.update(kwargs["state"]),
+    )
+    monkeypatch.setattr(
+        twitter_repost_service,
+        "fetch_recent_posts",
+        lambda *args, **kwargs: [
+            {"id": "200", "created_at": "2026-09-23T20:05:00+00:00"},
+            {"id": "100", "created_at": "2026-09-23T20:00:00+00:00"},
+        ],
+    )
+    monkeypatch.setattr(
+        twitter_repost_service,
+        "repost_post",
+        lambda user_id, *, repost_as_username, tweet_id: reposted.append(tweet_id) or {
+            "tweet_id": tweet_id,
+            "reposted": True,
+            "actor_username": repost_as_username,
+        },
+    )
+    monkeypatch.setattr(
+        twitter_repost_service,
+        "state_path",
+        lambda *args, **kwargs: database.DB_PATH.parent / "scheduled-social" / "x-repost-test.json",
+    )
+
+    result = twitter_repost_service.poll_and_repost(
+        "sam-user",
+        source_username="Winstead_Works",
+        repost_as_username="A1_Projects",
+    )
+
+    assert result["ok"] is True
+    assert reposted == ["100", "200"]
+    assert result["tweet_ids"] == ["100", "200"]
+    assert saved["last_seen_id"] == "200"
+    assert saved["reposted_ids"] == ["100", "200"]

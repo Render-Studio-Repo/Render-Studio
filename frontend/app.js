@@ -74,8 +74,8 @@ import { createKnowledgePromptUI, getKnowledgePromptFields } from "./knowledge-b
 import { createObjectHistoryUI } from "./object-history.js?v=20260715-history-prompts-visible";
 import { createWorkspaceActivityUI } from "./workspace-activity.js";
 import { createWorkspaceBrowser } from "./workspace-browser.js?v=20260730-ref-share";
-import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260730-xr-pov-rec2";
-import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260729-xr-fix3";
+import { createViewportVideoRecorder } from "./viewport-video-record.js?v=20260923-x-multi-account";
+import { createScreenshotMarkup } from "./screenshot-markup.js?v=20260923-x-multi-account";
 import { createViewportXR } from "./viewport-xr.js?v=20260918-workshop-vr";
 import { readExplorerDragPayloads, setExplorerDragData } from "./explorer-drag.js?v=20260618-multi-drag";
 import { createActivityLog } from "./activity-log.js";

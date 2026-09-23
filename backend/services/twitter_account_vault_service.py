@@ -105,10 +105,28 @@ def _sanitize_account(record: dict[str, Any] | None) -> tuple[dict[str, Any] | N
     refresh_enc, refresh_migrated = _ciphertext(
         record.get("refresh_token_enc") or record.get("refresh_token")
     )
+    oauth1_access_enc, oauth1_access_migrated = _ciphertext(
+        record.get("oauth1_access_token_enc")
+    )
+    oauth1_secret_enc, oauth1_secret_migrated = _ciphertext(
+        record.get("oauth1_access_token_secret_enc")
+    )
     created_at = str(record.get("created_at") or "").strip() or _now_iso()
     updated_at = str(record.get("updated_at") or "").strip() or created_at
+    scope = str(record.get("scope") or "").strip() or "oauth2"
+    if scope == "oauth1":
+        if not oauth1_access_enc and access_enc:
+            oauth1_access_enc = access_enc
+            oauth1_access_migrated = True
+        if not oauth1_secret_enc and refresh_enc:
+            secret_plain = _decrypt_or_legacy(refresh_enc)
+            if secret_plain:
+                if secret_plain.startswith(OAUTH1_SECRET_PREFIX):
+                    secret_plain = secret_plain[len(OAUTH1_SECRET_PREFIX):]
+                oauth1_secret_enc = _encrypt(secret_plain)
+                oauth1_secret_migrated = True
     account = {
-        "scope": str(record.get("scope") or "").strip() or "oauth2",
+        "scope": scope,
         "username": str(record.get("username") or "").strip() or None,
         "display_name": str(record.get("display_name") or "").strip() or None,
         "twitter_user_id": str(record.get("twitter_user_id") or "").strip() or None,
@@ -116,10 +134,17 @@ def _sanitize_account(record: dict[str, Any] | None) -> tuple[dict[str, Any] | N
         "expires_at": str(record.get("expires_at") or "").strip() or None,
         "access_token_enc": access_enc,
         "refresh_token_enc": refresh_enc,
+        "oauth1_access_token_enc": oauth1_access_enc,
+        "oauth1_access_token_secret_enc": oauth1_secret_enc,
         "created_at": created_at,
         "updated_at": updated_at,
     }
-    return account, bool(access_migrated or refresh_migrated)
+    return account, bool(
+        access_migrated
+        or refresh_migrated
+        or oauth1_access_migrated
+        or oauth1_secret_migrated
+    )
 
 
 def _account_payload(
@@ -134,8 +159,18 @@ def _account_payload(
     profile = profile or {}
     now = _now_iso()
     created_at = str((existing or {}).get("created_at") or "").strip() or now
+    clean_scope = str(scope or "oauth2").strip() or "oauth2"
+    oauth1_access_token_enc = None
+    oauth1_access_token_secret_enc = (existing or {}).get("oauth1_access_token_secret_enc")
+    if clean_scope == "oauth1":
+        oauth1_access_token_enc = _encrypt(access_token)
+        secret_plain = str(refresh_token or "").strip()
+        if secret_plain.startswith(OAUTH1_SECRET_PREFIX):
+            secret_plain = secret_plain[len(OAUTH1_SECRET_PREFIX):]
+        if secret_plain:
+            oauth1_access_token_secret_enc = _encrypt(secret_plain)
     return {
-        "scope": str(scope or "oauth2").strip() or "oauth2",
+        "scope": clean_scope,
         "username": str(profile.get("username") or (existing or {}).get("username") or "").strip() or None,
         "display_name": str(profile.get("name") or profile.get("display_name") or (existing or {}).get("display_name") or "").strip() or None,
         "twitter_user_id": str(profile.get("id") or profile.get("twitter_user_id") or (existing or {}).get("twitter_user_id") or "").strip() or None,
@@ -143,6 +178,8 @@ def _account_payload(
         "expires_at": str(expires_at or (existing or {}).get("expires_at") or "").strip() or None,
         "access_token_enc": _encrypt(access_token),
         "refresh_token_enc": _encrypt(refresh_token) if refresh_token else (existing or {}).get("refresh_token_enc"),
+        "oauth1_access_token_enc": oauth1_access_token_enc,
+        "oauth1_access_token_secret_enc": oauth1_access_token_secret_enc,
         "created_at": created_at,
         "updated_at": now,
     }
@@ -160,6 +197,7 @@ def _summary(account: dict[str, Any], *, is_primary: bool) -> dict[str, Any]:
         "updated_at": account.get("updated_at"),
         "expires_at": account.get("expires_at"),
         "has_refresh": bool(account.get("refresh_token_enc")),
+        "has_oauth1_access_secret": bool(account.get("oauth1_access_token_secret_enc")),
         "is_primary": bool(is_primary),
     }
 
@@ -401,6 +439,8 @@ def _upsert_supabase_tokens(user_id: str, accounts: list[dict[str, Any]]) -> Non
                         "picture_url": account.get("picture_url"),
                         "display_name": account.get("display_name"),
                         "twitter_user_id": account.get("twitter_user_id"),
+                        "oauth1_access_token_enc": account.get("oauth1_access_token_enc"),
+                        "oauth1_access_token_secret_enc": account.get("oauth1_access_token_secret_enc"),
                     },
                     "updated_at": _now_iso(),
                 },
@@ -608,12 +648,16 @@ def get_account_auth(user_id: str, target: str | None = None) -> dict[str, Any]:
         selected = match
     access = _decrypt_or_legacy(selected.get("access_token_enc"))
     refresh = _decrypt_or_legacy(selected.get("refresh_token_enc"))
+    oauth1_access = _decrypt_or_legacy(selected.get("oauth1_access_token_enc")) or access
+    oauth1_secret = _decrypt_or_legacy(selected.get("oauth1_access_token_secret_enc"))
     if not access:
         raise RuntimeError("X session incomplete. Reconnect your X account.")
     return {
         "mode": "oauth1" if (refresh or "").startswith(OAUTH1_SECRET_PREFIX) or str(selected.get("scope") or "") == "oauth1" else "oauth2",
         "access_token": access,
         "refresh_token": refresh,
+        "oauth1_access_token": oauth1_access,
+        "oauth1_access_token_secret": oauth1_secret,
         "username": selected.get("username"),
         "twitter_user_id": selected.get("twitter_user_id"),
         "display_name": selected.get("display_name"),

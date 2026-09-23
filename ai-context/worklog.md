@@ -1,3 +1,13 @@
+## 2026-09-23 — Multi-account X vault + Winstead→A1 auto-repost
+
+- Added an encrypted multi-account X vault: primary/default account stays in `oauth_secrets.twitter` / local `twitter_oauth_tokens` root fields, while secondary accounts live additively in `twitter_accounts[]` (Supabase) and `accounts_json` (SQLite).
+- Legacy plaintext SQLite X tokens now auto-migrate to Fernet ciphertext on read; OAuth1 accounts also carry explicit encrypted `oauth1_access_token_enc` + `oauth1_access_token_secret_enc` fields for repost/worker use without changing the primary slot contract.
+- Share screenshot modal now exposes a multi-account **Post as** picker and the X connect affordance reads **Connect another X** when an account is already linked.
+- Added cron-friendly poll/repost path: `backend/services/twitter_repost_service.py` + `scripts/x-auto-repost.py`, with enablement notes in `instructions/actions/X-AUTO-REPOST.md`.
+- Verified via `py_compile`, focused pytest (`tests/test_twitter_account_vault_service.py`), and a browser harness page confirming the selector shows `@A1_Projects` as default and `@Winstead_Works` as the second target.
+
+---
+
 ## 2026-09-18 — Phone Workshop walk + touch layout
 
 - Added a mobile-only Workshop HUD for `<=430px`: left thumbstick walk, right drag-to-look pad, center reticle placement, and a bottom action rail for Menu / Place / Studio.

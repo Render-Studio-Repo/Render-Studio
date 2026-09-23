@@ -464,19 +464,22 @@ def get_user_auth(user_id: str, account_username: str | None = None) -> dict[str
     access = str(account_auth.get("access_token") or "")
     refresh = str(account_auth.get("refresh_token") or "")
     if refresh.startswith(OAUTH1_SECRET_PREFIX) or str(account_auth.get("scope") or "") == "oauth1":
-        secret = refresh[len(OAUTH1_SECRET_PREFIX):] if refresh.startswith(OAUTH1_SECRET_PREFIX) else refresh
-        if not access or not secret:
+        oauth1_access = str(account_auth.get("oauth1_access_token") or access or "")
+        secret = str(account_auth.get("oauth1_access_token_secret") or "")
+        if not secret:
+            secret = refresh[len(OAUTH1_SECRET_PREFIX):] if refresh.startswith(OAUTH1_SECRET_PREFIX) else refresh
+        if not oauth1_access or not secret:
             raise RuntimeError("X session incomplete. Reconnect your X account.")
         auth = OAuth1(
             settings.twitter_client_id,
             client_secret=settings.twitter_client_secret,
-            resource_owner_key=access,
+            resource_owner_key=oauth1_access,
             resource_owner_secret=secret,
             signature_method="HMAC-SHA1",
         )
         return {
             "mode": "oauth1",
-            "access_token": access,
+            "access_token": oauth1_access,
             "refresh_token": refresh,
             "token_secret": secret,
             "auth": auth,
