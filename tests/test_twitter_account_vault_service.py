@@ -157,6 +157,7 @@ def test_listing_migrates_legacy_plaintext_tokens_to_ciphertext(tmp_path, monkey
 def test_poll_and_repost_orders_oldest_first_and_tracks_state(monkeypatch):
     reposted: list[str] = []
     saved: dict[str, object] = {}
+    monkeypatch.setattr(twitter_repost_service, "enabled", lambda: True)
 
     monkeypatch.setattr(
         twitter_repost_service,

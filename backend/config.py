@@ -125,6 +125,16 @@ class Settings(BaseSettings):
     twitter_client_secret: str = ""
     twitter_redirect_uri: str = "https://render3d.app/oauth/twitter/callback"
     twitter_oauth_mode: str = "auto"
+    x_ww_to_a1_repost_enabled: bool = False
+    # Optional explicit app creds + bearer for the Winstead -> A1 auto-repost path.
+    # Keep these empty unless you want that bot path to use a dedicated X app.
+    x_a1_projects_app_key: str = ""
+    x_a1_projects_app_secret: str = ""
+    x_a1_projects_bearer_token: str = ""
+    # Optional dedicated OAuth1 user tokens for @A1_Projects write/repost actions.
+    # If unset, the auto-repost job falls back to the connected A1 vault account.
+    a1_projects_x_access_token: str = ""
+    a1_projects_x_access_token_secret: str = ""
 
     # LinkedIn product-update announcements (member or organization URN)
     linkedin_client_id: str = ""

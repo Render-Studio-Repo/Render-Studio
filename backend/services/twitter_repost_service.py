@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 import requests
+from requests_oauthlib import OAuth1
 
 from backend.config import settings
 from backend.database import get_conn
@@ -34,6 +35,10 @@ def _now_iso() -> str:
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-") or "x-repost"
+
+
+def enabled() -> bool:
+    return bool(getattr(settings, "x_ww_to_a1_repost_enabled", False))
 
 
 def state_path(user_id: str, *, repost_as_username: str, source_username: str) -> Path:
@@ -80,6 +85,41 @@ def _account_summary(user_id: str, username: str) -> dict[str, Any]:
         if str(account.get("username") or "").strip().lower() == normalized:
             return account
     raise RuntimeError(f"Connected X account @{normalized} was not found.")
+
+
+def _app_key() -> str:
+    return str(getattr(settings, "x_a1_projects_app_key", "") or settings.twitter_client_id or "").strip()
+
+
+def _app_secret() -> str:
+    return str(getattr(settings, "x_a1_projects_app_secret", "") or settings.twitter_client_secret or "").strip()
+
+
+def _bearer_token() -> str:
+    return str(getattr(settings, "x_a1_projects_bearer_token", "") or "").strip()
+
+
+def _env_repost_creds() -> dict[str, Any] | None:
+    access = str(getattr(settings, "a1_projects_x_access_token", "") or "").strip()
+    secret = str(getattr(settings, "a1_projects_x_access_token_secret", "") or "").strip()
+    app_key = _app_key()
+    app_secret = _app_secret()
+    if not (access and secret and app_key and app_secret):
+        return None
+    auth = OAuth1(
+        app_key,
+        client_secret=app_secret,
+        resource_owner_key=access,
+        resource_owner_secret=secret,
+        signature_method="HMAC-SHA1",
+    )
+    return {
+        "mode": "oauth1",
+        "access_token": access,
+        "token_secret": secret,
+        "auth": auth,
+        "username": DEFAULT_REPOST_AS_USERNAME,
+    }
 
 
 def _call_x_json(
@@ -129,9 +169,21 @@ def fetch_recent_posts(
     since_id: str | None = None,
     max_results: int = 10,
 ) -> list[dict[str, Any]]:
-    creds = twitter_link_service.get_user_auth(user_id, account_username=source_username)
-    source = _account_summary(user_id, source_username)
-    source_user_id = str(source.get("twitter_user_id") or creds.get("twitter_user_id") or "").strip()
+    bearer = _bearer_token()
+    if bearer:
+        creds: dict[str, Any] = {"mode": "oauth2", "access_token": bearer}
+        who = _call_x_json(
+            creds,
+            "GET",
+            f"{twitter_link_service.API_BASE}/users/by/username/{str(source_username).strip().lstrip('@')}",
+            params={"user.fields": "username,name"},
+            timeout=30,
+        )
+        source_user_id = str((who.get("data") or {}).get("id") or "").strip()
+    else:
+        creds = twitter_link_service.get_user_auth(user_id, account_username=source_username)
+        source = _account_summary(user_id, source_username)
+        source_user_id = str(source.get("twitter_user_id") or creds.get("twitter_user_id") or "").strip()
     if not source_user_id:
         raise RuntimeError(f"Connected X account @{source_username.lstrip('@')} is missing a twitter_user_id.")
     params: dict[str, Any] = {
@@ -152,18 +204,53 @@ def fetch_recent_posts(
 
 
 def repost_post(user_id: str, *, repost_as_username: str, tweet_id: str) -> dict[str, Any]:
-    creds = twitter_link_service.get_user_auth(user_id, account_username=repost_as_username)
-    actor = _account_summary(user_id, repost_as_username)
-    actor_user_id = str(actor.get("twitter_user_id") or creds.get("twitter_user_id") or "").strip()
+    env_creds = _env_repost_creds()
+    if env_creds and str(repost_as_username).strip().lstrip("@").lower() == DEFAULT_REPOST_AS_USERNAME.lower():
+        creds = env_creds
+        try:
+            actor = _account_summary(user_id, repost_as_username)
+        except RuntimeError:
+            actor = {"username": repost_as_username.lstrip("@")}
+        actor_user_id = str(actor.get("twitter_user_id") or "").strip()
+        if not actor_user_id:
+            bearer = _bearer_token()
+            if not bearer:
+                raise RuntimeError(
+                    "A1 env write tokens are set, but the repost actor id is unknown. "
+                    "Connect the A1 primary account in the vault or set X_A1_PROJECTS_BEARER_TOKEN."
+                )
+            who = _call_x_json(
+                {"mode": "oauth2", "access_token": bearer},
+                "GET",
+                f"{twitter_link_service.API_BASE}/users/by/username/{str(repost_as_username).strip().lstrip('@')}",
+                params={"user.fields": "username,name"},
+                timeout=30,
+            )
+            actor_user_id = str((who.get("data") or {}).get("id") or "").strip()
+    else:
+        creds = twitter_link_service.get_user_auth(user_id, account_username=repost_as_username)
+        actor = _account_summary(user_id, repost_as_username)
+        actor_user_id = str(actor.get("twitter_user_id") or creds.get("twitter_user_id") or "").strip()
     if not actor_user_id:
         raise RuntimeError(f"Connected X account @{repost_as_username.lstrip('@')} is missing a twitter_user_id.")
-    payload = _call_x_json(
-        creds,
-        "POST",
-        f"{twitter_link_service.API_BASE}/users/{actor_user_id}/retweets",
-        json_body={"tweet_id": str(tweet_id)},
-        timeout=30,
-    )
+    try:
+        payload = _call_x_json(
+            creds,
+            "POST",
+            f"{twitter_link_service.API_BASE}/users/{actor_user_id}/retweets",
+            json_body={"tweet_id": str(tweet_id)},
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        detail = str(exc).lower()
+        if "already" in detail and ("retweet" in detail or "repost" in detail):
+            return {
+                "tweet_id": str(tweet_id),
+                "reposted": False,
+                "duplicate": True,
+                "actor_username": actor.get("username") or repost_as_username.lstrip("@"),
+            }
+        raise
     data = payload.get("data") or {}
     return {
         "tweet_id": str(tweet_id),
@@ -179,6 +266,14 @@ def poll_and_repost(
     repost_as_username: str = DEFAULT_REPOST_AS_USERNAME,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    if not enabled():
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "disabled",
+            "repost_as_username": repost_as_username.lstrip("@"),
+            "source_username": source_username.lstrip("@"),
+        }
     state = load_state(
         user_id,
         repost_as_username=repost_as_username,
