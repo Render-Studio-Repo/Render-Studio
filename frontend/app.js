@@ -33038,14 +33038,18 @@ window.addEventListener("keydown", (e) => {
       api("/api/integrations/twitter/status").catch((err) => ({ error: err.message || "Could not load X status." })),
       api("/api/integrations/discord/status").catch((err) => ({ error: err.message || "Could not load Discord status." })),
     ]);
-    const twAccount = twitter?.account || {};
+    const twAccounts = Array.isArray(twitter?.accounts) ? twitter.accounts : (twitter?.account ? [twitter.account] : []);
+    const twAccount = twitter?.default_account || twitter?.account || twAccounts[0] || {};
     const twHandle = twAccount.username || twAccount.display_name || "";
+    const twExtraCount = Math.max(0, twAccounts.length - 1);
     if (twitter?.error) {
       setAccountAppConnectionStatus("x", { connected: false, detail: twitter.error });
     } else if (twitter?.connected) {
       setAccountAppConnectionStatus("x", {
         connected: true,
-        detail: twHandle ? `Connected · @${twHandle}` : "Connected",
+        detail: twHandle
+          ? `Connected · @${twHandle}${twExtraCount ? ` (+${twExtraCount} more)` : ""}`
+          : "Connected",
       });
     } else if (twitter?.configured) {
       setAccountAppConnectionStatus("x", { connected: false, detail: "Click to connect" });
@@ -33101,7 +33105,7 @@ window.addEventListener("keydown", (e) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state: data.state, pin }),
       });
-      note("ok", "X connected.");
+      note("ok", "X account connected.");
       return true;
     }
     await new Promise((resolve) => {
@@ -33126,7 +33130,7 @@ window.addEventListener("keydown", (e) => {
         resolve(null);
       }, 10 * 60 * 1000);
     });
-    note("ok", "X connect finished — refresh if status didn’t update.");
+    note("ok", "X account connected.");
     return true;
   }
 
@@ -33182,10 +33186,12 @@ window.addEventListener("keydown", (e) => {
       const discordReady = !!discord?.connected;
       const discordConfigured = !!discord?.configured;
       const discordHandle = discordAccount?.handle || discordAccount?.display_name || "";
-      const twitterAccount = twitter?.account || {};
+      const twitterAccounts = Array.isArray(twitter?.accounts) ? twitter.accounts : (twitter?.account ? [twitter.account] : []);
+      const twitterAccount = twitter?.default_account || twitter?.account || twitterAccounts[0] || {};
       const twitterReady = !!twitter?.connected;
       const twitterConfigured = !!twitter?.configured;
       const twitterHandle = twitterAccount?.username || twitterAccount?.display_name || "";
+      const twitterCount = twitterAccounts.length;
       const googleAccountReady = String(currentUser?.email || "").toLowerCase().includes("@gmail.")
         || String(currentUser?.email || "").toLowerCase().includes("@googlemail.");
       const discordDetail = discord?.error
@@ -33198,7 +33204,7 @@ window.addEventListener("keydown", (e) => {
       const twitterDetail = twitter?.error
         ? twitter.error
         : twitterReady
-          ? `Share clips & screenshots as ${twitterHandle ? `@${twitterHandle}` : "this X account"}`
+          ? `Primary ${twitterHandle ? `@${twitterHandle}` : "X account"}${twitterCount > 1 ? ` · ${twitterCount} accounts stored` : ""}`
           : twitterConfigured
             ? "Connect your X Corp account to share from Render3D"
             : "Server needs an X developer app (TWITTER_CLIENT_ID / SECRET)";
@@ -33237,7 +33243,7 @@ window.addEventListener("keydown", (e) => {
           detail: twitterDetail,
           connected: twitterReady,
           action: twitterReady ? "unlink-twitter" : "connect-twitter",
-          cta: twitterReady ? "Unlink" : twitterConfigured ? "Connect" : "Setup needed",
+          cta: twitterReady ? "Disconnect all" : twitterConfigured ? "Connect" : "Setup needed",
           disabled: !!twitter?.error || (!twitterReady && !twitterConfigured),
         },
         {
@@ -33752,14 +33758,7 @@ window.addEventListener("keydown", (e) => {
       const btn = document.getElementById("btn-x-connect");
       try {
         if (btn) btn.disabled = true;
-        const status = await api("/api/integrations/twitter/status").catch(() => null);
-        if (status?.connected) {
-          const ok = window.confirm("Unlink your X account from Render3D?");
-          if (!ok) return;
-          await unlinkXAccount();
-        } else {
-          await connectXAccount();
-        }
+        await connectXAccount();
         await refreshAccountAuthorizedAppStatus();
         await hydrateAuthorizedApps(document.getElementById("profile-preferences-panel"));
       } catch (err) {

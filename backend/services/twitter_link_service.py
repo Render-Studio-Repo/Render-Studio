@@ -28,6 +28,7 @@ from requests_oauthlib import OAuth1
 
 from backend.config import settings
 from backend.database import get_conn
+from backend.services import twitter_account_vault_service as twitter_vault
 
 logger = logging.getLogger("render3d.twitter")
 
@@ -101,6 +102,9 @@ def _ensure_tables() -> None:
             );
             """
         )
+        cols = {str(row[1]) for row in conn.execute("PRAGMA table_info(twitter_oauth_tokens)").fetchall()}
+        if "accounts_json" not in cols:
+            conn.execute("ALTER TABLE twitter_oauth_tokens ADD COLUMN accounts_json TEXT NOT NULL DEFAULT '[]'")
 
 
 def _pkce_pair() -> tuple[str, str]:
@@ -310,72 +314,14 @@ def _store_tokens(user_id: str, token: dict[str, Any], profile: dict[str, Any] |
     expires_at = (_now() + timedelta(seconds=max(60, expires_in - 60))).isoformat()
     scope = str(token.get("scope") or SCOPES)
     profile = profile or _x_me(access)
-    twitter_user_id = str(profile.get("id") or "").strip() or None
-    username = str(profile.get("username") or "").strip() or None
-    display_name = str(profile.get("name") or username or "X user").strip()
-    picture = str(profile.get("profile_image_url") or "").strip() or None
-    now = _now_iso()
-    _ensure_tables()
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT refresh_token FROM twitter_oauth_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-        if not refresh and existing:
-            refresh = existing["refresh_token"]
-        conn.execute(
-            """
-            INSERT INTO twitter_oauth_tokens
-              (user_id, access_token, refresh_token, expires_at, scope,
-               twitter_user_id, username, display_name, picture_url, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-              access_token = excluded.access_token,
-              refresh_token = COALESCE(excluded.refresh_token, twitter_oauth_tokens.refresh_token),
-              expires_at = excluded.expires_at,
-              scope = excluded.scope,
-              twitter_user_id = COALESCE(excluded.twitter_user_id, twitter_oauth_tokens.twitter_user_id),
-              username = COALESCE(excluded.username, twitter_oauth_tokens.username),
-              display_name = COALESCE(excluded.display_name, twitter_oauth_tokens.display_name),
-              picture_url = COALESCE(excluded.picture_url, twitter_oauth_tokens.picture_url),
-              updated_at = excluded.updated_at
-            """,
-            (
-                user_id,
-                access,
-                refresh,
-                expires_at,
-                scope,
-                twitter_user_id,
-                username,
-                display_name,
-                picture,
-                now,
-                now,
-            ),
-        )
-        # Keep a social_accounts row for Authorized apps / profile consistency.
-        if twitter_user_id:
-            conn.execute(
-                """
-                INSERT INTO social_accounts
-                  (provider, provider_user_id, user_id, email, display_name, picture_url, created_at, updated_at)
-                VALUES ('twitter', ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(provider, provider_user_id) DO UPDATE SET
-                  user_id = excluded.user_id,
-                  email = excluded.email,
-                  display_name = excluded.display_name,
-                  picture_url = excluded.picture_url,
-                  updated_at = excluded.updated_at
-                """,
-                (twitter_user_id, user_id, username, display_name, picture, now, now),
-            )
-    return {
-        "twitter_user_id": twitter_user_id,
-        "username": username,
-        "display_name": display_name,
-        "picture_url": picture,
-    }
+    return twitter_vault.upsert_account(
+        user_id,
+        access_token=access,
+        refresh_token=refresh,
+        expires_at=expires_at,
+        scope=scope,
+        profile=profile,
+    )
 
 
 def upsert_link(user_id: str, code: str, state: str) -> dict[str, Any]:
@@ -487,70 +433,37 @@ def upsert_link_oauth1(
 
 
 def linked_account(user_id: str) -> dict[str, Any] | None:
-    _ensure_tables()
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT twitter_user_id, username, display_name, picture_url, updated_at, expires_at, refresh_token
-              FROM twitter_oauth_tokens
-             WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchone()
-    if not row:
-        return None
-    return {
-        "twitter_user_id": row["twitter_user_id"],
-        "username": row["username"],
-        "display_name": row["display_name"],
-        "picture_url": row["picture_url"],
-        "updated_at": row["updated_at"],
-        "has_refresh": bool(row["refresh_token"]),
-    }
+    return twitter_vault.linked_account(user_id)
 
 
 def unlink(user_id: str) -> None:
-    _ensure_tables()
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT twitter_user_id FROM twitter_oauth_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-        conn.execute("DELETE FROM twitter_oauth_tokens WHERE user_id = ?", (user_id,))
-        if row and row["twitter_user_id"]:
-            conn.execute(
-                "DELETE FROM social_accounts WHERE provider = 'twitter' AND provider_user_id = ? AND user_id = ?",
-                (row["twitter_user_id"], user_id),
-            )
+    twitter_vault.remove_account(user_id)
 
 
 def status(user: dict[str, Any]) -> dict[str, Any]:
-    account = linked_account(user["id"])
+    accounts = twitter_vault.list_accounts(user["id"])
+    account = accounts[0] if accounts else None
     return {
         "configured": configured(),
         "connected": bool(account),
         "account": account,
+        "default_account": account,
+        "accounts": accounts,
+        "account_count": len(accounts),
         "auth_mode": auth_mode(),
     }
 
 
-def get_user_auth(user_id: str) -> dict[str, Any]:
+def get_user_auth(user_id: str, account_username: str | None = None) -> dict[str, Any]:
     """Return auth material for API calls.
 
     oauth1: {mode, access_token, token_secret, auth}  (requests OAuth1 instance)
     oauth2: {mode, access_token}
     """
-    _ensure_tables()
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT access_token, refresh_token, expires_at, scope FROM twitter_oauth_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-    if not row:
-        raise RuntimeError("Connect your X account first.")
-    access = str(row["access_token"] or "")
-    refresh = str(row["refresh_token"] or "")
-    if refresh.startswith(OAUTH1_SECRET_PREFIX) or str(row["scope"] or "") == "oauth1":
+    account_auth = twitter_vault.get_account_auth(user_id, account_username)
+    access = str(account_auth.get("access_token") or "")
+    refresh = str(account_auth.get("refresh_token") or "")
+    if refresh.startswith(OAUTH1_SECRET_PREFIX) or str(account_auth.get("scope") or "") == "oauth1":
         secret = refresh[len(OAUTH1_SECRET_PREFIX):] if refresh.startswith(OAUTH1_SECRET_PREFIX) else refresh
         if not access or not secret:
             raise RuntimeError("X session incomplete. Reconnect your X account.")
@@ -561,9 +474,17 @@ def get_user_auth(user_id: str) -> dict[str, Any]:
             resource_owner_secret=secret,
             signature_method="HMAC-SHA1",
         )
-        return {"mode": "oauth1", "access_token": access, "token_secret": secret, "auth": auth}
+        return {
+            "mode": "oauth1",
+            "access_token": access,
+            "refresh_token": refresh,
+            "token_secret": secret,
+            "auth": auth,
+            "username": account_auth.get("username"),
+            "twitter_user_id": account_auth.get("twitter_user_id"),
+        }
 
-    expires_at = str(row["expires_at"] or "")
+    expires_at = str(account_auth.get("expires_at") or "")
     still_valid = False
     if expires_at:
         try:
@@ -574,17 +495,38 @@ def get_user_auth(user_id: str) -> dict[str, Any]:
         except ValueError:
             still_valid = False
     if still_valid and access:
-        return {"mode": "oauth2", "access_token": access}
+        return {
+            "mode": "oauth2",
+            "access_token": access,
+            "refresh_token": refresh,
+            "username": account_auth.get("username"),
+            "twitter_user_id": account_auth.get("twitter_user_id"),
+        }
     if not refresh:
         raise RuntimeError("X session expired. Reconnect your X account.")
     token = _refresh_access_token(refresh)
-    _store_tokens(user_id, token)
-    return {"mode": "oauth2", "access_token": str(token.get("access_token") or "")}
+    refreshed = _store_tokens(
+        user_id,
+        token,
+        {
+            "id": account_auth.get("twitter_user_id"),
+            "username": account_auth.get("username"),
+            "name": account_auth.get("display_name") or account_auth.get("username"),
+            "profile_image_url": account_auth.get("picture_url"),
+        },
+    )
+    return {
+        "mode": "oauth2",
+        "access_token": str(token.get("access_token") or ""),
+        "refresh_token": str(token.get("refresh_token") or refresh or ""),
+        "username": refreshed.get("username"),
+        "twitter_user_id": refreshed.get("twitter_user_id"),
+    }
 
 
-def get_valid_access_token(user_id: str) -> str:
+def get_valid_access_token(user_id: str, account_username: str | None = None) -> str:
     """Compat: OAuth2 bearer token only. Prefer get_user_auth for posting."""
-    creds = get_user_auth(user_id)
+    creds = get_user_auth(user_id, account_username=account_username)
     if creds.get("mode") == "oauth1":
         return str(creds.get("access_token") or "")
     return str(creds.get("access_token") or "")
@@ -785,8 +727,8 @@ def _upload_video_v2(creds: dict[str, Any], video_path: Path) -> str:
     return media_id
 
 
-def _upload_video(user_id: str, video_path: Path) -> str:
-    creds = get_user_auth(user_id)
+def _upload_video(user_id: str, video_path: Path, *, account_username: str | None = None) -> str:
+    creds = get_user_auth(user_id, account_username=account_username)
     size = video_path.stat().st_size
     if size <= 0:
         raise RuntimeError("Video file is empty.")
@@ -934,8 +876,8 @@ def _upload_video_v1_oauth1(auth: OAuth1, video_path: Path) -> str:
     return media_id
 
 
-def _tweet_with_media(user_id: str, media_id: str, caption: str) -> dict[str, Any]:
-    creds = get_user_auth(user_id)
+def _tweet_with_media(user_id: str, media_id: str, caption: str, *, account_username: str | None = None) -> dict[str, Any]:
+    creds = get_user_auth(user_id, account_username=account_username)
     payload = {"text": caption, "media": {"media_ids": [media_id]}}
     if creds.get("mode") == "oauth1":
         tweet = requests.post(
@@ -956,7 +898,14 @@ def _tweet_with_media(user_id: str, media_id: str, caption: str) -> dict[str, An
         raise RuntimeError(_x_error_detail(tweet, "X post failed"))
     data = (tweet.json() or {}).get("data") or {}
     tweet_id = str(data.get("id") or "")
-    account = linked_account(user_id) or {}
+    account = next(
+        (
+            item
+            for item in twitter_vault.list_accounts(user_id)
+            if not account_username or str(item.get("username") or "").lower() == str(account_username).strip().lstrip("@").lower()
+        ),
+        linked_account(user_id) or {},
+    )
     username = account.get("username") or ""
     url = f"https://x.com/{username}/status/{tweet_id}" if username and tweet_id else (
         f"https://x.com/i/web/status/{tweet_id}" if tweet_id else None
@@ -970,7 +919,7 @@ def _tweet_with_media(user_id: str, media_id: str, caption: str) -> dict[str, An
     }
 
 
-def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png") -> str:
+def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png", *, account_username: str | None = None) -> str:
     """Simple media upload for still images (PNG/JPEG/WebP)."""
     if not image_bytes:
         raise RuntimeError("Image file is empty.")
@@ -986,7 +935,7 @@ def _upload_image(user_id: str, image_bytes: bytes, mime_type: str = "image/png"
         ext = "webp"
     elif "gif" in mime:
         ext = "gif"
-    creds = get_user_auth(user_id)
+    creds = get_user_auth(user_id, account_username=account_username)
     # Prefer v2 media (v1.1 upload often returns empty 403 for current X apps).
     init_body = {
         "media_type": mime if mime != "image/jpg" else "image/jpeg",
@@ -1108,12 +1057,18 @@ def post_image(
     filename: str = "render3d-screenshot.png",
     mime_type: str = "image/png",
     text: str = "",
+    account_username: str | None = None,
 ) -> dict[str, Any]:
     if not image_bytes:
         raise RuntimeError("No image data to post.")
     caption = _caption_with_site_link(text)
-    media_id = _upload_image(user_id, image_bytes, mime_type or "image/png")
-    return _tweet_with_media(user_id, media_id, caption)
+    media_id = _upload_image(
+        user_id,
+        image_bytes,
+        mime_type or "image/png",
+        account_username=account_username,
+    )
+    return _tweet_with_media(user_id, media_id, caption, account_username=account_username)
 
 
 def post_video(
@@ -1123,6 +1078,7 @@ def post_video(
     filename: str = "render3d-video.webm",
     mime_type: str = "video/webm",
     text: str = "",
+    account_username: str | None = None,
 ) -> dict[str, Any]:
     if not video_bytes:
         raise RuntimeError("No video data to post.")
@@ -1132,6 +1088,6 @@ def post_video(
         raw_path = Path(tmp) / (filename or "clip.webm")
         raw_path.write_bytes(video_bytes)
         mp4_path = _ensure_mp4(raw_path, mime_type)
-        media_id = _upload_video(user_id, mp4_path)
+        media_id = _upload_video(user_id, mp4_path, account_username=account_username)
 
-    return _tweet_with_media(user_id, media_id, caption)
+    return _tweet_with_media(user_id, media_id, caption, account_username=account_username)

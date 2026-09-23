@@ -5222,6 +5222,7 @@ async def twitter_post_video(
     form = await request.form()
     upload = form.get("video")
     text = str(form.get("text") or "").strip()
+    account = str(form.get("account") or "").strip() or None
     if upload is None or not hasattr(upload, "read"):
         raise HTTPException(400, "Missing video file.")
     raw = await upload.read()
@@ -5234,6 +5235,7 @@ async def twitter_post_video(
             filename=filename,
             mime_type=mime,
             text=text,
+            account_username=account,
         )
     except RuntimeError as exc:
         msg = str(exc)
@@ -5242,6 +5244,40 @@ async def twitter_post_video(
     except Exception as exc:
         logger.exception("twitter post-video failed user_id=%s", user.get("id"))
         raise HTTPException(502, str(exc) or "Could not post to X.") from exc
+
+
+@app.post("/api/integrations/twitter/post-image")
+async def twitter_post_image(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+):
+    from backend.services import twitter_link_service
+
+    form = await request.form()
+    upload = form.get("image")
+    text = str(form.get("text") or "").strip()
+    account = str(form.get("account") or "").strip() or None
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(400, "Missing image file.")
+    raw = await upload.read()
+    filename = str(getattr(upload, "filename", None) or "render3d-screenshot.png")
+    mime = str(getattr(upload, "content_type", None) or "image/png")
+    try:
+        return twitter_link_service.post_image(
+            user["id"],
+            image_bytes=raw,
+            filename=filename,
+            mime_type=mime,
+            text=text,
+            account_username=account,
+        )
+    except RuntimeError as exc:
+        msg = str(exc)
+        status = 401 if "Connect your X" in msg or "Reconnect" in msg else 400
+        raise HTTPException(status, msg) from exc
+    except Exception as exc:
+        logger.exception("twitter post-image failed user_id=%s", user.get("id"))
+        raise HTTPException(502, str(exc) or "Could not post image to X.") from exc
 
 
 @app.post("/api/video/convert")

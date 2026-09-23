@@ -672,16 +672,23 @@ export function createViewportVideoRecorder({
     try {
       const data = await api("/api/integrations/twitter/status");
       const connected = !!data?.connected;
-      const handle = data?.account?.username ? `@${data.account.username}` : "";
+      const accounts = Array.isArray(data?.accounts) ? data.accounts : (data?.account ? [data.account] : []);
+      const primary = data?.default_account || data?.account || accounts[0] || null;
+      const handle = primary?.username ? `@${primary.username}` : "";
+      const handles = accounts
+        .map((item) => (item?.username ? `@${item.username}` : "X account"))
+        .filter(Boolean);
       if (!data?.configured) {
         setXStatus("Share to X opens compose + saves the clip — attach it with X’s media button.");
         if (connectBtn) connectBtn.disabled = true;
       } else if (connected) {
         setXStatus(
-          `Connected as ${handle || "X account"}. Share to X uses compose + attach (API media needs paid X credits).`,
+          handles.length > 1
+            ? `Connected accounts: ${handles.join(", ")}. Video still uses compose + attach because X media uploads need paid API credits.`
+            : `Connected as ${handle || "X account"}. Share to X uses compose + attach (API media needs paid X credits).`,
         );
         if (connectBtn) {
-          connectBtn.textContent = "Reconnect X";
+          connectBtn.textContent = "Connect another X";
           connectBtn.disabled = false;
         }
       } else {

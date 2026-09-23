@@ -156,6 +156,8 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
   let width = 3;
   let drawing = false;
   let currentStroke = null;
+  let xConnectedAccounts = [];
+  let xSelectedAccount = "";
 
   function setStatus(msg, isError = false) {
     const el = modalEl?.querySelector("[data-shot-markup-status]");
@@ -299,6 +301,10 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
           <span>Caption</span>
           <textarea data-shot-markup-text maxlength="270" rows="3" placeholder="Your caption…"></textarea>
         </label>
+        <label class="screenshot-markup-caption hidden" data-shot-x-account-wrap>
+          <span>Post as</span>
+          <select data-shot-x-account-select></select>
+        </label>
         <p class="screenshot-markup-x-status muted small" data-shot-markup-x-status></p>
         <p class="screenshot-markup-status muted small" data-shot-markup-status role="status"></p>
         <div class="viewport-x-pin-panel hidden" data-shot-x-pin-panel>
@@ -382,6 +388,9 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
       if (e.target.closest("[data-shot-x-pin-cancel]")) {
         finishXPinPrompt(false);
       }
+    });
+    modalEl.querySelector("[data-shot-x-account-select]")?.addEventListener("change", (e) => {
+      xSelectedAccount = String(e?.target?.value || "").trim();
     });
 
     modalEl.querySelector("[data-shot-x-pin-input]")?.addEventListener("keydown", (e) => {
@@ -506,23 +515,57 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
   async function refreshXStatus() {
     const connectBtn = modalEl?.querySelector("[data-shot-markup-connect-x]");
     const postBtn = modalEl?.querySelector("[data-shot-markup-post-x]");
+    const accountWrap = modalEl?.querySelector("[data-shot-x-account-wrap]");
+    const accountSelect = modalEl?.querySelector("[data-shot-x-account-select]");
+    const accountValue = (account) => String(account?.username || account?.twitter_user_id || "").trim();
+    const renderAccountPicker = (accounts = [], preferred = "") => {
+      if (!accountWrap || !accountSelect) return;
+      const normalized = Array.isArray(accounts) ? accounts.filter((item) => accountValue(item)) : [];
+      const selected = normalized.some((item) => accountValue(item) === preferred)
+        ? preferred
+        : accountValue(normalized[0]);
+      xSelectedAccount = selected;
+      accountWrap.classList.toggle("hidden", normalized.length <= 1);
+      accountSelect.innerHTML = normalized.map((item) => {
+        const value = accountValue(item);
+        const handle = item?.username ? `@${item.username}` : "X account";
+        const label = item?.is_primary ? `${handle} (default)` : handle;
+        return `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`;
+      }).join("");
+    };
     if (!api) {
       setXStatus("Sign in to connect X.");
       if (connectBtn) connectBtn.disabled = true;
       if (postBtn) postBtn.disabled = true;
+      xConnectedAccounts = [];
+      renderAccountPicker([]);
       return null;
     }
     try {
       const data = await api("/api/integrations/twitter/status");
       const connected = !!data?.connected;
-      const handle = data?.account?.username ? `@${data.account.username}` : "";
+      const accounts = Array.isArray(data?.accounts) ? data.accounts : (data?.account ? [data.account] : []);
+      const primary = data?.default_account || data?.account || accounts[0] || null;
+      xConnectedAccounts = accounts;
+      renderAccountPicker(accounts, xSelectedAccount || accountValue(primary));
+      const handles = accounts
+        .map((item) => (item?.username ? `@${item.username}` : "X account"))
+        .filter(Boolean);
+      const handle = primary?.username ? `@${primary.username}` : "";
       if (connected) {
-        setXStatus(`Connected as ${handle || "X account"}.`);
+        setXStatus(
+          handles.length > 1
+            ? `Connected accounts: ${handles.join(", ")}. Choose one above to post from Render Studio.`
+            : `Connected as ${handle || "X account"}.`,
+        );
         if (connectBtn) {
-          connectBtn.textContent = "Reconnect X";
+          connectBtn.textContent = "Connect another X";
           connectBtn.disabled = false;
         }
-        if (postBtn) postBtn.disabled = false;
+        if (postBtn) {
+          postBtn.disabled = false;
+          postBtn.textContent = "Post to X";
+        }
       } else {
         setXStatus(
           data?.configured
@@ -533,11 +576,18 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
           connectBtn.textContent = "Connect X";
           connectBtn.disabled = !data?.configured;
         }
-        if (postBtn) postBtn.disabled = true;
+        if (postBtn) {
+          postBtn.disabled = true;
+          postBtn.textContent = "Share to X";
+        }
+        xConnectedAccounts = [];
+        renderAccountPicker([]);
       }
       return data;
     } catch (err) {
       setXStatus(err?.message || "Could not check X status.");
+      xConnectedAccounts = [];
+      renderAccountPicker([]);
       return null;
     }
   }
@@ -714,10 +764,26 @@ export function createScreenshotMarkup({ api = null, getToken = null, onStatus =
 
   async function postToX() {
     try {
-      setStatus("Opening X compose…");
       const dataUrl = await compositeMarkedPng();
       const blob = await (await fetch(dataUrl)).blob();
       const caption = normalizeXShareCaption(modalEl?.querySelector("[data-shot-markup-text]")?.value);
+
+      if (api && xConnectedAccounts.length) {
+        setStatus("Posting to X…");
+        const payload = new FormData();
+        payload.append("image", blob, "render3d-screenshot.png");
+        payload.append("text", caption);
+        if (xSelectedAccount) payload.append("account", xSelectedAccount);
+        const result = await api("/api/integrations/twitter/post-image", {
+          method: "POST",
+          body: payload,
+        });
+        const handle = result?.username ? `@${result.username}` : (xSelectedAccount ? `@${String(xSelectedAccount).replace(/^@/, "")}` : "your X account");
+        setStatus(`Posted to ${handle}.`);
+        return;
+      }
+
+      setStatus("Opening X compose…");
 
       const shared = await shareImageViaWebShare(blob, caption);
       if (shared) {
