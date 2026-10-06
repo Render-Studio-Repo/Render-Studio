@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "updated_at": "2026-10-06T22:00:00.000Z",
+  "policy": {
+    "source_of_truth": true,
+    "preflight": "node scripts/feature-map.mjs preflight --changed <paths>",
+    "verify": "node scripts/feature-map.mjs verify --changed <paths>",
+    "unknown_is_ok": false
+  },
+  "features": [
+    {
+      "id": "install.desktop-one-click",
+      "name": "One-click desktop installation",
+      "lock": "on",
+      "criticality": "high",
+      "contract": "Windows and macOS users can install Render Studio, create or sign in to a Render account, configure AI access, verify the local service, and start the workspace without manually creating a Python environment.",
+      "paths": [
+        ".env.example",
+        "Install Render Studio.cmd",
+        "Install Render Studio.command",
+        "README.md",
+        "Start Render Studio.cmd",
+        "Start Render Studio.command",
+        "frontend/setup.css",
+        "frontend/setup.html",
+        "frontend/setup.js",
+        "ai-context/feature-map.json",
+        "ai-context/ops/README.md",
+        "ai-context/ops/debugger/.gitkeep",
+        "ai-context/ops/debugger/README.md",
+        "ai-context/receipts/RCPT-20261006-PUBLIC-INSTALLERS.json",
+        "requirements.txt",
+        "scripts/bootstrap_render_instance.py",
+        "scripts/feature-map.mjs",
+        "scripts/install-render-studio.ps1",
+        "scripts/install-render-studio.sh",
+        "scripts/test-installers.py"
+      ],
+      "receipt_ids": [
+        "RCPT-20261006-PUBLIC-INSTALLERS"
+      ],
+      "checks": [
+        {
+          "id": "public-installer-contract",
+          "argv": ["python3", "-m", "unittest", "scripts.test-installers", "-v"],
+          "mandatory": true
+        },
+        {
+          "id": "public-installer-shell-syntax",
+          "argv": ["bash", "-n", "Install Render Studio.command", "Start Render Studio.command", "scripts/install-render-studio.sh"],
+          "mandatory": true
+        }
+      ],
+      "client_checks": [
+        "On macOS, double-click Install Render Studio.command and confirm the setup page opens.",
+        "On Windows, double-click Install Render Studio.cmd and confirm the setup page opens."
+      ]
+    }
+  ]
+}
