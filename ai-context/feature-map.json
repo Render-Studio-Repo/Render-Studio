@@ -13,7 +13,7 @@
       "name": "One-click desktop installation",
       "lock": "on",
       "criticality": "high",
-      "contract": "Windows and macOS users can install and start Render Studio from a checked-out public repository without manually creating a Python environment.",
+      "contract": "Windows and macOS users can install Render Studio, create or sign in to a Render account, configure AI access, verify the local service, and start the workspace without manually creating a Python environment.",
       "paths": [
         ".env.example",
         "Install Render Studio.cmd",
@@ -21,6 +21,9 @@
         "README.md",
         "Start Render Studio.cmd",
         "Start Render Studio.command",
+        "frontend/setup.css",
+        "frontend/setup.html",
+        "frontend/setup.js",
         "ai-context/feature-map.json",
         "ai-context/ops/README.md",
         "ai-context/ops/debugger/.gitkeep",

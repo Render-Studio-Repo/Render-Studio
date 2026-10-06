@@ -25,6 +25,17 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("run.py", mac)
         self.assertIn("run.py", win)
 
+    def test_first_run_setup_covers_account_and_ai_access(self):
+        html = (ROOT / "frontend" / "setup.html").read_text(encoding="utf-8")
+        js = (ROOT / "frontend" / "setup.js").read_text(encoding="utf-8")
+
+        self.assertIn("Create Render account", html)
+        self.assertIn("Connect a subscription", html)
+        self.assertIn("Add an API key", html)
+        self.assertIn('authenticate("/api/auth/register"', js)
+        self.assertIn('api("/api/user/ai-keys"', js)
+        self.assertIn('/?setup_ai=subscriptions', js)
+
 
 if __name__ == "__main__":
     unittest.main()
