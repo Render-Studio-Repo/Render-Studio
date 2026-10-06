@@ -24,6 +24,23 @@
     </p>
     <p class="setup-status" id="setup-status"></p>
 
+    <section class="setup-card setup-card-primary" id="setup-mode-card">
+      <h3>How do you want to use this installation?</h3>
+      <p>Choose whether this computer connects to your Render account and public ecosystem, or stays as a private local installation.</p>
+      <div class="setup-choice-grid">
+        <button type="button" class="setup-choice" id="btn-render-ecosystem">
+          <strong>Sign in to Render</strong>
+          <span>Check Render’s account service, open the official login, and connect this instance to the marketplace ecosystem.</span>
+        </button>
+        <button type="button" class="setup-choice" id="btn-private-local">
+          <strong>Set up locally</strong>
+          <span>Use a local account and database. Do not join the Render ecosystem or send health reports.</span>
+        </button>
+      </div>
+      <p class="setup-status" id="setup-mode-status"></p>
+      <p class="muted small">You can change ecosystem and health-reporting choices later on this page. A hosted Render login and a local account are separate until account federation is enabled.</p>
+    </section>
+
     <section class="setup-card setup-card-primary" id="setup-ai-card">
       <h3>Choose AI access for this instance</h3>
       <p>Every installation uses its own accounts. Render’s private Luna subscription and cloud keys stay only on the official Render server.</p>

@@ -73,7 +73,7 @@
 .setup-card#setup-telemetry-card .setup-actions { margin-top: 8px; }
 .setup-card-primary { border-color: #2f81f7; }
 .setup-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
-.setup-choice { display: grid; gap: 5px; padding: 14px; border: 1px solid #30363d; border-radius: 12px; color: #e6edf3; text-decoration: none; background: #0d1117; }
+.setup-choice { display: grid; gap: 5px; padding: 14px; border: 1px solid #30363d; border-radius: 12px; color: #e6edf3; text-decoration: none; background: #0d1117; font: inherit; text-align: left; cursor: pointer; }
 .setup-choice:hover { border-color: #58a6ff; background: #111923; }
 .setup-choice span { color: #9da7b3; font-size: 13px; line-height: 1.4; }
 @media (max-width: 560px) { .setup-choice-grid { grid-template-columns: 1fr; } }

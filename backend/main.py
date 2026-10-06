@@ -6618,6 +6618,13 @@ def setup_status(request: Request):
     return setup.public_status(ip=ip, is_admin=admin)
 
 
+@app.get("/api/setup/render-login-status")
+def setup_render_login_status():
+    from backend.services import instance_network_client
+
+    return instance_network_client.render_login_status()
+
+
 @app.get("/api/setup/sql")
 def setup_sql():
     from backend.services import instance_setup_service as setup

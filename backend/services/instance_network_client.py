@@ -91,6 +91,31 @@ def public_status() -> dict[str, Any]:
     }
 
 
+def render_login_status() -> dict[str, Any]:
+    """Check the public Render account service without sending local identity."""
+    base = hub_base()
+    result = {
+        "reachable": False,
+        "hub": base,
+        "login_url": f"{base}/?login=1&source=desktop-setup",
+        "signup_url": f"{base}/?signup=1&source=desktop-setup",
+        "providers": [],
+    }
+    try:
+        import httpx
+
+        health = httpx.get(f"{base}/api/health", timeout=5.0)
+        health.raise_for_status()
+        providers = httpx.get(f"{base}/api/auth/social/providers", timeout=5.0)
+        providers.raise_for_status()
+        payload = providers.json()
+        result["reachable"] = True
+        result["providers"] = list(payload.get("providers") or []) if isinstance(payload, dict) else []
+    except Exception as exc:
+        logger.info("Render login check unavailable type=%s", type(exc).__name__)
+    return result
+
+
 def configure(*, instance_name: str, reporting_opt_in: bool, public_network: bool, ecosystem_opt_in: bool) -> dict[str, Any]:
     from backend.services import instance_setup_service as setup
     from backend.services import marketplace_config_service as market

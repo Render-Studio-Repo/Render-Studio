@@ -36,6 +36,11 @@
           "mandatory": true
         },
         {
+          "id": "public-first-run-contract",
+          "argv": ["python3", "-m", "unittest", "backend.tests.test_local_ai_key_schema", "backend.tests.test_render_login_setup", "backend.tests.test_instance_setup", "-v"],
+          "mandatory": true
+        },
+        {
           "id": "public-backend-syntax",
           "argv": ["python3", "-m", "py_compile", "backend/main.py", "backend/config.py", "backend/services/platform_roles_service.py"],
           "mandatory": true

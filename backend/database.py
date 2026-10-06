@@ -33,6 +33,21 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_ai_keys (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                api_key_enc TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                base_url TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_ai_keys_user
+                ON user_ai_keys(user_id, created_at);
+
             CREATE TABLE IF NOT EXISTS auth_device_sessions (
                 token_hash TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -471,6 +486,10 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE users ADD COLUMN ai_model TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN active_ai_key_id TEXT")
         except sqlite3.OperationalError:
             pass
         try:

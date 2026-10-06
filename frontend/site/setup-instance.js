@@ -146,6 +146,56 @@ async function loadStatus() {
   }
 }
 
+async function chooseLocalSetup() {
+  const modeStatus = document.getElementById("setup-mode-status");
+  setStatus(modeStatus, "Preparing a private local installation…");
+  try {
+    await api("/api/setup/local", { method: "POST", body: "{}" });
+    await api("/api/setup/instance-network", {
+      method: "POST",
+      body: JSON.stringify({
+        instance_name: document.getElementById("instance-network-name")?.value || "Render Studio instance",
+        reporting_opt_in: false,
+        public_network: false,
+        ecosystem_opt_in: false,
+      }),
+    });
+    setStatus(modeStatus, "Local mode is ready. Create or sign in to a local account when you open Studio.", "ok");
+    await loadStatus();
+  } catch (err) {
+    setStatus(modeStatus, err.message || "Could not enable local mode.", "err");
+  }
+}
+
+async function chooseRenderEcosystem() {
+  const modeStatus = document.getElementById("setup-mode-status");
+  setStatus(modeStatus, "Checking Render’s account service…");
+  try {
+    const login = await api("/api/setup/render-login-status");
+    if (!login.reachable) {
+      throw new Error("Render’s login service is not reachable. You can continue locally and connect later.");
+    }
+    await api("/api/setup/local", { method: "POST", body: "{}" });
+    await api("/api/setup/instance-network", {
+      method: "POST",
+      body: JSON.stringify({
+        instance_name: document.getElementById("instance-network-name")?.value || "Render Studio instance",
+        reporting_opt_in: false,
+        public_network: false,
+        ecosystem_opt_in: true,
+      }),
+    });
+    setStatus(modeStatus, "Render login is available. Sign in in the new tab, then return here to finish local setup.", "ok");
+    window.open(login.login_url, "render-account-login", "noopener,noreferrer");
+    await loadStatus();
+  } catch (err) {
+    setStatus(modeStatus, err.message || "Could not connect to Render.", "err");
+  }
+}
+
+document.getElementById("btn-private-local")?.addEventListener("click", chooseLocalSetup);
+document.getElementById("btn-render-ecosystem")?.addEventListener("click", chooseRenderEcosystem);
+
 async function loadSql() {
   const data = await api("/api/setup/sql");
   if (sqlBox) sqlBox.textContent = data.sql || "";
