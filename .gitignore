@@ -1,12 +1,14 @@
 .env
 .env.*
 !.env.example
+bambu-printers.json
 
 # Runtime / user data
 data/
 projects/
 backups/
 inbox/
+backend/local_private/
 backend/render3d.db
 logs/
 
@@ -46,6 +48,7 @@ tmp_jake_text_to_cad
 
 # Python
 .venv/
+.venv-mac/
 myenv/
 __pycache__/
 *.py[cod]
@@ -84,3 +87,42 @@ scripts/credentials_google*.json
 # Local tool installs (do not commit)
 /.bun/
 /.agents/
+
+# Upstream checkouts (icons copied into frontend/)
+vendor/
+
+# Third-party OS / SDK checkouts
+integrations/*
+# First-party SQL (not a vendor checkout)
+!integrations/supabase/
+!integrations/supabase/**
+
+# Mac FreeCAD product local builds
+mac-render-studio/dist/
+mac-render-studio/logs/
+
+# Ops runtime ticks (keep READMEs / .gitkeep)
+ai-context/ops/**/logs/*
+!ai-context/ops/**/logs/.gitkeep
+ai-context/ops/**/*.log
+
+# Never snapshot these into git
+.DS_Store
+mac-render-studio/runtime/
+
+# Local session notes (keep on disk; do not commit)
+Sam's Notes
+**/Sam's Notes
+*Sam's Notes*
+
+# Conservative sync excludes (secrets + package installs)
+node_modules/
+credentials.json
+
+# Private marketing ops, music library, taste knowledge — never GitHub
+Marketing/
+/Marketing/**
+
+# Shared robotics download/mesh cache; avatar assets are shipped UI resources.
+.robotics-packages/
+!frontend/assets/avatars/kenney/*.glb

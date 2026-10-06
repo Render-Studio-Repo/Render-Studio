@@ -1,0 +1,7 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {drawingWristHost,panelDragTranslatesOnly,liveVoiceXrSession} from './xr-interaction-state.js';
+import {createProfileYControl} from './xr-robotics-profile-controls.js';
+test('physical controllers win over stale hand-tracking poses; tracked hands use wrist',()=>{const grip={},hand={},wrist={},base={grip,hand,wrist,posed:()=>true};assert.equal(drawingWristHost({...base,source:{gamepad:{},hand:{}}}),grip);assert.equal(drawingWristHost({...base,source:{hand:{}}}),wrist);});
+test('trigger drag keeps orientation and grip allows rotation',()=>{assert.equal(panelDragTranslatesOnly('trigger',false),true);assert.equal(panelDragTranslatesOnly(undefined,true),true);assert.equal(panelDragTranslatesOnly('grip',false),false);});
+test('voice uses active renderer session during lifecycle handoff, never desktop join',()=>{const session={};assert.equal(liveVoiceXrSession(false,null,{isPresenting:true,getSession:()=>session}),session);assert.equal(liveVoiceXrSession(false,session,{isPresenting:false}),null);assert.equal(liveVoiceXrSession(true,{ended:true},{}),null);});
+test('a slow frame at Y release never resumes arms after a long hold',()=>{const y=createProfileYControl(),status={y_map:'tap_pause_hold3_kill'};y.sample(true,0,status);assert.equal(y.sample(false,2100,status),'session_reset');assert.equal(y.sample(false,2200,status),null);});

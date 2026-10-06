@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageSequence
 ROOT = Path(__file__).resolve().parents[1]
 MEDIA = ROOT / "frontend" / "docs" / "media"
 OUT_DIR = MEDIA / "social"
-LOGO = ROOT / "frontend" / "render3d-logo.png"
+LOGO = ROOT / "frontend" / "media" / "images" / "render-animations" / "VR-Animations" / "render-logo-gear-still.png"
 
 DEFAULT_GIFS = [
     "render-agent.gif",

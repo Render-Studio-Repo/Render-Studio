@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recent Updates — Render Studio Docs</title>
+  <meta name="description" content="Render Studio project updates, product notes, and open-source roadmap." />
+  <meta property="og:site_name" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:title" content="Render Studio Updates" />
+  <meta property="og:description" content="Follow what we are building at Render Studio: AI CAD, editable 3D models, collaboration, robotics workflows, and our open-source roadmap." />
+  <meta property="og:image" content="/docs/media/render-studio-roadmap-robotics.jpg?v=20260915-updban1" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Render Studio Updates" />
+  <meta name="twitter:description" content="Project updates from Render Studio as we build toward opening the project up in August or September." />
+  <meta name="twitter:image" content="/docs/media/render-studio-roadmap-robotics.jpg?v=20260915-updban1" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260915-updban1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1-docui1-docui2-docui3-xfeed1-xfeed2-xfeed3" />
+  <link rel="stylesheet" href="/site/getting-started-hero.css?v=20260914-docslayout1-lanip1-docui1-docui2-docui3-xfeed1-xfeed2-xfeed3" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+</head>
+<body class="info-page gs-body updates-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+          <a href="/updates.html" class="nav-tab active" role="menuitem">Updates</a>
+          <a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+      <div class="toolbar-spacer"></div>
+      <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Sign in">
+        <span class="auth-icon" aria-hidden="true">👤</span>
+        <span id="auth-avatar" class="auth-avatar hidden" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main class="info-main gs-main">
+      <div class="updates-shell">
+        <aside class="updates-x-rail" aria-label="X timeline from @a1_projects and @winstead_works">
+          <details class="updates-x-panel">
+            <a class="updates-x-discord" href="https://discord.gg/Gh8p85YpFc" target="_blank" rel="noopener noreferrer" title="Render Studio Discord" aria-label="Render Studio Discord">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#5865F2" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+            </a>
+            <summary class="updates-x-summary">
+              <span class="updates-x-summary-title">A1_Projects · Winstead_Works</span>
+            </summary>
+            <div class="updates-x-head">
+              <div class="updates-x-topline">
+                <div class="updates-x-handles">
+                  <a class="updates-x-handle" href="https://x.com/A1_Projects" target="_blank" rel="noopener noreferrer">A1_Projects</a>
+                  <a class="updates-x-handle" href="https://x.com/winstead_works" target="_blank" rel="noopener noreferrer">Winstead_Works</a>
+                </div>
+                <svg class="updates-x-logo updates-x-logo--title" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.734l7.727-8.835L1.254 2.25H8.08l4.253 5.622L18.244 2.25zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z"/></svg>
+                <h2 class="visually-hidden">X Accounts</h2>
+              </div>
+            </div>
+            <div id="updates-x-list" class="updates-x-scroll" aria-live="polite">
+              <p class="updates-x-status muted">Loading posts…</p>
+            </div>
+          </details>
+        </aside>
+        <script>
+          (function () {
+            var panel = document.querySelector(".updates-x-panel");
+            if (panel && window.matchMedia("(min-width: 981px)").matches) panel.open = true;
+          })();
+        </script>
+      <article class="gs-page updates-page">
+        <header class="updates-hero" data-cms-root="updates-hero">
+          <div class="gs-hero-banner gs-hero-banner--plain">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker" data-cms-kicker>Docs</p>
+              <img class="docs-chrome-wordmark" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="Render Studio" width="979" height="148" decoding="async" />
+              <h2 class="gs-hero-title" data-cms-title>Recent Updates</h2>
+              <p class="gs-hero-lead" data-cms-lead>
+                Milestone features and tools that change how you work in Render Studio — not polish-only UI tweaks.
+              </p>
+              <div class="updates-hero-repos">
+                <a class="docs-hero-github docs-hero-github--inline" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+                  <span class="docs-hero-github-copy">
+                    <strong>Interested in contributing?</strong>
+                    <small>Developers welcome on GitHub</small>
+                  </span>
+                </a>
+                <a class="docs-hero-github docs-hero-github--inline updates-hero-teleop" href="https://github.com/wprojects/Render-Studio-TeleOP" target="_blank" rel="noopener noreferrer">
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+                  <span class="docs-hero-github-copy">
+                    <strong>TeleOp Repo</strong>
+                    <small>Render-Studio-TeleOP</small>
+                  </span>
+                </a>
+              </div>
+            </div>
+            <img class="docs-hero-gear" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="168" height="168" decoding="async" aria-hidden="true" />
+          </div>
+          <nav class="docs-category-tabs gs-hero-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab docs-category-tab--started" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+            <a class="docs-category-tab" href="/database.html">Database configuration</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="/getting-started.html#tips-library-20260915-xrdispatch4">Tips &amp; tricks</a>
+            <a class="docs-category-tab active" href="/updates.html">Updates</a>
+          </nav>
+        </header>
+
+        <section class="updates-founder-post" aria-labelledby="updates-founder-title" data-cms-root="updates-founder">
+          <div class="updates-founder-copy">
+            <p class="gs-kicker" data-cms-kicker>Hello World</p>
+            <h3 id="updates-founder-title" data-cms-title>A first note from Render Studio</h3>
+            <div data-cms-body>
+            <p>
+              This will probably be one of the few posts here that is hand written. I created this page for people who want to follow Render Studio more closely and see what we are building as the project evolves.
+            </p>
+            <p>
+              Render Studio is a browser-based 3D workspace for generating, editing, sharing, and collaborating on CAD models. The goal is to make mechanical design feel more direct: describe a part, revise it, inspect the component tree, simulate robot motion when URDF/SRDF data is available, and open shared models back into editable projects.
+            </p>
+            <p>
+              We are building toward opening Render Studio as an open-source project in August or September. Until then, this updates page will collect the bigger product changes, experiments, and workflow improvements so people can track where the platform is headed.
+            </p>
+            </div>
+          </div>
+          <div class="updates-social-images" id="updates-banners" aria-label="Update banners">
+            <figure class="updates-banner updates-banner--hero">
+              <img src="/docs/media/render-studio-roadmap-robotics.jpg?v=20260915-updban1" alt="Render Studio — from 3D rendering to collaborative robotics. Available: Model Rendering, Realistic Scenes. Up next: Textures. Planned robotics: Shared VR, Live Wiring, VR Overlay, Teach Robots." loading="lazy" />
+              <figcaption>From 3D rendering to collaborative robotics</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="updates-education-section" aria-labelledby="updates-education-title">
+          <div class="updates-education-head">
+            <p class="gs-kicker">Documentation update</p>
+            <h3 id="updates-education-title">Product education and first-project walkthroughs</h3>
+            <p>
+              This section tracks onboarding improvements that teach people how to use Render Studio while they are working, not after they leave the Studio.
+            </p>
+          </div>
+          <div class="updates-education-grid">
+            <article>
+              <strong>AI prompt defaults</strong>
+              <span>Improve Prompt starts on for new users and explains why the rewrite helps CAD generation.</span>
+            </article>
+            <article>
+              <strong>Mode and cost guidance</strong>
+              <span>The tour explains Speed vs Quality, Draw, CAD, and when Codex is worth enabling.</span>
+            </article>
+            <article>
+              <strong>Context walkthrough</strong>
+              <span>Users learn to link project components, select viewport objects, dictate prompts, and open Knowledge Base.</span>
+            </article>
+          </div>
+          <a class="btn secondary btn-compact" href="/?showMe=prompt-onboarding">Open the live prompt walkthrough</a>
+        </section>
+
+        <section class="docs-topic-search updates-topic-search" aria-label="Search updates">
+          <div>
+            <p class="docs-topic-search-kicker">Search topics</p>
+            <label>
+              <span class="visually-hidden">Search recent updates</span>
+              <input id="updates-search" type="search" placeholder="Search Bambu, Fusion, rigging, share links, right-click..." autocomplete="off" />
+            </label>
+          </div>
+          <p id="updates-search-status" class="docs-topic-search-status muted small">Search by what you want to do; similar updates will rise to the top.</p>
+        </section>
+
+        <div class="updates-filters" role="tablist" aria-label="Filter updates">
+          <button type="button" class="updates-filter is-active" data-kind="all" role="tab" aria-selected="true">All</button>
+          <button type="button" class="updates-filter" data-kind="feature" role="tab" aria-selected="false">Features</button>
+          <button type="button" class="updates-filter" data-kind="tool" role="tab" aria-selected="false">Tools</button>
+        </div>
+
+        <div id="updates-list" class="updates-list" aria-live="polite"></div>
+      </article>
+      </div>
+    </main>
+  </div>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="48" height="48" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to Render Studio</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <p class="auth-forgot-row">
+          <button type="button" class="auth-forgot-link" id="btn-forgot-password">Forgot password?</button>
+        </p>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-forgot" class="auth-form hidden">
+        <p class="muted small">We’ll email a reset link if that address has an account.</p>
+        <label>Email<input type="email" id="forgot-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <button type="submit" class="btn accent auth-submit">Email reset link</button>
+        <button type="button" class="btn secondary auth-submit" id="btn-forgot-back">Back to log in</button>
+      </form>
+      <form id="auth-form-reset" class="auth-form hidden">
+        <p class="muted small">Choose a new password for your Render Studio account.</p>
+        <label>New password<input type="password" id="reset-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <label>Confirm password<input type="password" id="reset-password-confirm" required minlength="6" autocomplete="new-password" placeholder="Repeat new password" /></label>
+        <button type="submit" class="btn accent auth-submit">Save new password</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <a class="docs-credibility-corner" href="/credibility.html">Credibility</a>
+
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/updates.js?v=20261006-2234"></script>
+  <script type="module" src="/site/docs-agent.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+{
+  "token": "botbench1",
+  "already": false,
+  "day": "2026-09-23",
+  "at": "2026-09-23T19:16:26.255Z",
+  "avg": 100,
+  "avg_delta": 0,
+  "label": "exceeded",
+  "best_set": [
+    "astra",
+    "cursor-engineer",
+    "project-manager",
+    "vibe-rnd",
+    "instruction-auditor",
+    "analytics",
+    "vibe-marketing",
+    "comms",
+    "vibe-sales",
+    "cad-bot",
+    "clip-bot",
+    "ledger",
+    "printer-bot"
+  ],
+  "table": [
+    {
+      "agent_id": "astra",
+      "name": "Astra",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "One speaker; stay quiet unless Sam asked",
+      "detail": "3 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "cursor-engineer",
+      "name": "Cursor",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Keep writes in sandbox Live IDE; auto-push",
+      "detail": "3 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "project-manager",
+      "name": "PM",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Keep Enter workspace on the debugger chrome",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "vibe-rnd",
+      "name": "RnD",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Do not steal Quest XR from OpenArm (sam-y-engage-v2)",
+      "detail": "3 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "instruction-auditor",
+      "name": "Auditor",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Flag app.js / main.py growth",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "analytics",
+      "name": "Analytics",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Log scores to the knowledge lake daily",
+      "detail": "3 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "vibe-marketing",
+      "name": "Marketing",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Studio theme tokens, not DB palettes",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "comms",
+      "name": "Comms",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "One speaker; notes bus for the rest",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "vibe-sales",
+      "name": "Sales",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Studio theme on customer surfaces",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "cad-bot",
+      "name": "CAD bot",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Mechanism goldens passed (judge)",
+      "detail": "purse-0009c214: Scale retained_pin to Ø4 mm. Do not regen shells. Stop after 2 identical pin fails. | fused-shell-no-lid: Keep shell_lid as its own solid and bind Play to it.",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "clip-bot",
+      "name": "Clip-bot",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "QC empty URDF vs named lid (rigqc1)",
+      "detail": "3 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "ledger",
+      "name": "Ledger",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "Stamp log_id on jobs",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    },
+    {
+      "agent_id": "printer-bot",
+      "name": "Print-bot",
+      "runs": 1,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "LAN printer probe only",
+      "detail": "2 checks ok",
+      "samples": [
+        100
+      ],
+      "prev": 100,
+      "delta": 0
+    }
+  ],
+  "markdown": "Daily crew score · 2026-09-23 · avg 100 (Δ +0)\n\n```\n| Agent | Score | Δ | Label | Change |\n|---|---:|---:|---|---|\n| Astra | 100 | +0 | exceeded | One speaker; stay quiet unless Sam asked |\n| Cursor | 100 | +0 | exceeded | Keep writes in sandbox Live IDE; auto-push |\n| PM | 100 | +0 | exceeded | Keep Enter workspace on the debugger chrome |\n| RnD | 100 | +0 | exceeded | Do not steal Quest XR from OpenArm (sam-y-engage-v2) |\n| Auditor | 100 | +0 | exceeded | Flag app.js / main.py growth |\n| Analytics | 100 | +0 | exceeded | Log scores to the knowledge lake daily |\n| Marketing | 100 | +0 | exceeded | Studio theme tokens, not DB palettes |\n| Comms | 100 | +0 | exceeded | One speaker; notes bus for the rest |\n| Sales | 100 | +0 | exceeded | Studio theme on customer surfaces |\n| CAD bot | 100 | +0 | exceeded | Mechanism goldens passed (judge) |\n| Clip-bot | 100 | +0 | exceeded | QC empty URDF vs named lid (rigqc1) |\n| Ledger | 100 | +0 | exceeded | Stamp log_id on jobs |\n| Print-bot | 100 | +0 | exceeded | LAN printer probe only |\n```\n\n## Improvements\n- none vs yesterday\n\n## Changes / slips\n- none vs yesterday\n\nRender Agent distributes follow-ups to seats below 70 or slipping."
+}

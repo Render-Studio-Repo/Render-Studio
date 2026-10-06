@@ -1,0 +1,23 @@
+{
+  "kind": "openarm_training_episode",
+  "token": "train1",
+  "episode_id": "ep_b774e59f7a334b",
+  "mode": "intervene",
+  "task": "Hey Astra, pick up the cube",
+  "astra_instruction": "Hey Astra, pick up the cube",
+  "started_at": "2026-09-17T16:25:01.574Z",
+  "open_arm": "2.0",
+  "source": "enactic/openarm_mujoco",
+  "outcome": {
+    "success": false,
+    "failure_mode": "miss",
+    "hard_limit_violations": 0,
+    "valid": false,
+    "labeled_at": "2026-09-17T16:25:01.841Z"
+  },
+  "feature_checks": {},
+  "note": "Synced obs+action for imitation / DAgger-style intervene. Export to LeRobot externally.",
+  "ended_at": "2026-09-17T16:25:01.841Z",
+  "sample_count": 0,
+  "samples_preview": []
+}

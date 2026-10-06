@@ -1,0 +1,170 @@
+{
+  "version": "20260915-variants2",
+  "attribution": "Board and breadboard graphics include parts from Fritzing (https://fritzing.org), licensed CC BY-SA 3.0.",
+  "skins": [
+    {
+      "id": "mks-gen-l",
+      "src": "custom/mks-gen-l.svg",
+      "license": "original",
+      "labelRe": "mks\\s*gen\\s*l"
+    },
+    {
+      "id": "cl86t",
+      "src": "custom/cl86t.svg",
+      "license": "original",
+      "labelRe": "cl86"
+    },
+    {
+      "id": "tb6600",
+      "src": "custom/tb6600.svg",
+      "license": "original",
+      "labelRe": "tb6600"
+    },
+    {
+      "id": "nema34",
+      "src": "custom/nema-34.svg",
+      "license": "original",
+      "labelRe": "nema\\s*34"
+    },
+    {
+      "id": "psu-48",
+      "src": "custom/psu-48v.svg",
+      "license": "original",
+      "type": "power-supply",
+      "labelRe": "\\b48\\s*v"
+    },
+    {
+      "id": "robot-hat",
+      "src": "custom/robot-hat.svg",
+      "license": "original",
+      "labelRe": "robot\\s*hat"
+    },
+    {
+      "id": "nano",
+      "src": "fritzing/arduino-nano.svg",
+      "license": "cc-by-sa-3.0",
+      "labelRe": "arduino\\s*nano(?:\\s*3)?(?!\\s*(?:33|esp|rp|every))\\b"
+    },
+    {
+      "id": "drv8825",
+      "src": "fritzing/drv8825.svg",
+      "license": "cc-by-sa-3.0",
+      "labelRe": "drv8825"
+    },
+    {
+      "id": "a4988",
+      "src": "fritzing/a4988.svg",
+      "license": "cc-by-sa-3.0",
+      "labelRe": "a4988"
+    },
+    {
+      "id": "uln2003",
+      "src": "fritzing/uln2003.svg",
+      "license": "cc-by-sa-3.0",
+      "labelRe": "uln\\s*2003"
+    },
+    {
+      "id": "vnh2sp30",
+      "src": "fritzing/hbridge.svg",
+      "license": "cc-by-sa-3.0",
+      "labelRe": "vnh2sp30"
+    },
+    {
+      "id": "pi",
+      "src": "fritzing/raspberry-pi-4.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "raspberry-pi",
+      "labelRe": "raspberry\\s*pi\\s*4|\\bpi\\s*4b\\b"
+    },
+    {
+      "id": "mega",
+      "src": "fritzing/arduino-mega.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "arduino-mega"
+    },
+    {
+      "id": "uno",
+      "src": "fritzing/arduino-uno.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "arduino-uno"
+    },
+    {
+      "id": "breadboard",
+      "src": "fritzing/breadboard.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "breadboard"
+    },
+    {
+      "id": "stepper",
+      "src": "fritzing/stepper.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "stepper"
+    },
+    {
+      "id": "servo",
+      "src": "fritzing/servo.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "servo-motor"
+    },
+    {
+      "id": "motor",
+      "src": "fritzing/dc-motor.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "motor"
+    },
+    {
+      "id": "led",
+      "src": "fritzing/led.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "led"
+    },
+    {
+      "id": "resistor",
+      "src": "fritzing/resistor.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "resistor"
+    },
+    {
+      "id": "transistor",
+      "src": "fritzing/npn.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "transistor"
+    },
+    {
+      "id": "diode",
+      "src": "fritzing/diode.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "diode"
+    },
+    {
+      "id": "button",
+      "src": "fritzing/button.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "button"
+    },
+    {
+      "id": "psu",
+      "src": "fritzing/psu-lab.svg",
+      "license": "cc-by-sa-3.0",
+      "type": "power-supply"
+    },
+    {
+      "id": "module",
+      "src": "custom/module.svg",
+      "license": "original",
+      "type": "sensor"
+    },
+    {
+      "id": "driver",
+      "src": "custom/module.svg",
+      "license": "original",
+      "type": "motor-driver"
+    },
+    {
+      "id": "pi-generic",
+      "src": "custom/module.svg",
+      "license": "original",
+      "type": "raspberry-pi"
+    }
+  ]
+}

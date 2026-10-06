@@ -1,0 +1,11 @@
+/backend/auth.py @wprojects
+/backend/database.py @wprojects
+/backend/main.py @wprojects
+/backend/migrations/ @wprojects
+/frontend/xr/ @wprojects
+/frontend/studio/app.js @wprojects
+/.github/ @wprojects
+/AGENTS.md @wprojects
+/ai-context/feature-map.json @wprojects
+/ai-context/receipts/ @wprojects
+/render.yaml @wprojects

@@ -309,6 +309,10 @@ def update_listing(user_id: str, listing_id_or_slug: str, data: dict[str, Any]) 
     if listing["created_by"] != user_id:
         raise PermissionError("Only the product owner can update this listing.")
 
+    owner_status = str(data.get("status") or "").strip().lower()
+    if owner_status and owner_status not in {"archived", "pending"}:
+        raise ValueError("Owners can archive a listing or restore it to pending.")
+
     access_mode = str(data.get("access_mode") or listing["access_mode"]).strip().lower()
     if access_mode not in VALID_ACCESS:
         raise ValueError("access_mode must be free, paid, or view_only.")
@@ -396,6 +400,12 @@ def update_listing(user_id: str, listing_id_or_slug: str, data: dict[str, Any]) 
                 ),
             )
         row = conn.execute("SELECT * FROM model_listings WHERE id = ?", (listing["id"],)).fetchone()
+        if owner_status:
+            conn.execute(
+                "UPDATE model_listings SET status=?, updated_at=? WHERE id=?",
+                (owner_status, now, listing["id"]),
+            )
+            row = conn.execute("SELECT * FROM model_listings WHERE id = ?", (listing["id"],)).fetchone()
     return _row_to_listing(row)
 
 
@@ -407,12 +417,16 @@ def resolve_project_files(project_path: Any, filenames: list[str], *, project_id
     root = Path(project_path)
     out: list[dict[str, Any]] = []
     for raw in filenames[:8]:
-        name = Path(str(raw or "")).name
-        if not name:
+        rel = str(raw or "").replace("\\", "/").strip().lstrip("/")
+        if not rel or ".." in Path(rel).parts:
             continue
-        path = root / name
+        path = root / rel
+        if not path.is_file():
+            rel = Path(rel).name
+            path = root / rel
         if not path.is_file():
             continue
+        name = path.name
         ext = path.suffix.lower()
         if ext not in STORE_FILE_EXTS:
             continue
@@ -420,6 +434,7 @@ def resolve_project_files(project_path: Any, filenames: list[str], *, project_id
         entry: dict[str, Any] = {
             "name": name,
             "filename": name,
+            "rel": rel,
             "format": ext.lstrip("."),
             "size": size,
             "project_id": project_id,
@@ -436,7 +451,7 @@ def resolve_project_files(project_path: Any, filenames: list[str], *, project_id
             entry["embedded"] = True
         else:
             entry["embedded"] = False
-            entry["ref"] = f"/api/projects/{project_id}/files/{name}"
+            entry["ref"] = f"/api/projects/{project_id}/files/{rel}"
         out.append(entry)
     if not out:
         raise ValueError("No valid model files selected (stl/step/glb/obj/3mf/…).")
@@ -465,7 +480,15 @@ def review_listing(listing_id_or_slug: str, *, status: str, featured: bool | Non
             (status, next_featured, now, status, now, row["id"]),
         )
         row = conn.execute("SELECT * FROM model_listings WHERE id = ?", (row["id"],)).fetchone()
-    return _row_to_listing(row)
+    listing = _row_to_listing(row)
+    if listing.get("status") == "approved":
+        try:
+            from backend.services import marketplace_hub_client
+
+            marketplace_hub_client.publish_approved_listing(listing)
+        except Exception:
+            pass
+    return listing
 
 
 def apply_boost(user_id: str, listing_id_or_slug: str, message: str = "") -> dict[str, Any]:

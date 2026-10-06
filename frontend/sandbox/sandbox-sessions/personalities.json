@@ -1,0 +1,200 @@
+{
+  "token": "harness2",
+  "at": "2026-09-17T17:16:39.692Z",
+  "agents": {
+    "astra": {
+      "id": "astra",
+      "name": "Astra",
+      "token": "harness2",
+      "interests": [
+        "Project assistant",
+        "teaching-sessions",
+        "move:idle",
+        "train:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "vibe-rnd",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "cursor-engineer": {
+      "id": "cursor-engineer",
+      "name": "Cursor",
+      "token": "harness2",
+      "interests": [
+        "Engineering",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "project-manager": {
+      "id": "project-manager",
+      "name": "PM",
+      "token": "harness2",
+      "interests": [
+        "Project planning",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "vibe-rnd": {
+      "id": "vibe-rnd",
+      "name": "RnD",
+      "token": "harness2",
+      "interests": [
+        "Research",
+        "teaching-sessions",
+        "move:idle",
+        "train:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "instruction-auditor": {
+      "id": "instruction-auditor",
+      "name": "Auditor",
+      "token": "harness2",
+      "interests": [
+        "Review",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "analytics": {
+      "id": "analytics",
+      "name": "Analytics",
+      "token": "harness2",
+      "interests": [
+        "Data and evidence",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "vibe-marketing": {
+      "id": "vibe-marketing",
+      "name": "Marketing",
+      "token": "harness2",
+      "interests": [
+        "Marketing",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "comms": {
+      "id": "comms",
+      "name": "Comms",
+      "token": "harness2",
+      "interests": [
+        "Communications",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "vibe-sales": {
+      "id": "vibe-sales",
+      "name": "Sales",
+      "token": "harness2",
+      "interests": [
+        "Customer discovery",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "clip-bot": {
+      "id": "clip-bot",
+      "name": "Clip-bot",
+      "token": "harness2",
+      "interests": [
+        "Media",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "ledger": {
+      "id": "ledger",
+      "name": "Ledger",
+      "token": "harness2",
+      "interests": [
+        "Task records",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    },
+    "printer-bot": {
+      "id": "printer-bot",
+      "name": "Print-bot",
+      "token": "harness2",
+      "interests": [
+        "3D printer setup and monitor",
+        "teaching-sessions",
+        "move:idle"
+      ],
+      "traits": [
+        "quiet",
+        "learns-from-room"
+      ],
+      "pair": "astra",
+      "developed_at": "2026-09-17T17:16:39.692Z"
+    }
+  }
+}

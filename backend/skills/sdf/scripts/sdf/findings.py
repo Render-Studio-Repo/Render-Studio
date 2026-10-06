@@ -19,6 +19,14 @@ class Finding:
         hint = f" Hint: {self.hint}" if self.hint else ""
         return f"{self.severity}: {self.code}{location}: {self.message}{hint}"
 
+    def to_dict(self) -> dict[str, str]:
+        payload = {"severity": str(self.severity), "code": self.code, "message": self.message}
+        if self.path:
+            payload["path"] = self.path
+        if self.hint:
+            payload["hint"] = self.hint
+        return payload
+
 
 @dataclass
 class ValidationResult:
@@ -55,6 +63,23 @@ class ValidationResult:
 
     def all_findings(self) -> list[Finding]:
         return [*self.errors, *self.warnings, *self.infos]
+
+    def deduplicated(self) -> ValidationResult:
+        deduped = ValidationResult()
+        seen: set[tuple[str, str, str, str]] = set()
+        for finding in self.all_findings():
+            key = (str(finding.severity), finding.code, finding.message, finding.path or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.add(
+                finding.severity,
+                finding.code,
+                finding.message,
+                path=finding.path,
+                hint=finding.hint,
+            )
+        return deduped
 
 
 def format_findings(findings: list[Finding]) -> str:

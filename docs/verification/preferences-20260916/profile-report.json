@@ -1,0 +1,74 @@
+{
+  "desktop-dark": {
+    "profile": {
+      "viewportWidth": 1240,
+      "documentWidth": 1240,
+      "contentWidth": 882,
+      "contentScrollWidth": 882,
+      "handleWidth": 351,
+      "saveHeight": 42
+    },
+    "public": {
+      "width": 560,
+      "client": 558,
+      "scroll": 558
+    },
+    "compactWidth": 280,
+    "previewFocus": "success, error and dismissed loading states passed",
+    "errors": []
+  },
+  "desktop-light": {
+    "profile": {
+      "viewportWidth": 1240,
+      "documentWidth": 1240,
+      "contentWidth": 882,
+      "contentScrollWidth": 882,
+      "handleWidth": 351,
+      "saveHeight": 42
+    },
+    "public": {
+      "width": 560,
+      "client": 558,
+      "scroll": 558
+    },
+    "compactWidth": 280,
+    "previewFocus": "success, error and dismissed loading states passed",
+    "errors": []
+  },
+  "mobile-dark": {
+    "profile": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "contentWidth": 390,
+      "contentScrollWidth": 390,
+      "handleWidth": 325,
+      "saveHeight": 44
+    },
+    "public": {
+      "width": 366,
+      "client": 364,
+      "scroll": 364
+    },
+    "compactWidth": 280,
+    "previewFocus": "success, error and dismissed loading states passed",
+    "errors": []
+  },
+  "mobile-light": {
+    "profile": {
+      "viewportWidth": 360,
+      "documentWidth": 360,
+      "contentWidth": 360,
+      "contentScrollWidth": 360,
+      "handleWidth": 295,
+      "saveHeight": 44
+    },
+    "public": {
+      "width": 336,
+      "client": 334,
+      "scroll": 334
+    },
+    "compactWidth": 280,
+    "previewFocus": "success, error and dismissed loading states passed",
+    "errors": []
+  }
+}

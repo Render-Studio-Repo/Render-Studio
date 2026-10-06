@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudflare tunnel for Render3D
+After=network-online.target render3d.service
+Wants=network-online.target
+Requires=render3d.service
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

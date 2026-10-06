@@ -1,0 +1,30 @@
+[
+  {
+    "scenario": "normal",
+    "http": 200,
+    "pageErrors": [],
+    "preferencesReachable": true,
+    "mainGraphicsReady": true
+  },
+  {
+    "scenario": "transient",
+    "http": 200,
+    "pageErrors": [],
+    "preferencesReachable": true,
+    "mainGraphicsReady": true
+  },
+  {
+    "scenario": "blocked",
+    "http": 200,
+    "pageErrors": [],
+    "preferencesReachable": true,
+    "mainGraphicsReady": true
+  },
+  {
+    "scenario": "disabled",
+    "http": 200,
+    "pageErrors": [],
+    "preferencesReachable": true,
+    "mainGraphicsReady": false
+  }
+]

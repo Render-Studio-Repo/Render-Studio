@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from backend.kernel.schema import FeatureProgram
 
@@ -32,7 +32,7 @@ def build_and_export(
     project_path: Path,
     *,
     basename: str | None = None,
-    progress: Callable[[dict[str, Any]], None] | None = None,
+    progress: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> dict[str, Any]:
     """Build a Feature Program and export all formats into ``project_path``.
 
@@ -45,9 +45,20 @@ def build_and_export(
 
     total_parts = max(1, len(program.parts))
 
-    def emit(stage: str, pct: float, label: str, *, part: str | None = None, detail: str | None = None) -> None:
+    def emit(
+        stage: str,
+        pct: float,
+        label: str,
+        *,
+        part: str | None = None,
+        detail: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
         if progress:
-            progress({"stage": stage, "pct": pct, "label": label, "part": part, "detail": detail})
+            payload: dict[str, Any] = {"stage": stage, "pct": pct, "label": label, "part": part, "detail": detail}
+            if extra:
+                payload.update(extra)
+            progress(payload)
 
     def build_progress(info: dict[str, Any]) -> None:
         idx = int(info.get("index") or 1)
@@ -67,7 +78,17 @@ def build_and_export(
         pct = base_pct
         if idx and total:
             pct += min(8, (idx / max(1, total)) * 8)
-        emit(stage, pct, str(info.get("label") or "Exporting CAD artifacts…"), part=info.get("part"))
+        extra = None
+        try:
+            from backend.services.live_preview import copy_preview_keys
+
+            extra = {}
+            copy_preview_keys(info, extra)
+            if not extra:
+                extra = None
+        except Exception:
+            extra = None
+        emit(stage, pct, str(info.get("label") or "Exporting CAD artifacts…"), part=info.get("part"), extra=extra)
 
     from backend.kernel.builder import build_program
     from backend.kernel.export import combined_trimesh, export_all
@@ -87,6 +108,15 @@ def build_and_export(
         emit("simulation", 92, "Writing simulation metadata…")
         sim, sim_files = write_sim_artifacts(result, project_path, base)
         files.update(sim_files)
+        # A local, bounded event lets Grok inspect the estimates after export.
+        # Indexing is advisory and must never block the CAD artifact itself.
+        try:
+            from backend.services.openarm_research_service import record_cad_physics, record_rig_audit
+
+            record_cad_physics(sim=sim, files=sim_files, project_path=project_path, basename=base)
+            record_rig_audit(sim=sim, files=sim_files, basename=base)
+        except Exception as index_exc:  # pragma: no cover - optional research index
+            logger.warning("physics research index failed: %s", index_exc)
     except ImportError:
         logger.debug("physics layer not yet available")
     except Exception as exc:  # pragma: no cover - keep export resilient

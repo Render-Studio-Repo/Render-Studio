@@ -1,0 +1,83 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
+4 0 obj << /Length 2131 >> stream
+BT
+/F1 12 Tf
+50 760 Td
+(RS White Paper p1) Tj
+/F1 9 Tf
+0 -13 Td
+(White paper ? Render Studio agent bus + debugger \(16 Sep 2026\).) Tj
+0 -13 Td
+(Audience: Sam. Grok gets ops ids. Harness gets ids only.) Tj
+0 -13 Td
+(Verdict: goals are sound. Compact ids + approval gates keep search fast.) Tj
+0 -13 Td
+(Do not paste full transcripts into weekly reports or Drive as a hot path.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(1. Chronology. X CRC 404 then invalid response_token \(plus-as-space\).) Tj
+0 -13 Td
+(MCP GET HTML / POST 405 until /mcp hit 8744. Optional Bearer.) Tj
+0 -13 Td
+(Star-bus PM -> SCORECARD. prompt_id category_id traceback_ids result_score.) Tj
+0 -13 Td
+(Weekly tab + 19:00 CDT publish. Intro pack INTRO-20260916. Sandbox ping/add/fail.) Tj
+0 -13 Td
+(This slice: combined logs MD+JSON twins, terms PDF, RefPack uploads.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(2. Keep: feature-status vectors, excerpt cap 120, three packet sizes,) Tj
+0 -13 Td
+(outcome formula, companion debug_user_scores, Drive as cold archive,) Tj
+0 -13 Td
+(one id scheme. instance_public_factor=0 until public.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(3. Cause issues: token blowups, json_extract without indexes, unbounded) Tj
+0 -13 Td
+(watchdogs, weekly PDFs of everything, nested overview Jaccard,) Tj
+0 -13 Td
+(per-prompt dual writes, user-table writes, dual id schemes.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(4. Loop: symptom -> feature vector -> search_ids -> tracking_id/ref_*) Tj
+0 -13 Td
+(-> golden snapshot rollback proposal -> confirm-fixed category id) Tj
+0 -13 Td
+(-> bug_id last -> macro blacklist after 3 high-damage repeats.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(5. Desired-output score this session \(Cursor\): 62/100.) Tj
+0 -13 Td
+(Built: X CRC, MCP HTTP, ops ids, weekly tab, intro pack, RefPack twins, PDFs.) Tj
+0 -13 Td
+(Partial: vision fan-out scores in inbox. Handshake deez nutz not yet from Grok.) Tj
+0 -13 Td
+(Missed: Drive employees folder, Playwright clip loop, full debug autonomy.) Tj
+0 -13 Td
+(Agents talking: yes on CYCLE-20260916-2113 vision scores. Tracking ids in ops.jsonl.) Tj
+0 -13 Td
+(INTRO-only + code word + agents writing the logger fix: this fan-out.) Tj
+ET
+endstream endobj
+5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000002424 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+2494
+%%EOF

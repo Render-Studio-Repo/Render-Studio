@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 SOLID_OPS = frozenset({
     "box", "cylinder", "cone", "sphere", "torus",
     "extrude", "revolve", "loft",
-    "spur_gear", "gear", "escape_wheel",
+    "spur_gear", "gear", "ring_gear", "internal_gear", "escape_wheel",
     "enclosure_for_spec", "enclosure", "board_blank",
 })
 

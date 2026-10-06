@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.database import get_conn
-from backend.services.teams_service import _require_team_member, invite_user_to_team
+from backend.services.teams_service import (
+    _require_team_member,
+    get_member_role,
+    invite_user_to_team,
+    normalize_role,
+)
 
 
 def _now() -> str:
@@ -50,7 +55,9 @@ def can_manage_folder(folder: dict[str, Any], user_id: str) -> bool:
     except PermissionError:
         return False
     owner = folder.get("created_by")
-    return not owner or owner == user_id
+    if not owner or owner == user_id:
+        return True
+    return normalize_role(get_member_role(folder["team_id"], user_id)) == "owner"
 
 
 def _require_folder_manage(folder_id: str, user_id: str) -> dict[str, Any]:
@@ -68,7 +75,11 @@ def list_folders(team_id: str, user_id: str) -> list[dict[str, Any]]:
             SELECT f.id, f.team_id, f.parent_id, f.name, f.sort_order, f.visibility,
                    f.created_by, f.created_at,
                    (SELECT COUNT(*) FROM project_access pa WHERE pa.folder_id = f.id) AS project_count,
-                   (SELECT COUNT(*) FROM folder_shares fs WHERE fs.folder_id = f.id) AS share_count
+                   (SELECT COUNT(*) FROM folder_shares fs WHERE fs.folder_id = f.id) AS share_count,
+                   EXISTS (
+                     SELECT 1 FROM folder_shares fs
+                     WHERE fs.folder_id = f.id AND fs.user_id = ?
+                   ) AS received_share
             FROM workspace_folders f
             WHERE f.team_id = ?
               AND (
@@ -78,14 +89,17 @@ def list_folders(team_id: str, user_id: str) -> list[dict[str, Any]]:
               )
             ORDER BY f.sort_order, f.name
             """,
-            (team_id, user_id, user_id),
+            (user_id, team_id, user_id, user_id),
         ).fetchall()
+    is_ws_admin = normalize_role(get_member_role(team_id, user_id)) == "owner"
     out = []
     for r in rows:
         d = dict(r)
-        d["can_manage"] = can_manage_folder(d, user_id)
-        d["is_owner"] = d["can_manage"]
-        d["shared_with_me"] = bool(d.get("created_by")) and d.get("created_by") != user_id
+        created = d.get("created_by")
+        d["received_share"] = bool(d.get("received_share"))
+        d["can_manage"] = (not created or created == user_id or is_ws_admin)
+        d["is_owner"] = not created or created == user_id
+        d["shared_with_me"] = bool(created) and created != user_id
         out.append(d)
     return out
 
@@ -463,7 +477,17 @@ def share_folder(
 
 
 def remove_folder_share(folder_id: str, target_user_id: str, sharer_id: str) -> dict[str, Any]:
-    _require_folder_manage(folder_id, sharer_id)
+    leaving_self = target_user_id == sharer_id
+    if leaving_self:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM folder_shares WHERE folder_id = ? AND user_id = ?",
+                (folder_id, sharer_id),
+            ).fetchone()
+        if not row:
+            raise PermissionError("This folder is part of the workspace — leave the workspace instead")
+    else:
+        _require_folder_manage(folder_id, sharer_id)
     with get_conn() as conn:
         conn.execute(
             "DELETE FROM folder_shares WHERE folder_id = ? AND user_id = ?",

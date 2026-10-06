@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,41 @@ from typing import Any
 from backend.services import cad_service, generation_service, history_service, prompt_history_service
 
 META_FILE = "project.json"
+
+_PROJECT_COPY_RUNTIME_NAMES = frozenset(
+    {
+        "generation.json",
+        ".generation.lock",
+        ".generation_flags",
+        ".generation_jobs",
+    }
+)
+
+
+def _project_copy_ignored_names(_directory: str, names: list[str]) -> set[str]:
+    ignored: set[str] = set()
+    for name in names:
+        lower = name.lower()
+        if (
+            name in _PROJECT_COPY_RUNTIME_NAMES
+            or name in {".DS_Store", ".git", "__pycache__"}
+            or name.endswith(".lock")
+            or lower.endswith(".pyc")
+            or ".generation-live." in lower
+        ):
+            ignored.add(name)
+    return ignored
+
+
+def copy_project_snapshot(source_path: Path, destination_path: Path) -> None:
+    """Copy durable project state without cloning a running worker's ownership."""
+    destination_path.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        source_path,
+        destination_path,
+        dirs_exist_ok=True,
+        ignore=_project_copy_ignored_names,
+    )
 
 
 def meta_path(project_path: Path) -> Path:
@@ -39,6 +75,13 @@ def load_meta(project_path: Path) -> dict[str, Any]:
 
 def save_meta(project_path: Path, meta: dict[str, Any]) -> None:
     """Atomically write project.json so a crash never leaves an empty file."""
+    try:
+        from backend.services.project_lifecycle import is_project_deleted
+
+        if is_project_deleted(project_path.name):
+            return
+    except Exception:
+        pass
     path = meta_path(project_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(meta, indent=2)
@@ -62,6 +105,18 @@ def is_default_project_name(project_path: Path, meta: dict[str, Any] | None = No
     if re.fullmatch(r"[0-9a-fA-F]{6,12}", current) and current.lower() == pid.lower():
         return True
     return False
+
+
+def _is_automatic_copy_name(meta: dict[str, Any]) -> bool:
+    """True for the exact placeholder assigned when a default project is copied."""
+    source_id = str(meta.get("copied_from_project_id") or "").strip()
+    current = str(meta.get("name") or "").strip()
+    if not source_id or not current:
+        return False
+    return current.casefold() in {
+        f"{source_id} (copy)".casefold(),
+        f"Project {source_id} (copy)".casefold(),
+    }
 
 
 # Words that are CAD/process boilerplate, not the product name.
@@ -166,8 +221,24 @@ _CAD_BOILERPLATE_CHUNK = re.compile(
     re.I,
 )
 
+_PROJECT_HARNESS_NAME = r"(?:vibecad|jake|codex|multi[-\s]?agent[-\s]?cad|mac)"
+_PROJECT_HARNESS_PREFIX = re.compile(
+    rf"^(?:(?:new|compact|production|parametric)\s+)*"
+    rf"{_PROJECT_HARNESS_NAME}"
+    rf"(?:\s+(?:cad|text[-\s]?to[-\s]?cad|harness|engine|workflow|agent|prototype|model)){{0,4}}"
+    rf"\s*(?:(?:[:—–-]|\bof\b)\s*)?(?:of\s+)?(?:(?:a|an|the)\b\s*)?",
+    re.I,
+)
+_PROJECT_HARNESS_USAGE = re.compile(
+    rf"\s+(?:using|with|via|in)\s+{_PROJECT_HARNESS_NAME}"
+    rf"(?:\s+(?:cad|text[-\s]?to[-\s]?cad|harness|engine|workflow|agent))?\b.*$",
+    re.I,
+)
+
 
 def _title_case_word(word: str) -> str:
+    if word.casefold() == "openarm":
+        return "OpenArm"
     if word.isupper() and 2 <= len(word) <= 8:
         return word
     if re.fullmatch(r"[A-Za-z]+-\d+[A-Za-z0-9-]*", word):  # e.g. HC-SR04
@@ -188,6 +259,8 @@ def _strip_cad_title_boilerplate(text: str) -> tuple[str, str | None]:
         return "", None
     text = re.sub(r"[*_`#]+", " ", text)
     text = re.sub(r"^\s*[-•]\s*", "", text)
+    text = _PROJECT_HARNESS_PREFIX.sub("", text, count=1).strip()
+    text = _PROJECT_HARNESS_USAGE.sub("", text, count=1).strip()
     preferred_name: str | None = None
     # Prefer "Name: details" / "Name — details" openings from improved prompts.
     lead = re.match(r"^(.{2,48}?)\s*[:—–]\s+(.+)$", text)
@@ -216,6 +289,8 @@ def _strip_cad_title_boilerplate(text: str) -> tuple[str, str | None]:
         text,
         flags=re.I,
     ).strip()
+    text = _PROJECT_HARNESS_PREFIX.sub("", text, count=1).strip()
+    text = _PROJECT_HARNESS_USAGE.sub("", text, count=1).strip()
     # Peel CAD boilerplate repeatedly ("parametric fully assembled CAD model of …").
     for _ in range(4):
         nxt = _CAD_BOILERPLATE_CHUNK.sub("", text, count=1).strip()
@@ -366,11 +441,66 @@ def file_stem_from_prompt(prompt: str, *, max_len: int = 80) -> str:
     return (stem or "New Model")[:max_len]
 
 
-def apply_prompt_project_name(project_path: Path, prompt: str, *, fallback: str | None = None) -> dict[str, Any]:
-    """Rename a default-id project from the prompt (Capitalization And Spaces)."""
+def _existing_project_display_names(projects_root: Path, *, exclude_id: str) -> set[str]:
+    names: set[str] = set()
+    if not projects_root.is_dir():
+        return names
+    for d in projects_root.iterdir():
+        if not d.is_dir() or d.name.startswith(".") or d.name == exclude_id:
+            continue
+        try:
+            other = load_meta(d)
+        except Exception:
+            continue
+        n = (other.get("name") or "").strip()
+        if n:
+            names.add(n.casefold())
+    return names
+
+
+def unique_project_display_name(
+    title: str,
+    projects_root: Path | None,
+    *,
+    exclude_id: str,
+) -> str:
+    """Keep display names unique: Title, Title Alt, Title V2, Title 2, Title 3, …"""
+    base = (title or "New Model").strip() or "New Model"
+    if projects_root is None:
+        return base
+    taken = _existing_project_display_names(projects_root, exclude_id=exclude_id)
+    if base.casefold() not in taken:
+        return base
+    for suffix in ("Alt", "V2"):
+        candidate = f"{base} {suffix}"
+        if candidate.casefold() not in taken:
+            return candidate
+    n = 2
+    while n < 1000:
+        candidate = f"{base} {n}"
+        if candidate.casefold() not in taken:
+            return candidate
+        n += 1
+    return f"{base} {exclude_id[:6]}"
+
+
+def apply_prompt_project_name(
+    project_path: Path,
+    prompt: str,
+    *,
+    fallback: str | None = None,
+    projects_root: Path | None = None,
+) -> dict[str, Any]:
+    """Rename a default-id project from the prompt (Capitalization And Spaces).
+
+    When ``projects_root`` is set, append Alt / V2 / 2 / 3 / … if the title is
+    already used. Returned meta may include ephemeral ``_renamed`` /
+    ``_renamed_from`` for workspace broadcasts (not persisted).
+    """
     meta = load_meta(project_path)
     if not _ai_may_set_project_name(project_path, meta):
         return meta
+    old_name = (meta.get("name") or "").strip()
     title = title_from_prompt(prompt)
     if (not title or title == "New Model") and fallback:
         fb = str(fallback).strip()
@@ -383,10 +513,22 @@ def apply_prompt_project_name(project_path: Path, prompt: str, *, fallback: str 
                 for p in pretty.split()
                 if p
             ) or "New Model"
-    return touch_project(project_path, name=title or "New Model")
+    title = unique_project_display_name(
+        title or "New Model",
+        projects_root,
+        exclude_id=project_path.name,
+    )
+    updated = touch_project(project_path, name=title)
+    if title != old_name:
+        updated = dict(updated)
+        updated["_renamed"] = True
+        updated["_renamed_from"] = old_name
+    return updated
 
 
 def _ai_may_set_project_name(project_path: Path, meta: dict[str, Any]) -> bool:
+    if _is_automatic_copy_name(meta):
+        return True
     if meta.get("name_user_set"):
         return False
     return is_default_project_name(project_path, meta)
@@ -439,11 +581,50 @@ def touch_project(
     return meta
 
 
+def mark_project_opened(project_path: Path) -> dict[str, Any]:
+    """Record a user open without treating it as a content edit."""
+    now = datetime.now(timezone.utc).isoformat()
+    meta = load_meta(project_path)
+    if not meta.get("created_at"):
+        meta["created_at"] = now
+    meta["opened_at"] = now
+    meta["id"] = project_path.name
+    save_meta(project_path, meta)
+    return meta
+
+
+def project_recency_stamp(project: dict[str, Any] | None) -> str:
+    """Newest open/edit/create stamp. Folder mtime only when those are empty."""
+    row = project or {}
+    stamps = [row.get("opened_at"), row.get("updated_at"), row.get("created_at")]
+    present = [str(s) for s in stamps if s]
+    if present:
+        return max(present)
+    mtime = row.get("mtime")
+    return str(mtime) if mtime else ""
+
+
 def latest_model_file(project_path: Path) -> str | None:
     """Best file to open when restoring a project."""
+    from backend.services.engine_layout import resolve_in_layout
+
     timeline = history_service.load_timeline(project_path)
     entries = timeline.get("entries", [])
     idx = timeline.get("current_index", -1)
+
+    def _path_for(fn: str | None) -> Path | None:
+        if not fn:
+            return None
+        located = resolve_in_layout(project_path, fn)
+        if located is not None and located.is_file():
+            if cad_service.looks_like_drive_id_stub(located):
+                located = None
+            else:
+                return located
+        direct = project_path / str(fn)
+        if direct.is_file() and not cad_service.looks_like_drive_id_stub(direct):
+            return direct
+        return None
 
     def _usable(entry: dict[str, Any] | None) -> str | None:
         if not entry:
@@ -461,9 +642,23 @@ def latest_model_file(project_path: Path) -> str | None:
         if meta.get("success") is False:
             return None
         fn = entry.get("filename")
-        if fn and Path(str(fn)).suffix.lower() != ".dxf" and (project_path / fn).is_file():
-            return str(fn)
-        return None
+        if not fn:
+            return None
+        if Path(str(fn)).suffix.lower() == ".dxf":
+            return None
+        if ".generation-live." in str(fn).lower():
+            return None
+        path = _path_for(str(fn))
+        if path is None:
+            restored = history_service.restore_missing_live_file(project_path, str(fn))
+            if restored is not None:
+                return str(fn)
+            return None
+        if cad_service.looks_like_mcmaster_part_stem(path.stem):
+            return None
+        if cad_service._is_exploded_assembly_sidecar_stem(path.stem, project_path):
+            return None
+        return str(fn)
 
     candidate: str | None = None
     if 0 <= idx < len(entries):
@@ -474,11 +669,23 @@ def latest_model_file(project_path: Path) -> str | None:
             candidate = _usable(entry)
             if candidate:
                 break
+
+    published = cad_service.newest_published_model(project_path)
+    pub_path = _path_for(published)
+    cand_path = _path_for(candidate)
+    # A later Mesh/Jake/VibeCAD publish must beat a stale transform of an older generate.
+    if pub_path is not None and (
+        cand_path is None or pub_path.stat().st_mtime > cand_path.stat().st_mtime + 0.5
+    ):
+        return cad_service.resolve_viewport_filename(project_path, published)
     if candidate:
         return cad_service.resolve_viewport_filename(project_path, candidate)
     files = [
         f for f in cad_service.list_project_files(project_path)
         if Path(str(f.get("name") or "")).suffix.lower() != ".dxf"
+        and not cad_service.looks_like_mcmaster_part_stem(Path(str(f.get("name") or "")).stem)
+        and Path(str(f.get("name") or "")).suffix.lower() in {".glb", ".gltf", ".step", ".stp", ".stl", ".obj", ".ply", ".off", ".3mf"}
+        and not cad_service._is_exploded_assembly_sidecar_stem(Path(str(f.get("name") or "")).stem, project_path)
     ]
     if not files:
         return None
@@ -486,40 +693,298 @@ def latest_model_file(project_path: Path) -> str | None:
     return cad_service.resolve_viewport_filename(project_path, newest)
 
 
+_OPEN_MESH_SUFFIXES = {".glb", ".gltf", ".stl", ".obj", ".ply", ".off"}
+_OPEN_SKIP_MARKERS = (".generation-live.", "__faceted", "_exploded", "_active_", "_export_", "_share_")
+_OPEN_PREFER_GLB = {".stl", ".obj", ".ply", ".off", ".step", ".stp"}
+_OPEN_MESH_RANK = {".glb": 4, ".gltf": 3, ".stl": 2, ".obj": 1, ".ply": 1, ".off": 1}
+
+
+def _jake_open_public_name(name: str) -> str:
+    """Map CADJS ``.{stem}.step.glb`` to a public catalog identity for the client."""
+    base = Path(str(name or "").replace("\\", "/")).name
+    lower = base.lower()
+    if base.startswith(".") and lower.endswith(".step.glb"):
+        return f"{base[1 : -len('.step.glb')]}.glb"
+    if base.startswith(".") and lower.endswith(".stp.glb"):
+        return f"{base[1 : -len('.stp.glb')]}.glb"
+    return str(name or "")
+
+
+def _append_jake_open_recovery(project_path: Path, files: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the hidden assembled viewer in lite view=open after a catalog tombstone.
+
+    ``view=full`` is aliased to this payload, so hydrate cannot CAD-walk the
+    recovered sidecar. Without this, projects like 77ec39a4 look empty.
+    """
+    existing = {str(entry.get("name") or "") for entry in files}
+    existing_stems = {Path(name).stem.lower() for name in existing if name}
+    extra: list[dict[str, Any]] = []
+    for stem, path in cad_service._jake_hidden_assembly_previews(project_path):
+        viewer = path.name
+        if viewer in existing or stem.lower() in existing_stems:
+            continue
+        if cad_service.looks_like_mcmaster_part_stem(stem):
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        public_name = _jake_open_public_name(viewer)
+        if public_name in existing:
+            continue
+        extra.append(
+            {
+                "id": Path(public_name).with_suffix("").as_posix(),
+                "name": public_name,
+                "format": "glb",
+                "size": size,
+                "engine": None,
+                "viewer_filename": viewer,
+            }
+        )
+    return extra + files if extra else files
+
+
+def _open_viewer_from_names(filename: str, names: set[str]) -> str:
+    """Map a catalog/STEP/OBJ/STL name to a sibling mesh already in the file list."""
+    raw = str(filename or "").replace("\\", "/").strip()
+    if not raw:
+        return raw
+    suffix = Path(raw).suffix.lower()
+    stem_path = raw[: -len(suffix)] if suffix else raw
+    if suffix in _OPEN_PREFER_GLB or suffix not in _OPEN_MESH_SUFFIXES:
+        for ext in (".glb", ".gltf"):
+            sibling = f"{stem_path}{ext}"
+            if sibling in names:
+                return sibling
+        base = Path(raw).stem
+        for name in names:
+            if Path(name).suffix.lower() in {".glb", ".gltf"} and Path(name).stem == base:
+                return name
+    if suffix in _OPEN_MESH_SUFFIXES:
+        return raw
+    return raw
+
+
+def _newest_open_mesh(project_path: Path, files: list[dict[str, Any]]) -> str | None:
+    mesh: list[tuple[float, str]] = []
+    for entry in files:
+        name = str(entry.get("name") or "")
+        if not name:
+            continue
+        lower = name.lower()
+        if any(marker in lower for marker in _OPEN_SKIP_MARKERS):
+            continue
+        if cad_service.is_lite_hidden_design_sidecar(Path(name).stem, project_path):
+            continue
+        if Path(name).suffix.lower() not in _OPEN_MESH_SUFFIXES:
+            continue
+        public_stem = Path(_jake_open_public_name(name)).stem
+        if cad_service.looks_like_mcmaster_part_stem(Path(name).stem) or cad_service.looks_like_mcmaster_part_stem(
+            public_stem
+        ):
+            continue
+        path = project_path / name
+        try:
+            mtime = path.stat().st_mtime if path.is_file() else 0.0
+        except OSError:
+            mtime = 0.0
+        mesh.append((mtime, name))
+    if not mesh:
+        return None
+    glb_stems = {
+        Path(name).with_suffix("").as_posix()
+        for _mtime, name in mesh
+        if Path(name).suffix.lower() in {".glb", ".gltf"}
+    }
+    preferred = [
+        item
+        for item in mesh
+        if Path(item[1]).suffix.lower() in {".glb", ".gltf"}
+        or Path(item[1]).with_suffix("").as_posix() not in glb_stems
+    ]
+    ranked = preferred or mesh
+    return max(
+        ranked,
+        key=lambda item: (
+            item[0],
+            _OPEN_MESH_RANK.get(Path(item[1]).suffix.lower(), 0),
+            item[1],
+        ),
+    )[1]
+
+
+def _lite_open_components(
+    files: list[dict[str, Any]],
+    latest: str | None,
+    project_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Filename-only Components for view=open. No GLB/STEP parse."""
+    names = {str(entry.get("name") or "") for entry in files}
+    latest_name = str(latest or "")
+    latest_viewer = _open_viewer_from_names(latest_name, names) if latest_name else ""
+    components: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    root = Path(project_path) if project_path is not None else None
+    for entry in files:
+        name = str(entry.get("name") or "")
+        if not name:
+            continue
+        lower = name.lower()
+        if any(marker in lower for marker in _OPEN_SKIP_MARKERS):
+            continue
+        suffix = Path(name).suffix.lower()
+        if suffix not in _OPEN_MESH_SUFFIXES and suffix not in {".step", ".stp"}:
+            continue
+        public_name = _jake_open_public_name(name)
+        stem = Path(public_name).stem
+        if cad_service.looks_like_mcmaster_part_stem(Path(name).stem) or cad_service.looks_like_mcmaster_part_stem(
+            stem
+        ):
+            continue
+        if root is not None and cad_service.is_lite_hidden_design_sidecar(stem, root):
+            continue
+        if root is not None and cad_service.is_lite_hidden_design_sidecar(Path(name).stem, root):
+            continue
+        viewer = str(entry.get("viewer_filename") or "") or _open_viewer_from_names(name, names)
+        if Path(viewer).suffix.lower() not in _OPEN_MESH_SUFFIXES:
+            continue
+        if viewer in seen:
+            continue
+        seen.add(viewer)
+        catalog = public_name if public_name.endswith(".glb") else viewer
+        engine = catalog.split("/", 1)[0] if "/" in catalog else None
+        components.append(
+            {
+                "id": Path(catalog).stem,
+                "name": catalog,
+                "stem": Path(catalog).stem,
+                "engine": engine,
+                "format": Path(viewer).suffix.lstrip(".").lower(),
+                "viewer_filename": viewer,
+                "size": entry.get("size"),
+                "auto_load": True,
+                "primary": viewer == latest_viewer
+                or name == latest_name
+                or catalog == latest_name
+                or catalog == _jake_open_public_name(latest_name),
+            }
+        )
+    components = cad_service.collapse_duplicate_folder_stems(components)
+    if not any(item.get("primary") for item in components) and components:
+        components[0]["primary"] = True
+    return components
+
+
 def project_summary(project_path: Path) -> dict[str, Any]:
+    try:
+        history_service.schedule_missing_live_restore(project_path)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "Drive auto-restore failed during project open for %s", project_path.name
+        )
     files = cad_service.list_project_files(project_path)
     if not meta_path(project_path).is_file() and files:
         touch_project(project_path)
     meta = load_meta(project_path)
-    timeline = history_service.timeline_summary(project_path)
+    generation = generation_service.public_summary(project_path)
+    timeline = history_service.timeline_summary(project_path, sync_prompts=False)
     touch = meta.get("updated_at")
     if not touch and files:
         touch = datetime.fromtimestamp(
             (project_path / files[0]["name"]).stat().st_mtime, tz=timezone.utc
         ).isoformat()
+    names = {str(f.get("name") or "") for f in files}
+    gen_file = str((generation or {}).get("filename") or "")
+    if gen_file and gen_file in names:
+        latest = cad_service.resolve_viewport_filename(project_path, gen_file) or gen_file
+    else:
+        latest = latest_model_file(project_path)
     return {
         "id": project_path.name,
         "name": meta.get("name") or project_path.name,
         "created_at": meta.get("created_at"),
         "updated_at": touch or meta.get("updated_at"),
+        "opened_at": meta.get("opened_at"),
         "file_count": len(files),
         "files": files,
         "browser": cad_service.list_browser_tree(project_path),
         "timeline": timeline,
-        "latest_file": latest_model_file(project_path),
-        "usage_summary": prompt_history_service.project_usage_summary(project_path),
-        "generation": generation_service.public_summary(project_path),
+        "latest_file": latest,
+        "usage_summary": {},
+        "generation": generation,
         "fusion_source": meta.get("autodesk_source"),
+    }
+
+
+def project_open_summary(project_path: Path) -> dict[str, Any]:
+    """Fast first-paint payload for project open — no CAD browser / GLB scene walk."""
+    files = _append_jake_open_recovery(project_path, cad_service.list_project_files(project_path))
+    if not meta_path(project_path).is_file() and files:
+        touch_project(project_path)
+    meta = load_meta(project_path)
+    # Lock-free: public_summary() flocks generation.json and can stall open while a CAD job writes.
+    generation = generation_service.list_public_summary(project_path)
+    # Timeline JSON can be huge; parsing it on every open made swaps take seconds.
+    timeline = {"entries": [], "current_index": -1}
+    touch = meta.get("updated_at")
+    if not touch and files:
+        try:
+            touch = datetime.fromtimestamp(
+                (project_path / files[0]["name"]).stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+        except OSError:
+            touch = meta.get("updated_at")
+    names = {str(f.get("name") or "") for f in files}
+    gen_file = str((generation or {}).get("filename") or "")
+    if gen_file and gen_file in names:
+        latest = _open_viewer_from_names(gen_file, names)
+    else:
+        latest = _newest_open_mesh(project_path, files)
+    if latest:
+        latest = _jake_open_public_name(latest)
+    return {
+        "id": project_path.name,
+        "name": meta.get("name") or project_path.name,
+        "created_at": meta.get("created_at"),
+        "updated_at": touch or meta.get("updated_at"),
+        "opened_at": meta.get("opened_at"),
+        "file_count": len(files),
+        "files": files,
+        "browser": {
+            "components": _lite_open_components(files, latest, project_path),
+            "sketches": [],
+            "wiring": [],
+            "drawings": [],
+            # Cheap dir listing only — not the CAD browser walk. Recordings
+            # and screenshots must be visible in Reference Files on view=open reload.
+            "references": cad_service.list_reference_files(project_path),
+            "renders": cad_service.list_render_files(project_path),
+            "rigging": [],
+            "robots": [],
+        },
+        "timeline": timeline,
+        "latest_file": latest,
+        "usage_summary": {},
+        "generation": generation,
+        "fusion_source": meta.get("autodesk_source"),
+        "open_lite": True,
     }
 
 
 def project_wiring_summary(project_path: Path) -> dict[str, Any]:
     """Fast project payload for Wiring mode without heavy CAD browser hydration."""
+    try:
+        history_service.schedule_missing_live_restore(project_path)
+    except Exception:
+        pass
     files = cad_service.list_project_files(project_path)
     if not meta_path(project_path).is_file() and files:
         touch_project(project_path)
     meta = load_meta(project_path)
-    timeline = history_service.timeline_summary(project_path)
+    timeline = history_service.timeline_summary(project_path, sync_prompts=False)
     touch = meta.get("updated_at")
     if not touch and files:
         touch = datetime.fromtimestamp(
@@ -563,48 +1028,41 @@ def project_wiring_summary(project_path: Path) -> dict[str, Any]:
         },
         "timeline": timeline,
         "latest_file": latest_model_file(project_path),
-        "usage_summary": prompt_history_service.project_usage_summary(project_path),
+        "usage_summary": {},
         "generation": generation_service.public_summary(project_path),
     }
 
 
 def project_list_summary(project_path: Path) -> dict[str, Any]:
-    """Fast sidebar summary; full browser/timeline data loads when opening a project."""
+    """Fast sidebar summary; full browser/timeline data loads when opening a project.
+
+    Do not walk design files, take the generation flock, or parse timeline JSON
+    here — that made Projects hang on Loading while listing ~100+ folders.
+    """
     meta = load_meta(project_path)
-    touch = meta.get("updated_at")
-    if not touch:
-        try:
-            touch = datetime.fromtimestamp(project_path.stat().st_mtime, tz=timezone.utc).isoformat()
-        except OSError:
-            touch = meta.get("created_at")
+    touch = meta.get("updated_at") or meta.get("opened_at")
+    mtime_iso = None
     try:
-        file_count = len(cad_service.list_project_files(project_path))
+        mtime_iso = datetime.fromtimestamp(project_path.stat().st_mtime, tz=timezone.utc).isoformat()
     except OSError:
-        file_count = int(meta.get("file_count") or 0)
-    # Keep meta cache in sync so future reads stay cheap/accurate.
-    if meta.get("file_count") != file_count:
-        meta["file_count"] = file_count
-        try:
-            save_meta(project_path, meta)
-        except OSError:
-            pass
-    timeline_entries = 0
-    try:
-        timeline_entries = len((history_service.load_timeline(project_path) or {}).get("entries") or [])
-    except Exception:
-        timeline_entries = 0
+        mtime_iso = None
+    if not touch:
+        touch = mtime_iso or meta.get("created_at")
+    file_count = int(meta.get("file_count") or 0)
+    from backend.services.project_thumb import preview_url_for, thumb_path as project_thumb_path
+
+    dest = project_thumb_path(project_path)
+    preview_url = preview_url_for(project_path.name, project_path) if dest.is_file() else None
     return {
         "id": project_path.name,
         "name": meta.get("name") or project_path.name,
         "created_at": meta.get("created_at"),
         "updated_at": touch or meta.get("updated_at"),
+        "opened_at": meta.get("opened_at"),
+        "mtime": mtime_iso,
         "file_count": file_count,
-        "files": [],
-        "browser": {"components": [], "sketches": [], "wiring": [], "drawings": [], "references": [], "renders": []},
-        "timeline": {"entries": [{} for _ in range(timeline_entries)]},
-        "latest_file": None,
-        "usage_summary": None,
-        "generation": generation_service.public_summary(project_path),
+        "generation": generation_service.list_public_summary(project_path),
+        "preview_url": preview_url,
     }
 
 

@@ -1,0 +1,90 @@
+{
+  "token": "remix1",
+  "remix_id": "remix_c63c5bdf8bce",
+  "kind": "chunk_index",
+  "algorithm": "content_hash_window",
+  "note": "OpenAI-style chunk windows for snapshot compare; keep prior version on edit",
+  "chunks": [
+    {
+      "chunk_id": "chk_5c61ba51",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 0,
+      "start": 0,
+      "end": 600,
+      "content_hash": "65595584",
+      "preview": "[ { \"path\": \"90576A119.glb\", \"url\": \"/api/projects/46250178/files/90576A119.glb\", \"kind\": \"glb\", \"rest",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_8069df84",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 1,
+      "start": 520,
+      "end": 1120,
+      "content_hash": "4fd2991c",
+      "preview": "91292A126.glb\" }, { \"path\": \"91292A126.step\", \"url\": \"/api/projects/46250178/files/91292A126.step\", \"kin",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_c5e85ccb",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 2,
+      "start": 1040,
+      "end": 1640,
+      "content_hash": "452cbb02",
+      "preview": "jects/46250178/files/91292A144.step\" }, { \"path\": \"93475A250.glb\", \"url\": \"/api/projects/46250178/files/9347",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_220cd849",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 3,
+      "start": 1560,
+      "end": 2160,
+      "content_hash": "8235e339",
+      "preview": "ore\": \"GET /api/projects/46250178/files/94180A361.glb\" }, { \"path\": \"94180A361.step\", \"url\": \"/api/projects/",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_f51f55d3",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 4,
+      "start": 2080,
+      "end": 2680,
+      "content_hash": "6384a234",
+      "preview": "n_Nest.glb\" }, { \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\", \"url\": \"/api/projects/4625",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_8d35a468",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 5,
+      "start": 2600,
+      "end": 3200,
+      "content_hash": "dd89e009",
+      "preview": " \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\" }, { ",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_28d6cd37",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 6,
+      "start": 3120,
+      "end": 3720,
+      "content_hash": "992ee1c9",
+      "preview": "reations.json\", \"kind\": \"json\", \"restore\": \"GET /api/projects/46250178/files/xr_creations.json\" }, { \"pa",
+      "version": 1
+    },
+    {
+      "chunk_id": "chk_17eceffc",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "index": 7,
+      "start": 3640,
+      "end": 3820,
+      "content_hash": "d3ef0f4a",
+      "preview": "xr_creations_4.json\", \"url\": \"/api/projects/46250178/files/xr_creations_4.json\", \"kind\": \"json\", \"restore\": ",
+      "version": 1
+    }
+  ],
+  "created_at": "2026-09-17T16:26:53.707Z"
+}

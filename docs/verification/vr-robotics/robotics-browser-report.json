@@ -1,0 +1,54 @@
+{
+  "import": "Viewport XR imports successfully",
+  "scene": {
+    "meshes": 43,
+    "triangles": 201628,
+    "box": [
+      0.7140377871460334,
+      0.7730000019073486,
+      0.4917979719784825
+    ],
+    "liveUpdate": true,
+    "gui": 25
+  },
+  "workspace": {
+    "host": "192.168.1.10",
+    "fence": {
+      "size": [
+        0.6,
+        0.256,
+        0.6
+      ],
+      "position": [
+        0,
+        0.128,
+        0
+      ]
+    },
+    "grabbed": true,
+    "moved": true,
+    "separate": true,
+    "msgs": [
+      [
+        "ok",
+        "Point and trigger-click the first printer corner."
+      ],
+      [
+        "ok",
+        "Select the opposite printer corner."
+      ]
+    ]
+  },
+  "sharedControls": {
+    "sharedScene": true,
+    "controlsVisible": true,
+    "emotesVisible": true,
+    "ownerActionsHidden": true
+  },
+  "avatars": {
+    "loaded": 3,
+    "triangles": 4812,
+    "animated": true
+  },
+  "pageErrors": []
+}

@@ -1,0 +1,8 @@
+{
+  "api_base": "http://127.0.0.1:8001",
+  "projects_dir": "/Users/sam/Documents/Render-Studio/projects",
+  "workspace_root": "/Users/sam/Documents/Render-Studio",
+  "env_file": "/Users/sam/Documents/Render-Studio/.env",
+  "workbench_menu": "Render Studio",
+  "import_step_limit": 50
+}

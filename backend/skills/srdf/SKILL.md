@@ -1,6 +1,7 @@
 ---
 name: srdf
-description: MoveIt2 SRDF generation, validation, and planning-semantics workflow. Use when creating, editing, regenerating, inspecting, or validating `.srdf` files, `gen_srdf()` sources, MoveIt planning groups, virtual joints, passive joints, end effectors, group states, disabled collisions, URDF-linked planning semantics, or SRDF handoff for live review. Use the URDF skill for robot structure, the SDF skill for simulator descriptions, and the cad-viewer skill for rendering, live review links, and optional MoveIt2 controls.
+description: MoveIt2 SRDF authoring, validation, and planning-semantics workflow. Use when creating, editing, inspecting, or validating `.srdf` files, MoveIt planning groups, virtual joints, passive joints, end effectors, group states, disabled collisions, URDF-paired planning semantics, or SRDF handoff for live review. Use the URDF skill for robot structure and the SDF skill for simulator descriptions. Open and visually review existing SRDF files in CAD Viewer.
+license: MIT
 ---
 
 # SRDF
@@ -9,9 +10,20 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth; the
 repository link is only for provenance and release review.
 
-Use this skill for MoveIt semantic robot descriptions on top of an existing valid URDF. SRDF defines planning semantics; it does not define physical robot structure.
+Use this skill for MoveIt semantic robot descriptions on top of an existing valid URDF. SRDF defines planning semantics; it does not define physical robot structure. The `.srdf` file is the source of truth: author and edit the XML directly. There is no `gen_srdf()` contract.
 
-SRDF correctness is a **planning semantics** problem. The common failure is not invalid XML; it is a plausible SRDF that gives MoveIt the wrong planning group, wrong tool link, wrong default state, unsafe disabled-collision matrix, or wrong joint units. Because language models are weak at spatial and kinematic reasoning, derive planning groups, end effectors, group states, and disabled collisions from the URDF topology, MoveIt Setup Assistant output, sampled collision analysis, or explicit user data. Do not infer them from visual appearance alone.
+SRDF correctness is a **planning semantics** problem. The common failure is not invalid XML; it is a plausible SRDF that gives MoveIt the wrong planning group, wrong tool link, wrong default state, unsafe disabled-collision matrix, or wrong joint units. Because language models are weak at spatial and kinematic reasoning, derive planning groups, end effectors, group states, and disabled collisions from the URDF topology, MoveIt Setup Assistant output, sampled collision analysis, or explicit user data. Do not infer them from visual theme alone — and do not type any link or joint name from memory: extract the URDF's link/joint table first and copy names from it.
+
+## Setup
+
+Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share
+one installation, and its warm build daemon, with the CAD app's server:
+
+- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 cadgen`
+- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.15 python`
+
+The first run downloads that installation and the first snapshot its headless
+browser; later runs reuse both.
 
 ## Format boundary
 
@@ -21,72 +33,125 @@ SRDF correctness is a **planning semantics** problem. The common failure is not 
 
 Do not place geometry, inertials, joint origins, link poses, mesh references, physical joint limits, transmissions, or `ros2_control` interfaces in SRDF.
 
-## CAD Viewer Handoff
+## Show the model
 
-After completing SRDF work that creates or modifies a `.srdf`, you must ALWAYS hand the explicit file path to `$cad-viewer` when that skill is installed. `$cad-viewer` must start CAD Viewer if it is not already running and return link(s) to the relevant created or updated file(s); include optional MoveIt2 controls in the handoff only when the user needs interactive IK or path-planning review. If `$cad-viewer` is unavailable or startup fails, report that instead of silently omitting the handoff.
+Show the user each file you create or change, and any they ask to see. Snapshots and
+validation don't replace this.
+
+- If your tools include `cad_show` (your host may prefix it), use it with the file's
+  absolute path, and follow its description for when to call it again. `cad_view` reads
+  what the user selected; `cad_screenshot` shows you what they see. Neither is a review
+  of your own work.
+- Otherwise run the CAD Viewer, from any folder:
+
+  ```bash
+  cadgen viewer --host 127.0.0.1 --json --detach
+  ```
+
+  `--detach` returns once the viewer answers requests and leaves it running in the
+  background: always pass it, since a foreground viewer never exits (and piping its
+  output through `tail` can hide the URL for good). It starts this machine's one viewer,
+  or reuses it. Read `url` from its one JSON line (never guess the port), and for each
+  file return `url?file=<its URL-encoded absolute path>`. If it fails to launch, say so.
+
+Keep the SRDF beside its uniquely matching URDF (same robot name). Review
+planning groups, named states and joints; visual review does not prove planning
+correctness.
 
 ## Required workflow
 
-1. **Start from a valid URDF.** Generate or fix the URDF first. The SRDF generator validates against the source-relative `.urdf` path supplied by `gen_srdf()`.
-2. **Identify the planning task.** Record whether the goal is arm IK, gripper control, mobile base planning, dual-arm planning, tool use, or local smoke testing.
-3. **Create or update the planning ledger.** Use `references/planning-ledger.md` before writing XML.
-4. **Define virtual and passive joints deliberately.** Use them when needed by the robot model, even though the current lightweight runtime does not fully inventory them yet.
-5. **Define planning groups from URDF topology.** Prefer chain groups for serial manipulators when base/tip form a real path. Use joint/link/subgroup definitions only when they are deliberate.
-6. **Define end effectors after group membership is known.** Avoid overlap between an end-effector group and its parent group. Record the actual target/TCP link.
-7. **Define group states in URDF-native units.** Revolute and continuous values are radians; prismatic values are meters. Do not store degrees in SRDF.
-8. **Generate disabled collisions from evidence.** Use adjacency, MoveIt Setup Assistant sampling, or explicit user-provided collision matrices. Do not invent broad disable lists.
-9. **Regenerate only explicit SRDF targets.** Generation validates the generated SRDF against the linked URDF before writing.
-10. **Run MoveIt smoke tests when available.** Use MoveIt Setup Assistant or a project MoveIt launch directly.
-11. **Report assumptions and skipped checks.** Include incomplete validation, missing MoveIt environment, manually reasoned collision disables, and inferred target links.
+1. **Start from a valid URDF.** Author or fix the URDF first with `$urdf` and validate it. The SRDF pairs with that URDF by colocation and robot name, and every name in the SRDF must exist in it.
+2. **Extract the URDF table.** Before writing any SRDF XML, list the URDF's robot name, links, joints (with type, parent, child, limits, mimic flags). Copy names from this table only; never type them from memory. See `references/srdf-workflow.md`.
+3. **Identify the planning task.** Record whether the goal is arm IK, gripper control, mobile base planning, dual-arm planning, tool use, or local smoke testing.
+4. **Create or update the planning ledger.** Use `references/planning-ledger.md` before writing XML; keep a compact copy as a comment block in the `.srdf`.
+5. **Pair with the URDF by colocation.** Save the `.srdf` in the same folder as its `.urdf`, with the same `<robot name>` — that is the only linking mechanism. The validator and the viewer both resolve the pairing by scanning the folder for the URDF whose robot name matches; exactly one URDF per robot name per folder. No metadata element links the files. See `references/authoring-contract.md`.
+6. **Define virtual and passive joints deliberately.** Use them when needed by the robot model.
+7. **Define planning groups from URDF topology.** Prefer chain groups for serial manipulators when base/tip form a real parent-to-child path in the URDF tree (the validator verifies this). Use joint/link/subgroup definitions only when they are deliberate.
+8. **Define end effectors after group membership is known.** Avoid overlap between an end-effector group and its parent group. Record the actual target/TCP link.
+9. **Define group states in URDF-native units.** Revolute and continuous values are radians; prismatic values are meters. Do not store degrees in SRDF. Values must lie within URDF limits and must not set fixed or mimic joints.
+10. **Generate disabled collisions from evidence.** Use adjacency derived from the URDF joint table, MoveIt Setup Assistant sampling, or explicit user-provided collision matrices. Do not invent broad disable lists. See `references/disabled-collisions.md`.
+11. **Validate every created or modified `.srdf`** with `cadgen srdf validate`; it cross-validates all names, chains, states, and pairs against the paired URDF. Fix findings and re-validate until clean.
+12. **Run MoveIt smoke tests when available.** Use MoveIt Setup Assistant or a project MoveIt launch directly.
+13. **Report assumptions and skipped checks.** Include incomplete validation, missing MoveIt environment, manually reasoned collision disables, and inferred target links.
 
 ## Commands
 
-Run with the Python environment for the project or workspace. Treat `python` in examples as an interpreter placeholder; if bare `python` is unavailable, substitute `python3`, a project virtualenv interpreter, or the configured interpreter path.
+Run `cadgen` as Setup defines it. `cadgen doctor <skill-dir>` reports the installation in use and checks that it is the one this skill pins — docs drift silently on another. Validation itself needs nothing beyond the Python standard library; only snapshots need the browser. Use `cadgen <verb> --help` for the complete current interface.
 
-From this skill directory, the SRDF launcher shape is:
+The validator shape is:
 
 ```bash
-python scripts/srdf path/to/source.py
-python scripts/srdf path/to/source.py -o path/to/robot.srdf
-python scripts/srdf path/to/a.py=out/a.srdf path/to/b.py=out/b.srdf
+cadgen srdf validate path/to/robot.srdf
+cadgen srdf validate path/to/robot.srdf --strict
+cadgen srdf validate path/to/robot.srdf --json
 ```
 
-Relative source targets and CLI output overrides are resolved from the current working directory. When running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
+The validator parses the SRDF, resolves the paired URDF (the same-folder `.urdf` whose robot name matches; none, several, or an invalid one is an error), and cross-validates: group/joint/link/subgroup name existence, chain path resolvability, subgroup cycles, virtual/passive joints, end-effector topology, group-state membership/limits/completeness, disabled-collision pairs (including Adjacent-reason truthfulness), and misspelled elements. Each phase collects all its findings in one pass (severity, code, XML path), but a structural error stops the cross-file phase — re-run after every fix. One run validates ONE file: `--strict` treats warnings as failures and `--json` prints one line of `{"ok", "path", "issues": [{"severity", "code", "message", "element", "hint"}], "summary"}`, where `element` is the XML path. It exits nonzero if the target fails. Relative targets resolve from the current working directory.
 
 ## Hard rules
 
-- SRDF must reference an existing valid URDF.
-- The SRDF robot name must match the URDF robot name.
+- The SRDF lives in the same folder as its URDF and shares its `<robot name>`; that colocation-plus-name match is the only pairing mechanism, and exactly one URDF per robot name may exist in the folder.
+- Every link, joint, group, and subgroup name must come from the URDF table or a group defined in the same file.
 - Group states use URDF-native units: radians for revolute/continuous, meters for prismatic.
 - Disabled collision pairs require truthful reasons and provenance.
 - End-effector groups should not share links with their parent planning group.
-- `$cad-viewer` owns optional local `moveit2_server` guidance for interactive planning review.
 - Visual rendering review is useful but cannot prove planning correctness.
+
+## Snapshot Tool
+
+`cadgen snapshot` renders the robot to a PNG still, using the same shared
+CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
+the CAD Viewer shows.
+
+```bash
+cadgen snapshot path/to/robot.srdf review.png
+```
+
+Hand it the `.srdf`; it routes by suffix and renders the paired URDF's geometry — the same-folder `.urdf` whose `<robot name>` matches, exactly as `cadgen srdf validate` pairs them. No match, or more than one, is refused before anything renders, naming the robot name it looked for and the `.urdf` files it found. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+joints you do not name staying where the CAD Viewer opens the robot: each at its default, then
+this SRDF's `home` group state if it declares one (the `"jointValues"` job field is the same
+thing in a packet). The snapshot draws the robot with the viewer's own scene, so it shows what
+the viewer shows, and a link mesh that cannot be loaded fails it rather than leaving the link
+out. Robots are authored in metres and are framed on the robot scene scale automatically.
+
+A normal snapshot uses the Solid preset and Light appearance; omitted groups inherit preset defaults.
+Pass `--display render` for the shared photographic scene. Inline display JSON and
+JSON files use grouped settings such as `lighting`, `background`, and `floor`;
+`appearance` is `light` (default) or `dark`. Projection and focal length belong
+in `display.camera`. Top-level `--camera` and `--joint-values` remain active in every display
+mode. The display modes are `solid` and `render`: `edges`, `clip`, `exploded`, the
+`xray`, `hidden-line` and `wireframe` modes and the `hidden`/`off` surface styles
+describe a STEP model's CAD edges, parts and solids, and are refused by name here.
+
+Link meshes are resolved relative to the description, so they must be present: an
+unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
+`git lfs checkout <mesh dir>` first.
+
+An SRDF's geometry comes from its paired URDF, so it has no snapshot door of its
+own; the polymorphic `cadgen snapshot` routes one by suffix. The grammar is
+`cadgen snapshot TARGET [OUT] [flags]`, the same one every format door uses. Use
+`cadgen snapshot --help` for the complete current interface.
 
 ## References
 
-- Generation command: `references/gen-srdf.md`
-- Generator contract: `references/generator-contract.md`
-- SRDF workflow: `references/srdf-workflow.md`
+- Authoring contract (structure, URDF pairing, golden skeleton): `references/authoring-contract.md`
+- SRDF workflow (URDF table extraction, edit loop): `references/srdf-workflow.md`
 - Planning ledger: `references/planning-ledger.md`
-- Validation scope: `references/validation.md`
+- Validation and verification recipe: `references/validation.md`
 - End effectors: `references/end-effectors.md`
 - Disabled collisions: `references/disabled-collisions.md`
-- Runtime notes and current limitations: `references/implementation-notes.md`
-
-For local MoveIt2 controls, use `$cad-viewer`; in that skill, read `references/moveit2-server.md`.
 
 <!-- render3d-studio -->
 
 ## Render Studio
 
-On the Render Studio server this skill lives at `backend/skills/srdf/`.
+This skill is installed under the CAD 3.12 env (`.venv-mac`). Run tools from the **project directory**.
 
-- **Python tools:** `backend/skills/srdf/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/srdf/references/`
-- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render Studio JSON Feature Programs in those modes.
-- **Standard mode only:** when the product asks for a Feature Program, emit Render Studio JSON Feature Programs instead of Python.
+- **Jake text-to-cad 0.7.15:** author a cadgen model (`from cadgen import step` + `@step`, built with `python <model>.py`). Use the upstream `cadgen` commands documented by each synced skill. Render's `python scripts/inspect` and `python scripts/snapshot` shims remain available for the product validation loop.
+- **Render compatibility shims:** `python scripts/step`, `scripts/inspect`, and `scripts/snapshot` support existing Render projects while new Jake models follow the synced upstream contract. Render's robot bridge may read legacy `gen_urdf()` / `gen_srdf()` projects, but new URDF and SRDF work follows the synced direct-XML source-of-truth rules.
+- **Do not** emit Render3D JSON Feature Programs in CAD 2.0 / Fusion / Architect / Jake modes.
+- **Standard mode only:** when the product asks for a Feature Program, emit Render3D JSON Feature Programs instead of Python.
 - **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render Studio's own viewer loads the generated STEP/GLB.
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
+- **Sync:** `SKILLS_REF=v0.7.15 scripts/sync-skills-from-text-to-cad.sh`
 
-See `backend/skills/RENDER3D.md` for full integration notes.
+The installed source tag is recorded in `backend/skills/.source_tag`.

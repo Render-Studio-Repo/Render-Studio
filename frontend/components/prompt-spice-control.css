@@ -1,0 +1,263 @@
+/* Improve-prompt — single modern on/off toggle */
+
+.prompt-spice-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  z-index: 5;
+}
+
+.prompt-cad-debug-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  z-index: 5;
+}
+
+.prompt-spice-btn {
+  --spice-on: #6eb6ff;
+  --spice-on-deep: #2f74c8;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px 0 9px;
+  border: 1px solid rgba(140, 190, 255, 0.26);
+  border-radius: 999px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, transparent 48%),
+    linear-gradient(180deg, rgba(34, 44, 62, 0.96) 0%, rgba(12, 18, 30, 0.98) 100%);
+  color: #9fb3c8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 6px 16px rgba(0, 0, 0, 0.28);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.prompt-spice-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.07) 48%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.5s ease;
+  z-index: 0;
+}
+
+.prompt-spice-btn > * {
+  position: relative;
+  z-index: 1;
+}
+
+.prompt-spice-btn:hover {
+  color: #d7e8ff;
+  border-color: rgba(150, 200, 255, 0.42);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 10px 22px rgba(0, 0, 0, 0.36);
+}
+
+.prompt-spice-btn:hover::before {
+  transform: translateX(120%);
+}
+
+.prompt-spice-btn:focus-visible {
+  outline: 2px solid rgba(110, 182, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.prompt-spice-btn:active {
+  transform: translateY(0);
+}
+
+.prompt-spice-btn[aria-pressed="true"] {
+  color: #e8f4ff;
+  border-color: rgba(126, 200, 255, 0.55);
+  background:
+    linear-gradient(165deg, rgba(160, 215, 255, 0.2) 0%, transparent 48%),
+    linear-gradient(180deg, rgba(40, 74, 112, 0.96) 0%, rgba(16, 34, 56, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(200, 230, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 8px 20px rgba(20, 60, 110, 0.4),
+    0 0 0 1px rgba(88, 166, 255, 0.16);
+}
+
+.prompt-spice-ai-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  color: var(--spice-on);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14), transparent 60%),
+    rgba(56, 139, 253, 0.14);
+  border: 1px solid rgba(126, 200, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.prompt-spice-ai-mark svg {
+  display: block;
+  width: 9px;
+  height: 9px;
+}
+
+.prompt-spice-btn[aria-pressed="true"] .prompt-spice-ai-mark {
+  color: #e8f4ff;
+  border-color: rgba(180, 220, 255, 0.42);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.22), transparent 55%),
+    rgba(56, 139, 253, 0.34);
+}
+
+.prompt-spice-btn-label {
+  padding-right: 2px;
+}
+
+.prompt-spice-btn-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 16px;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(140, 190, 255, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.prompt-spice-btn-knob {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.35), transparent 55%),
+    linear-gradient(180deg, #c5d4e6, #8fa3bb);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transform: translateX(0);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.prompt-spice-btn[aria-pressed="true"] .prompt-spice-btn-switch {
+  background: linear-gradient(180deg, rgba(110, 182, 255, 0.55), rgba(47, 116, 200, 0.7));
+  border-color: rgba(180, 220, 255, 0.4);
+}
+
+.prompt-spice-btn[aria-pressed="true"] .prompt-spice-btn-knob {
+  transform: translateX(12px);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.55), transparent 50%),
+    linear-gradient(180deg, #f4f9ff, #b7d8f7);
+}
+
+.prompt-spice-btn--debug {
+  --spice-on: #f0c14b;
+  --spice-on-deep: #c49212;
+  gap: 10px;
+}
+
+.prompt-spice-btn--debug .prompt-spice-btn-switch {
+  width: 34px;
+  height: 18px;
+  padding: 0 2px;
+  border-color: rgba(240, 193, 75, 0.22);
+  background:
+    linear-gradient(180deg, rgba(18, 16, 10, 0.9), rgba(8, 8, 6, 0.95));
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(240, 193, 75, 0.08);
+}
+
+.prompt-spice-btn--debug .prompt-spice-btn-knob {
+  width: 14px;
+  height: 14px;
+  background:
+    linear-gradient(160deg, rgba(255, 248, 220, 0.55), transparent 50%),
+    linear-gradient(180deg, #efe3c0, #b9a56a);
+}
+
+.prompt-spice-btn--debug[aria-pressed="true"] {
+  color: #fff8e4;
+  border-color: rgba(240, 193, 75, 0.62);
+  background:
+    linear-gradient(165deg, rgba(255, 214, 102, 0.28) 0%, transparent 48%),
+    linear-gradient(180deg, rgba(104, 76, 16, 0.98) 0%, rgba(38, 26, 8, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 180, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 8px 22px rgba(90, 60, 10, 0.4),
+    0 0 0 1px rgba(240, 193, 75, 0.2),
+    0 0 18px rgba(240, 193, 75, 0.16);
+}
+
+.prompt-spice-btn--debug[aria-pressed="true"] .prompt-spice-btn-switch {
+  background: linear-gradient(180deg, #f6d36a, #c49212);
+  border-color: rgba(255, 236, 180, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.55),
+    0 0 10px rgba(240, 193, 75, 0.45);
+}
+
+.prompt-spice-btn--debug[aria-pressed="true"] .prompt-spice-btn-knob {
+  transform: translateX(16px);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.75), transparent 48%),
+    linear-gradient(180deg, #fffdf4, #ffe38a);
+  box-shadow:
+    0 1px 3px rgba(80, 50, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-spice-btn,
+  .prompt-spice-btn::before,
+  .prompt-spice-btn-knob,
+  .prompt-spice-btn-switch,
+  .prompt-spice-ai-mark {
+    transition: none;
+  }
+
+  .prompt-spice-btn:hover {
+    transform: none;
+  }
+
+  .prompt-spice-btn:hover::before {
+    transform: none;
+  }
+}

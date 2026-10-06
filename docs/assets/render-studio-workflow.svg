@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">Render Studio workflow</title>
+  <desc id="desc">A connected workflow from intent through CAD, robotics and simulation, electronics, review, and physical build, supported by reusable project assets and optional compute.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081018"/>
+      <stop offset="1" stop-color="#101a24"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#28c7ef"/>
+      <stop offset="1" stop-color="#f3b43f"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#51c9e7"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="760" rx="36" fill="url(#bg)"/>
+  <path d="M130 116 H1470" stroke="url(#flow)" stroke-width="4" opacity=".85"/>
+  <text x="100" y="79" fill="#f4f7fa" font-family="Inter,Arial,sans-serif" font-size="36" font-weight="700">One workspace for the whole build</text>
+  <text x="100" y="157" fill="#91a0ad" font-family="Inter,Arial,sans-serif" font-size="21">Keep the model, machine context, and decisions connected from first idea to physical output.</text>
+
+  <g font-family="Inter,Arial,sans-serif">
+    <g transform="translate(90 230)">
+      <rect width="250" height="250" rx="28" fill="#111e28" stroke="#2a4656" stroke-width="2"/>
+      <circle cx="54" cy="54" r="24" fill="#173b48"/><text x="54" y="62" text-anchor="middle" fill="#62d9f5" font-size="25" font-weight="700">1</text>
+      <path d="M64 112 L108 90 L152 112 L108 134 Z M64 112 V163 L108 187 V134 M152 112 V163 L108 187" fill="none" stroke="#62d9f5" stroke-width="5" stroke-linejoin="round"/>
+      <text x="30" y="218" fill="#f7f9fb" font-size="25" font-weight="700">Design</text>
+      <text x="30" y="245" fill="#9dabb7" font-size="17">Prompt, import, or draw</text>
+    </g>
+    <path d="M355 355 H418" stroke="#51c9e7" stroke-width="5" marker-end="url(#arrow)" filter="url(#glow)"/>
+
+    <g transform="translate(430 230)">
+      <rect width="250" height="250" rx="28" fill="#111e28" stroke="#2a4656" stroke-width="2"/>
+      <circle cx="54" cy="54" r="24" fill="#173b48"/><text x="54" y="62" text-anchor="middle" fill="#62d9f5" font-size="25" font-weight="700">2</text>
+      <circle cx="88" cy="119" r="18" fill="none" stroke="#62d9f5" stroke-width="5"/><circle cx="160" cy="119" r="18" fill="none" stroke="#62d9f5" stroke-width="5"/>
+      <path d="M105 119 H143 M88 137 V170 M160 137 V170 M70 170 H106 M142 170 H178" fill="none" stroke="#62d9f5" stroke-width="5" stroke-linecap="round"/>
+      <text x="30" y="218" fill="#f7f9fb" font-size="25" font-weight="700">Simulate</text>
+      <text x="30" y="245" fill="#9dabb7" font-size="17">Robots, motion, and scenes</text>
+    </g>
+    <path d="M695 355 H758" stroke="#51c9e7" stroke-width="5" marker-end="url(#arrow)" filter="url(#glow)"/>
+
+    <g transform="translate(770 230)">
+      <rect width="250" height="250" rx="28" fill="#111e28" stroke="#2a4656" stroke-width="2"/>
+      <circle cx="54" cy="54" r="24" fill="#173b48"/><text x="54" y="62" text-anchor="middle" fill="#62d9f5" font-size="25" font-weight="700">3</text>
+      <path d="M67 102 H111 V135 H154 V174 H190 M111 135 V174 H73" fill="none" stroke="#f3b43f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="67" cy="102" r="9" fill="#f3b43f"/><circle cx="190" cy="174" r="9" fill="#f3b43f"/><circle cx="73" cy="174" r="9" fill="#f3b43f"/>
+      <text x="30" y="218" fill="#f7f9fb" font-size="25" font-weight="700">Connect</text>
+      <text x="30" y="245" fill="#9dabb7" font-size="17">Parts, wiring, and controls</text>
+    </g>
+    <path d="M1035 355 H1098" stroke="#e4b34e" stroke-width="5" marker-end="url(#arrow)" filter="url(#glow)"/>
+
+    <g transform="translate(1110 230)">
+      <rect width="400" height="250" rx="28" fill="#151f27" stroke="#674f25" stroke-width="2"/>
+      <circle cx="54" cy="54" r="24" fill="#45351c"/><text x="54" y="62" text-anchor="middle" fill="#f3b43f" font-size="25" font-weight="700">4</text>
+      <path d="M73 166 H198 V105 H321 V166" fill="none" stroke="#f3b43f" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M104 166 V133 H166 V166 M230 166 V123 H291 V166" fill="none" stroke="#f3b43f" stroke-width="5"/>
+      <path d="M198 105 V76 M174 76 H222" fill="none" stroke="#f3b43f" stroke-width="5" stroke-linecap="round"/>
+      <text x="30" y="218" fill="#f7f9fb" font-size="25" font-weight="700">Review and build</text>
+      <text x="30" y="245" fill="#9dabb7" font-size="17">Browser, VR, export, fabrication</text>
+    </g>
+  </g>
+
+  <g font-family="Inter,Arial,sans-serif">
+    <rect x="90" y="545" width="690" height="132" rx="24" fill="#0d1720" stroke="#244252"/>
+    <text x="122" y="590" fill="#62d9f5" font-size="20" font-weight="700">REUSABLE PROJECT ASSETS</text>
+    <text x="122" y="629" fill="#e6ecf1" font-size="22">Models · assemblies · skills · agents · workflows · knowledge</text>
+    <rect x="820" y="545" width="690" height="132" rx="24" fill="#0d1720" stroke="#5b4725"/>
+    <text x="852" y="590" fill="#f3b43f" font-size="20" font-weight="700">OPTIONAL PLATFORM SERVICES</text>
+    <text x="852" y="629" fill="#e6ecf1" font-size="22">Compute · marketplace · integrations · managed pilots</text>
+  </g>
+</svg>
+

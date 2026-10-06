@@ -1,0 +1,62 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+test("official OpenArm MuJoCo web is vendored under sandbox", () => {
+  assert.ok(existsSync(join(here, "index.html")));
+  assert.ok(existsSync(join(here, "web/main.js")));
+  assert.ok(existsSync(join(here, "web/ik.js")));
+  assert.ok(existsSync(join(here, "web/analysis-bridge.js")));
+  assert.ok(existsSync(join(here, "v2/scenes.json")));
+  assert.ok(existsSync(join(here, "v2/openarm_bimanual.xml")));
+  const html = readFileSync(join(here, "index.html"), "utf8");
+  assert.match(html, /analysis-bridge\.js/);
+  assert.match(html, /enactic\/openarm_mujoco|docs\.openarm\.dev\/simulation\/mujoco/);
+  const bridge = readFileSync(join(here, "web/analysis-bridge.js"), "utf8");
+  assert.match(bridge, /openarm-mujoco\/runs\/latest\.json/);
+  assert.match(bridge, /openarm-mujoco-pause/);
+  assert.match(bridge, /openarm-mujoco-home/);
+  const main = readFileSync(join(here, "web/main.js"), "utf8");
+  assert.match(main, /openarm-mujoco-load-model/);
+  assert.match(main, /maxSimSteps/);
+  assert.match(main, /IntersectionObserver/);
+  assert.match(main, /openarm-mujoco-pause/);
+  assert.match(main, /this\.paused/);
+  assert.match(bridge, /openarm_\$\{side\}_joint|openarm_left_joint/);
+  assert.match(bridge, /sandboxMcpConnect/);
+  assert.match(bridge, /setInterval[\s\S]*250/);
+  assert.match(bridge, /openarm-mujoco-end-run/);
+  assert.match(bridge, /openarm-mujoco-run-start/);
+  assert.match(bridge, /openarm-mujoco-live-sample/);
+  assert.match(bridge, /endRun/);
+  assert.match(main, /openarm-mujoco-end-run/);
+  assert.match(main, /scene-ready/);
+  assert.match(main, /sceneFromUrl/);
+  assert.match(main, /__mujocoLoadScene/);
+  assert.match(main, /URLSearchParams.*scene/);
+  assert.match(main, /g\.azimuth \+ 180/);
+  assert.match(main, /render3d:openarm-mujoco-camera:v1/);
+  assert.match(main, /saveCameraView/);
+  assert.match(main, /openarm-mujoco-activate/);
+  assert.match(main, /openarm-mujoco-ready/);
+  assert.match(main, /frameCamera\(\{ preferSaved: false \}\)/);
+  assert.match(main, /resizeRenderer\(\)/);
+});
+
+test("sandbox teleop + NW pane point at MuJoCo lab", () => {
+  const teleop = readFileSync(new URL("../teleop-panel.js", import.meta.url), "utf8");
+  const replica = readFileSync(new URL("../studio-viewport-replica.js", import.meta.url), "utf8");
+  const live = readFileSync(new URL("../sandbox-live-instances.js", import.meta.url), "utf8");
+  const pane = readFileSync(new URL("../openarm-viser-pane.js", import.meta.url), "utf8");
+  const repair = readFileSync(new URL("../repair-loop.js", import.meta.url), "utf8");
+  assert.match(teleop, /LEGACY_MUJOCO_LAB|adoptLive/);
+  assert.match(live, /\/sandbox\/openarm-mujoco\//);
+  assert.match(replica, /data-sbvp-mode="mujoco"/);
+  assert.match(pane, /data-sb-live-slot="mujoco"|\/sandbox\/openarm-mujoco\//);
+  assert.match(repair, /openarm\.mujoco_web/);
+  assert.match(repair, /openarm\.ik_converged/);
+});

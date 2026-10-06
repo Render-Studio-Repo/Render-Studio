@@ -1,0 +1,41 @@
+{
+  "name": "render-studio-terminal-bridge",
+  "displayName": "Render Studio Terminal Bridge",
+  "description": "Localhost Cursor/VS Code terminal + folder bridge for Render Studio (wrist-cam style publisher).",
+  "version": "0.1.0",
+  "publisher": "render3d",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "enabledApiProposals": ["terminalDataWriteEvent"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "renderStudio.terminalBridge.status",
+        "title": "Render Studio: Terminal Bridge Status"
+      },
+      {
+        "command": "renderStudio.terminalBridge.pickRoot",
+        "title": "Render Studio: Pick Terminal Root Folder"
+      }
+    ],
+    "configuration": {
+      "title": "Render Studio Terminal Bridge",
+      "properties": {
+        "renderStudio.terminalBridge.port": {
+          "type": "number",
+          "default": 8765,
+          "description": "Local HTTP/WebSocket listen port (not Studio :8001)."
+        },
+        "renderStudio.terminalBridge.bind": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Listen address. Keep 127.0.0.1 unless you intentionally expose LAN."
+        }
+      }
+    }
+  }
+}

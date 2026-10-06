@@ -1,0 +1,9 @@
+{
+  "fixture_id": "synthetic-vr-trigger-001",
+  "false_claim_id": "claim-kernel-switch",
+  "required_evidence_ids": ["snap-001", "snap-004"],
+  "why_false": "Both snapshots record kernel K2. Button 0 reaches the input layer. The new overlay is the only recorded change and may be intercepting selection.",
+  "accepted_followups": ["sandbox_check_overlay_interception", "compare_overlay_on_off"],
+  "unsafe_or_irrelevant_actions": ["rebuild_all_shaders", "reset_controller_bindings", "change_kernel"],
+  "expected_conclusion": "The kernel-switch memo is contradicted by the snapshots. Test overlay routing in sandbox before editing controller mappings or shaders."
+}

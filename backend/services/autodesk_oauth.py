@@ -7,6 +7,7 @@ import sqlite3
 import time
 import urllib.parse
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -24,6 +25,28 @@ AUTODESK_PROJECT_API = "https://developer.api.autodesk.com/project/v1"
 AUTODESK_DATA_API = "https://developer.api.autodesk.com/data/v1"
 AUTODESK_OSS_API = "https://developer.api.autodesk.com/oss/v2"
 AUTODESK_MFG_GRAPHQL_API = "https://developer.api.autodesk.com/mfg/graphql"
+_APS_HOST = "developer.api.autodesk.com"
+_APS_PAGE_LIMIT = 200
+_APS_MAX_PAGES = 50
+
+
+def _parse_oauth_timestamp(value: Any) -> datetime | None:
+    """Accept Postgres/RFC3339 precision on Python 3.9 as well as newer Python.
+
+    Postgres trims trailing zeroes; Python <3.11 accepts only 3 or 6 fractional
+    digits. A malformed expiry must trigger refresh, not crash Fusion exports.
+    """
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip().replace("Z", "+00:00")
+        text = re.sub(r"(\d{2}:\d{2}:\d{2})[.,](\d+)",
+                      lambda m: m[1] + "." + m[2][:6].ljust(6, "0"), text)
+        try:
+            parsed = datetime.fromisoformat(text)
+        except (TypeError, ValueError):
+            return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
 
 
 def configured_scopes() -> list[str]:
@@ -60,8 +83,8 @@ def consume_oauth_state(state: str) -> dict[str, Any] | bool:
         if not row:
             return False
         conn.execute("DELETE FROM oauth_state WHERE state = ?", (state,))
-    created = datetime.fromisoformat(row["created_at"])
-    if datetime.now(timezone.utc) - created > timedelta(minutes=10):
+    created = _parse_oauth_timestamp(row["created_at"])
+    if created is None or datetime.now(timezone.utc) - created > timedelta(minutes=10):
         return False
     return {"user_id": row["user_id"], "return_url": row["redirect_uri"]}
 
@@ -159,6 +182,26 @@ def upsert_user_tokens(token_data: dict[str, Any], user_id: str) -> dict[str, An
             """,
             (user_id, access_token, refresh_token, expires_at, autodesk_user_id, autodesk_email, autodesk_name, now),
         )
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.oauth_upsert(
+            user_id,
+            "autodesk",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            provider_user_id=autodesk_user_id or None,
+            provider_email=autodesk_email or None,
+            provider_name=autodesk_name or None,
+            extra={
+                "autodesk_user_id": autodesk_user_id,
+                "autodesk_email": autodesk_email,
+                "autodesk_name": autodesk_name,
+            },
+        )
+    except Exception:
+        logger.debug("autodesk oauth remote upsert skipped", exc_info=True)
     return {
         "user_id": user_id,
         "display_name": autodesk_name,
@@ -168,16 +211,31 @@ def upsert_user_tokens(token_data: dict[str, Any], user_id: str) -> dict[str, An
 
 
 def get_valid_access_token(user_id: str) -> str | None:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT access_token, refresh_token, expires_at FROM autodesk_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
+    row = None
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        if ws.live():
+            packed = ws.oauth_get(user_id, "autodesk")
+            if packed:
+                row = packed
+    except Exception:
+        logger.debug("autodesk oauth remote get skipped", exc_info=True)
+    if row is None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT access_token, refresh_token, expires_at FROM autodesk_tokens WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        if row:
+            row = dict(row)
     if not row:
         return None
-    expires_at = datetime.fromisoformat(row["expires_at"])
-    if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
+    expires_at = _parse_oauth_timestamp(row.get("expires_at"))
+    if expires_at and row.get("access_token") and datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
         return row["access_token"]
+    if not row.get("refresh_token"):
+        return None
     try:
         new_tokens = refresh_access_token(row["refresh_token"])
     except Exception:
@@ -217,6 +275,53 @@ def _raise_aps(resp: httpx.Response, *, context: str = "") -> None:
     if resp.status_code == 403:
         message = f"{message} {_aps_forbidden_hint(context=context)}"
     raise RuntimeError(message)
+
+
+def _aps_next_href(payload: dict[str, Any]) -> str | None:
+    """Return the JSON:API next-page URL when Autodesk still has more results."""
+    href = str(((payload.get("links") or {}).get("next") or {}).get("href") or "").strip()
+    if not href:
+        return None
+    parsed = urllib.parse.urlparse(href)
+    if parsed.scheme != "https" or parsed.netloc != _APS_HOST:
+        return None
+    return href
+
+
+def _aps_collection_pages(
+    access_token: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    timeout: float = 20,
+    context: str = "",
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    """GET a JSON:API collection and follow `links.next` until Autodesk is done.
+
+    APS hub/project/folder listings cap a page at 200 (sometimes 100). The Fusion
+    library used to keep only page 1, so later projects (e.g. VR Clamps) vanished.
+    """
+    headers = _auth_headers(access_token)
+    data: list[Any] = []
+    included: list[dict[str, Any]] = []
+    next_url = url
+    next_params: dict[str, Any] | None = dict(params or {})
+    if "page[limit]" not in next_params:
+        next_params["page[limit]"] = _APS_PAGE_LIMIT
+    for _ in range(_APS_MAX_PAGES):
+        resp = httpx.get(next_url, headers=headers, params=next_params, timeout=timeout)
+        _raise_aps(resp, context=context) if context else _raise_aps(resp)
+        payload = resp.json() if resp.content else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        data.extend(payload.get("data") or [])
+        included.extend(item for item in (payload.get("included") or []) if isinstance(item, dict) and item.get("id"))
+        href = _aps_next_href(payload)
+        if not href:
+            break
+        next_url = href
+        next_params = None
+    return data, included
 
 
 def fusion_mirror_access_issue(token: str, mirror: dict[str, Any]) -> str | None:
@@ -265,10 +370,9 @@ def fusion_mirror_access_issue(token: str, mirror: dict[str, Any]) -> str | None
 
 
 def list_hubs(access_token: str) -> list[dict[str, Any]]:
-    resp = httpx.get(f"{AUTODESK_PROJECT_API}/hubs", headers=_auth_headers(access_token), timeout=20)
-    _raise_aps(resp)
+    rows, _ = _aps_collection_pages(access_token, f"{AUTODESK_PROJECT_API}/hubs")
     hubs = []
-    for hub in resp.json().get("data", []) or []:
+    for hub in rows:
         attrs = hub.get("attributes") or {}
         hubs.append({
             "id": hub.get("id"),
@@ -279,14 +383,12 @@ def list_hubs(access_token: str) -> list[dict[str, Any]]:
 
 
 def list_projects(access_token: str, hub_id: str) -> list[dict[str, Any]]:
-    resp = httpx.get(
+    rows, _ = _aps_collection_pages(
+        access_token,
         f"{AUTODESK_PROJECT_API}/hubs/{urllib.parse.quote(hub_id, safe='')}/projects",
-        headers=_auth_headers(access_token),
-        timeout=20,
     )
-    _raise_aps(resp)
     projects = []
-    for project in resp.json().get("data", []) or []:
+    for project in rows:
         attrs = project.get("attributes") or {}
         projects.append({
             "id": project.get("id"),
@@ -303,13 +405,11 @@ def list_projects(access_token: str, hub_id: str) -> list[dict[str, Any]]:
 
 
 def list_top_folders(access_token: str, hub_id: str, project_id: str) -> list[dict[str, Any]]:
-    resp = httpx.get(
+    rows, _ = _aps_collection_pages(
+        access_token,
         f"{AUTODESK_PROJECT_API}/hubs/{urllib.parse.quote(hub_id, safe='')}/projects/{urllib.parse.quote(project_id, safe='')}/topFolders",
-        headers=_auth_headers(access_token),
-        timeout=20,
     )
-    _raise_aps(resp)
-    folders = [_normalize_folder(folder, project_id) for folder in resp.json().get("data", []) or []]
+    folders = [_normalize_folder(folder, project_id) for folder in rows]
     folders.sort(
         key=lambda item: str(item.get("last_modified") or item.get("created") or item.get("name") or ""),
         reverse=True,
@@ -318,17 +418,16 @@ def list_top_folders(access_token: str, hub_id: str, project_id: str) -> list[di
 
 
 def list_folder_contents(access_token: str, project_id: str, folder_id: str) -> dict[str, Any]:
-    resp = httpx.get(
+    rows, included = _aps_collection_pages(
+        access_token,
         f"{AUTODESK_DATA_API}/projects/{urllib.parse.quote(project_id, safe='')}/folders/{urllib.parse.quote(folder_id, safe='')}/contents",
-        headers=_auth_headers(access_token),
-        timeout=20,
+        params={"includeHidden": "false"},
+        context="reading Fusion folder contents",
     )
-    _raise_aps(resp, context="reading Fusion folder contents")
-    payload = resp.json()
-    included_by_id = {item.get("id"): item for item in payload.get("included", []) or [] if item.get("id")}
+    included_by_id = {item.get("id"): item for item in included if item.get("id")}
     folders: list[dict[str, Any]] = []
     items: list[dict[str, Any]] = []
-    for entry in payload.get("data", []) or []:
+    for entry in rows:
         if entry.get("type") == "folders":
             folders.append(_normalize_folder(entry, project_id))
         elif entry.get("type") == "items":
@@ -346,6 +445,76 @@ def get_folder_item(access_token: str, project_id: str, folder_id: str, item_id:
         if item.get("id") == item_id:
             return item
     raise RuntimeError("Autodesk item not found in the selected folder.")
+
+
+def _folder_extension_type(folder: dict[str, Any] | None) -> str:
+    attrs = (folder or {}).get("attributes") or {}
+    ext = attrs.get("extension") or {}
+    ext_type = str(ext.get("type") or "").strip()
+    if ext_type.startswith("folders:"):
+        return ext_type
+    return "folders:autodesk.core:Folder"
+
+
+def get_folder(access_token: str, project_id: str, folder_id: str) -> dict[str, Any]:
+    resp = httpx.get(
+        f"{AUTODESK_DATA_API}/projects/{urllib.parse.quote(project_id, safe='')}/folders/{urllib.parse.quote(folder_id, safe='')}",
+        headers=_auth_headers(access_token),
+        timeout=20,
+    )
+    _raise_aps(resp, context="reading Fusion folder")
+    return resp.json().get("data") or {}
+
+
+def create_folder(access_token: str, project_id: str, parent_folder_id: str, name: str) -> dict[str, Any]:
+    """Create a Fusion/APS folder via Data Management POST /projects/{id}/folders."""
+    label = str(name or "").strip()
+    if not label:
+        raise RuntimeError("Folder name is required.")
+    parent_id = str(parent_folder_id or "").strip()
+    if not parent_id:
+        raise RuntimeError("A parent Fusion folder is required.")
+
+    parent = get_folder(access_token, project_id, parent_id)
+    extension_types = []
+    parent_ext = _folder_extension_type(parent)
+    if parent_ext:
+        extension_types.append(parent_ext)
+    for candidate in ("folders:autodesk.core:Folder", "folders:autodesk.bim360:Folder"):
+        if candidate not in extension_types:
+            extension_types.append(candidate)
+
+    url = f"{AUTODESK_DATA_API}/projects/{urllib.parse.quote(project_id, safe='')}/folders"
+    headers = {**_auth_headers(access_token), "Content-Type": "application/vnd.api+json"}
+    last_resp: httpx.Response | None = None
+    for ext_type in extension_types:
+        resp = httpx.post(
+            url,
+            headers=headers,
+            json={
+                "jsonapi": {"version": "1.0"},
+                "data": {
+                    "type": "folders",
+                    "attributes": {
+                        "name": label,
+                        "extension": {"type": ext_type, "version": "1.0"},
+                    },
+                    "relationships": {
+                        "parent": {"data": {"type": "folders", "id": parent_id}},
+                    },
+                },
+            },
+            timeout=30,
+        )
+        last_resp = resp
+        if resp.is_success:
+            data = resp.json().get("data") or {}
+            return _normalize_folder(data, project_id)
+        if resp.status_code != 400:
+            break
+    if last_resp is None:
+        raise RuntimeError("Could not create Fusion folder.")
+    _raise_aps(last_resp, context="creating Fusion folder")
 
 
 def delete_item(access_token: str, project_id: str, item_id: str) -> dict[str, Any]:
@@ -884,19 +1053,97 @@ def _normalize_item(item: dict[str, Any], included_by_id: dict[str, dict[str, An
     version = included_by_id.get(tip_id or "") or {}
     version_attrs = version.get("attributes") or {}
     storage_meta = (((version.get("relationships") or {}).get("storage") or {}).get("meta") or {})
-    thumb_rel = ((version.get("relationships") or {}).get("thumbnails") or {})
-    thumb_meta = thumb_rel.get("meta") or {}
-    thumb_link = ((thumb_meta.get("link") or {}).get("href")
-                  or ((thumb_rel.get("data") or {}) if isinstance(thumb_rel.get("data"), dict) else {}))
-    if isinstance(thumb_link, dict):
-        thumb_link = (thumb_link.get("href") or thumb_link.get("id") or "")
+    thumb_link = _extract_thumbnail_href(version) or _extract_thumbnail_href(item)
+    version_id = version.get("id") or tip_id
     return {
         "id": item.get("id"),
-        "version_id": version.get("id") or tip_id,
+        "version_id": version_id,
         "name": attrs.get("displayName") or version_attrs.get("name") or item.get("id"),
         "type": "item",
         "mime_type": version_attrs.get("mimeType") or attrs.get("mimeType"),
         "download_url": ((storage_meta.get("link") or {}).get("href")),
         "web_url": ((item.get("links") or {}).get("webView") or {}).get("href"),
         "thumbnail_url": thumb_link or None,
+        # Browser loads this via Bearer auth (fetch → blob URL).
+        "thumbnail_proxy": (
+            f"/api/autodesk/thumbnail?version_id={urllib.parse.quote(str(version_id), safe='')}"
+            if version_id
+            else None
+        ),
     }
+
+
+def _extract_thumbnail_href(node: dict[str, Any] | None) -> str | None:
+    if not isinstance(node, dict):
+        return None
+    thumb_rel = ((node.get("relationships") or {}).get("thumbnails") or {})
+    if not isinstance(thumb_rel, dict):
+        return None
+    meta_link = (((thumb_rel.get("meta") or {}).get("link") or {}).get("href"))
+    if isinstance(meta_link, str) and meta_link.startswith("http"):
+        return meta_link
+    data = thumb_rel.get("data")
+    if isinstance(data, dict):
+        href = data.get("href") or data.get("id")
+        if isinstance(href, str) and href.startswith("http"):
+            return href
+    if isinstance(data, list):
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            href = entry.get("href") or (((entry.get("meta") or {}).get("link") or {}).get("href"))
+            if isinstance(href, str) and href.startswith("http"):
+                return href
+    return None
+
+
+def fetch_version_thumbnail(
+    access_token: str,
+    version_id: str,
+    *,
+    width: int = 200,
+    height: int = 200,
+    fallback_url: str | None = None,
+) -> tuple[bytes, str] | None:
+    """Return (bytes, content_type) for a Fusion/APS version thumbnail, or None."""
+    import base64
+
+    vid = str(version_id or "").strip()
+    if not vid and not fallback_url:
+        return None
+
+    w = max(50, min(400, int(width or 200)))
+    h = max(50, min(400, int(height or 200)))
+    headers = _auth_headers(access_token)
+
+    if vid:
+        urn = base64.urlsafe_b64encode(vid.encode("utf-8")).decode("ascii").rstrip("=")
+        try:
+            resp = httpx.get(
+                f"https://developer.api.autodesk.com/modelderivative/v2/designdata/{urn}/thumbnail",
+                headers=headers,
+                params={"width": w, "height": h},
+                timeout=25,
+                follow_redirects=True,
+            )
+            if resp.status_code == 202:
+                # Thumbnail still translating — nudge a job and fall through to APS link.
+                _kickoff_model_thumbnail(access_token, vid)
+            elif resp.status_code == 200 and resp.content:
+                ctype = (resp.headers.get("content-type") or "image/png").split(";")[0].strip() or "image/png"
+                return resp.content, ctype
+        except Exception as exc:
+            logger.debug("Model Derivative thumbnail failed for %s: %s", vid, exc)
+
+    if fallback_url and str(fallback_url).startswith("http"):
+        try:
+            resp = httpx.get(fallback_url, headers=headers, timeout=25, follow_redirects=True)
+            if resp.status_code in {401, 403}:
+                resp = httpx.get(fallback_url, timeout=25, follow_redirects=True)
+            if resp.status_code == 200 and resp.content:
+                ctype = (resp.headers.get("content-type") or "image/png").split(";")[0].strip() or "image/png"
+                if ctype.startswith("image/") or ctype in {"application/octet-stream"}:
+                    return resp.content, ctype if ctype.startswith("image/") else "image/png"
+        except Exception as exc:
+            logger.debug("Fallback thumbnail fetch failed: %s", exc)
+    return None

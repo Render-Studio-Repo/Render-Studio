@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "grok-bot": {
+      "url": "https://render3d.app/mcp"
+    },
+    "grok-bot-stdio": {
+      "command": "python3",
+      "args": ["/Users/sam/Render-Studio/mcp/grok-bot/server.py"],
+      "env": {
+        "PYTHONPATH": "/Users/sam/Render-Studio",
+        "RENDER_STUDIO_URL": "http://127.0.0.1:8001",
+        "GROK_MODEL": "grok-4.5",
+        "XAI_API_KEY": "",
+        "X_CONSUMER_KEY": "",
+        "X_CONSUMER_SECRET": ""
+      }
+    }
+  }
+}

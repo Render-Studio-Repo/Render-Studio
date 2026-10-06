@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Connect your database — Render Studio</title>
+  <link rel="icon" type="image/png" href="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" sizes="any" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260914-installsb1-20260915-browserdots1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/setup-instance.css?v=20261001-instance-updates1" />
+</head>
+<body class="info-page">
+  <main class="setup-page">
+    <p class="setup-kicker">First-run install</p>
+    <h2>Where should this instance store users?</h2>
+    <p class="setup-lead">
+      Downloaders connect <strong>their</strong> Supabase project, or keep the old local sqlite file.
+      Service role / PAT are posted only to this origin and written to gitignored <code>.env</code> — never to the browser bundle.
+    </p>
+    <p class="setup-meta">
+      Backend now: <code id="setup-backend">…</code>
+      · Users rows: <span id="setup-count">—</span>
+      · Save: <span id="setup-unlocked">…</span>
+    </p>
+    <p class="setup-status" id="setup-status"></p>
+
+    <section class="setup-card setup-card-primary" id="setup-ai-card">
+      <h3>Choose AI access for this instance</h3>
+      <p>Every installation uses its own accounts. Render’s private Luna subscription and cloud keys stay only on the official Render server.</p>
+      <div class="setup-choice-grid">
+        <a class="setup-choice" href="/?setup_ai=subscriptions">
+          <strong>Connect a subscription</strong>
+          <span>Link ChatGPT or Claude after you sign in to this instance.</span>
+        </a>
+        <a class="setup-choice" href="/?setup_ai=keys">
+          <strong>Add API keys</strong>
+          <span>Use OpenAI, Anthropic, Gemini, Grok, Kimi, Qwen, or a local model.</span>
+        </a>
+      </div>
+      <p class="muted small">Credentials remain encrypted for the user or team that adds them. They are not copied from render3d.app.</p>
+    </section>
+
+    <section class="setup-card" id="why-supabase">
+      <h3>Don’t have a project yet?</h3>
+      <p>Supabase is safer for a shared instance: password hashes and Fernet-wrapped AI keys live behind RLS, not only in <code>data/render3d.db</code> on the box. Rotate keys in the dashboard without copying sqlite around.</p>
+      <ul class="setup-why">
+        <li>Create a free project at <a href="https://supabase.com/dashboard/new" target="_blank" rel="noopener noreferrer">supabase.com/dashboard/new</a>.</li>
+        <li>Project Settings → API: copy the Project URL and <strong>service_role</strong> (server only). Publishable/anon is optional here.</li>
+        <li>Paste them below, apply the SQL, then Connect.</li>
+      </ul>
+    </section>
+
+    <section class="setup-card">
+      <h3>Connect your Supabase</h3>
+      <p>Origin-only. The service_role field is a password input and is cleared after a successful save.</p>
+      <form id="setup-form" class="setup-fields" autocomplete="off">
+        <label>SUPABASE_URL
+          <input name="url" type="url" required placeholder="https://YOUR_PROJECT_REF.supabase.co" autocomplete="off" />
+        </label>
+        <label>Publishable / anon key (optional)
+          <input name="publishable_key" type="text" placeholder="sb_publishable_… or anon JWT" autocomplete="off" />
+        </label>
+        <label>Service role (server only, required)
+          <input name="service_role_key" type="password" required placeholder="YOUR_SERVICE_ROLE_KEY" autocomplete="new-password" />
+        </label>
+        <label>Secret key alias (optional if service role is set)
+          <input name="secret_key" type="password" placeholder="sb_secret_… or same as service role" autocomplete="new-password" />
+        </label>
+        <label>Management PAT (optional — applies SQL for you)
+          <input name="access_token" type="password" placeholder="sbp_… optional" autocomplete="new-password" />
+        </label>
+        <div class="setup-actions">
+          <button type="submit" class="btn accent">Connect database</button>
+        </div>
+        <p class="setup-status" id="connect-status"></p>
+      </form>
+    </section>
+
+    <section class="setup-card">
+      <h3>Just created the project? Apply our table settings</h3>
+      <p>Same CREATE TABLE + RLS + grants this repo uses. Dashboard → SQL Editor, or:</p>
+      <p><code id="setup-copy-cmd">psql "$DATABASE_URL" -f integrations/supabase/install_users.sql</code>
+        <button type="button" class="btn secondary" id="btn-copy-cmd">Copy command</button>
+      </p>
+      <div class="setup-actions">
+        <button type="button" class="btn secondary" id="btn-copy-sql">Copy SQL</button>
+        <button type="button" class="btn secondary" id="btn-copy-prompt">Copy harness prompt</button>
+      </div>
+      <p class="muted small">SQL lives at <code>integrations/supabase/install_users.sql</code>. Prompt: <code>integrations/supabase/HARNESS_PROMPT.md</code>.</p>
+      <pre class="setup-pre" id="setup-sql"></pre>
+      <h3>Prompt for Cursor / Codex</h3>
+      <pre class="setup-pre" id="setup-prompt"></pre>
+    </section>
+
+    <section class="setup-card" id="setup-telemetry-card">
+      <h3>Help improve Render</h3>
+      <p id="setup-telemetry-lead">
+        We actually listen to what the community hits. Opt in and this clone only uploads
+        <strong>that issue’s traceback</strong> plus a <strong>system feature check</strong>
+        (which features were ok / broken). No prompts, no project files, no API keys.
+      </p>
+      <p>
+        Those packets train Grok to match the same bug across servers and to open or fix
+        GitHub issues on its own — traceback id + instance id, not a dump of your machine.
+      </p>
+      <p class="setup-meta" id="setup-telemetry-id"></p>
+      <div class="setup-actions" id="setup-telemetry-actions" hidden>
+        <button type="button" class="btn accent" id="btn-telemetry-yes">Share debug logs</button>
+        <button type="button" class="btn secondary" id="btn-telemetry-no">Keep logs on this machine</button>
+      </div>
+      <p class="setup-status" id="telemetry-status"></p>
+    </section>
+
+    <section class="setup-card" id="setup-instance-network-card">
+      <h3>Connect this Render instance</h3>
+      <p>Every install gets a stable instance ID. Choose whether this copy joins the Render ecosystem, reports aggregate health, or stays completely local.</p>
+      <p><strong>Marketplace:</strong> connected instances can browse Render's shared catalog. Only listings a user explicitly posts and an admin approves can publish. Private projects and project files are never swept or uploaded.</p>
+      <p><strong>Health reports never send:</strong> IP addresses, hostnames, user identities, prompts, project files, or API keys.</p>
+      <form id="instance-network-form" class="setup-fields">
+        <label>Instance name
+          <input id="instance-network-name" maxlength="80" value="Render Studio instance" required />
+        </label>
+        <label class="setup-check"><input id="instance-network-ecosystem" type="checkbox" /> Join the Render ecosystem and browse the shared marketplace</label>
+        <label class="setup-check"><input id="instance-network-public" type="checkbox" /> This instance has its own public HTTPS URL</label>
+        <label class="setup-check"><input id="instance-network-reporting" type="checkbox" /> Share aggregate health and online status with Render</label>
+        <div class="setup-actions"><button class="btn accent" type="submit">Save instance settings</button></div>
+      </form>
+      <p class="setup-meta" id="instance-network-id"></p>
+      <p class="setup-status" id="instance-network-status"></p>
+    </section>
+
+    <section class="setup-card" id="setup-updates-card">
+      <h3>Optional Render updates</h3>
+      <p>Notify this instance’s admins when an official stable update is available. Updates never replace <code>projects/</code>, <code>data/</code>, <code>.env</code>, or private instance modules. Locally edited application code makes the update stop instead of overwriting it.</p>
+      <label class="setup-check"><input id="instance-update-notifications" type="checkbox" /> Show update notices to instance admins</label>
+      <div class="setup-actions">
+        <button type="button" class="btn secondary" id="btn-save-update-setting">Save preference</button>
+        <button type="button" class="btn secondary" id="btn-check-update">Check now</button>
+        <button type="button" class="btn accent" id="btn-apply-update" hidden>Update Render</button>
+      </div>
+      <p class="setup-status" id="instance-update-status"></p>
+    </section>
+
+    <section class="setup-card">
+      <h3>Send support or diagnostic details</h3>
+      <p>This sends only what you type below. Common credentials are redacted on the server before delivery.</p>
+      <form id="instance-support-form" class="setup-fields">
+        <label>Type<select id="instance-support-kind"><option value="support">Support</option><option value="issue">Issue</option><option value="diagnostic">Diagnostic</option></select></label>
+        <label>Subject<input id="instance-support-subject" maxlength="160" required /></label>
+        <label>Message<textarea id="instance-support-message" rows="5" maxlength="8000" required></textarea></label>
+        <label>Optional diagnostic excerpt<textarea id="instance-support-diagnostic" rows="4" maxlength="12000"></textarea></label>
+        <div class="setup-actions"><button class="btn secondary" type="submit">Send to Render support</button></div>
+      </form>
+      <p class="setup-status" id="instance-support-status"></p>
+    </section>
+
+    <section class="setup-card">
+      <h3>Store it locally</h3>
+      <p>Old method: sqlite <code>data/render3d.db</code> for users, bcrypt passwords, and Fernet AI keys. Fine for a single laptop. Sets <code>USERS_BACKEND=local</code>.</p>
+      <div class="setup-actions">
+        <button type="button" class="btn secondary" id="btn-local">Store it locally</button>
+      </div>
+      <p class="setup-status" id="local-status"></p>
+    </section>
+
+    <section class="setup-card">
+      <h3>Not Supabase? Other databases</h3>
+      <p>
+        This app’s user table is sqlite (<code>backend/database.py</code>) or Supabase <code>public."Users"</code>
+        (<code>backend/services/supabase_users_store.py</code>). Optional env <code>DATABASE_URL</code> is for your own
+        Postgres tooling — the origin does not auto-map Users onto a generic SQLAlchemy URL yet. Point those two modules
+        if you bring your own Postgres.
+      </p>
+      <p><a href="/getting-started.html">Getting Started</a> · <a href="/database.html">Database configuration</a> · <a href="/docs.html#quick-start">Docs quick start</a> · <a href="/setup-marketplace.html">Marketplace install</a></p>
+    </section>
+  </main>
+  <script type="module" src="/site/setup-instance.js?v=20261006-ecosystem1"></script>
+</body>
+</html>

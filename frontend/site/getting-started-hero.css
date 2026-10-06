@@ -1,0 +1,975 @@
+/* Docs hero banner — compact strip; gear overlays empty banner space and must not stretch the page. */
+
+.gs-hero,
+.updates-hero,
+.info-hero.docs-hero,
+.docs-hero {
+  position: relative;
+  display: block;
+  min-height: 0;
+  margin: 16px 0 18px;
+  padding: 0 !important;
+  opacity: 1;
+  transform: none;
+}
+
+.info-hero {
+  margin-bottom: 18px;
+}
+
+.gs-install-callout {
+  margin: 16px 0 0;
+  padding: 18px 20px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 16px;
+  background: rgba(14, 20, 28, 0.85);
+}
+
+.gs-install-callout h3 {
+  margin: 0 0 8px;
+}
+
+.gs-hero-banner {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 20px 24px 52px;
+  overflow: hidden; /* clip overlay art; gear must not stretch the page */
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(88, 166, 255, 0.2), transparent 44%),
+    radial-gradient(circle at 88% 40%, rgba(249, 115, 22, 0.28), transparent 42%),
+    linear-gradient(120deg, rgba(14, 20, 28, 0.98), rgba(8, 12, 20, 0.98) 55%, rgba(18, 12, 8, 0.96));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.gs-hero-banner--plain {
+  min-height: 0;
+}
+
+.gs-hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: none !important;
+  padding-right: min(240px, 32%);
+}
+
+.docs-body {
+  --gs-display: "Manrope", var(--font, system-ui);
+  --gs-body: "IBM Plex Sans", var(--font, system-ui);
+}
+
+.gs-hero-title {
+  margin: 0 0 12px;
+  font-family: var(--gs-display);
+  font-size: clamp(2.2rem, 4.6vw, 3.2rem);
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  line-height: 0.94;
+  color: #f0f3f6;
+}
+
+.gs-hero-title--chrome {
+  margin: 0 0 10px;
+  font-size: 0 !important;
+  line-height: 0;
+  letter-spacing: 0;
+  color: transparent;
+}
+
+.gs-hero-copy > .docs-chrome-wordmark {
+  margin: 0 0 10px;
+}
+
+.info-hero .gs-hero-title:not(.gs-hero-title--chrome) {
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  margin: 0 0 10px;
+}
+
+.updates-hero {
+  padding: 0 !important;
+}
+
+.docs-chrome-wordmark {
+  display: block;
+  width: min(420px, 72%);
+  height: auto;
+  max-height: 52px;
+  margin: 0;
+  object-fit: contain;
+  object-position: left center;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+}
+
+.docs-chrome-wordmark--compact {
+  width: min(280px, 70%);
+  max-height: 40px;
+  margin: 0;
+}
+
+/* Overlay only. Explicit px size so the 1024² asset cannot inflate the banner. */
+.docs-hero-gear {
+  position: absolute;
+  right: clamp(12px, 3vw, 28px);
+  top: 50%;
+  z-index: 0;
+  width: 168px;
+  height: 168px;
+  max-width: 168px;
+  max-height: 168px;
+  margin: 0;
+  object-fit: contain;
+  transform: translateY(-50%);
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.42));
+}
+
+.updates-hero .gs-hero-copy,
+.docs-hero .gs-hero-copy {
+  padding-right: min(200px, 30%);
+}
+
+.docs-hero-github {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(290px, calc(100% - 28px));
+  padding: 8px 12px 8px 10px;
+  border: 1px solid rgba(139, 148, 158, 0.32);
+  border-radius: 14px;
+  background: rgba(13, 17, 23, 0.86);
+  color: #e6edf3;
+  text-decoration: none;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.docs-hero-github:hover {
+  border-color: rgba(88, 166, 255, 0.58);
+  color: #fff;
+  background: rgba(13, 17, 23, 0.94);
+}
+
+.docs-hero-github svg {
+  flex: 0 0 auto;
+}
+
+.docs-hero-github-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.docs-hero-github-copy strong {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.docs-hero-github-copy small {
+  font-size: 0.68rem;
+  color: #9da7b3;
+  line-height: 1.25;
+}
+
+.docs-hero-github--inline {
+  position: static;
+  margin: 0;
+}
+
+/* docui3 — Updates hero: contributing + TeleOp sit with the left copy, not under the gear. */
+.updates-hero .gs-hero-banner--plain {
+  padding-bottom: 22px;
+}
+
+.updates-hero-repos {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  margin: 2px 0 0;
+}
+
+.updates-hero .docs-hero-github {
+  position: static;
+  right: auto;
+  bottom: auto;
+  max-width: min(320px, 100%);
+  margin: 0;
+}
+
+.docs-complete-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 0 0 14px;
+}
+
+.gs-hero-lead {
+  margin: 0 0 16px;
+  max-width: 52ch;
+  font-size: 1.02rem;
+  line-height: 1.5;
+  color: #9da7b3;
+}
+
+.gs-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gs-hero-tabs {
+  margin: 12px 0 0;
+}
+
+.gs-hero-visual {
+  position: absolute !important;
+  left: auto !important;
+  right: 8px !important;
+  top: auto !important;
+  bottom: 36px !important;
+  width: 280px !important;
+  min-height: 0 !important;
+  height: 168px !important;
+  border: 0;
+  overflow: visible !important;
+  border-radius: 0;
+  background: transparent !important;
+  isolation: isolate;
+  z-index: 1;
+  pointer-events: none;
+  mask-image: none !important;
+}
+
+.gs-hero-robot-wrap {
+  position: absolute;
+  left: 52%;
+  bottom: 0;
+  width: 280px;
+  height: 168px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 12px 28px rgba(249, 115, 22, 0.35));
+}
+
+.gs-hero-robot.welcome-robot {
+  left: 10px;
+  bottom: 8px;
+  width: 260px;
+  height: 150px;
+  transform: none;
+  transform-origin: left bottom;
+}
+
+.gs-hero-frame,
+.gs-hero-gif,
+.gs-hero-visual-fade,
+.gs-hero-banner > .gs-hero-photo.hidden,
+.gs-hero-banner > .docs-hero-photo.hidden {
+  display: none !important;
+}
+
+@media (max-width: 1100px) {
+  .gs-hero,
+  .updates-hero,
+  .docs-hero {
+    margin: 12px 0 16px;
+    padding: 0 !important;
+  }
+
+  .gs-hero-banner {
+    min-height: 0;
+    padding: 18px 18px 52px;
+  }
+
+  .gs-hero-title {
+    font-size: clamp(1.85rem, 4vw, 2.6rem);
+  }
+
+  .docs-hero-gear {
+    width: 128px;
+    height: 128px;
+    max-width: 128px;
+    max-height: 128px;
+  }
+
+  .gs-hero-visual {
+    width: 220px !important;
+    height: 140px !important;
+  }
+
+  .gs-hero-robot-wrap {
+    width: 220px;
+    height: 140px;
+  }
+
+  .gs-hero-robot.welcome-robot {
+    width: 220px;
+    height: 130px;
+  }
+}
+
+@media (max-width: 860px) {
+  .gs-hero,
+  .updates-hero,
+  .docs-hero {
+    margin: 12px 0 14px;
+    padding: 0 !important;
+  }
+
+  .gs-hero-banner {
+    min-height: 0;
+    padding: 16px 16px 16px;
+  }
+
+  .gs-hero-copy,
+  .updates-hero .gs-hero-copy,
+  .docs-hero .gs-hero-copy {
+    padding-right: 0;
+  }
+
+  .docs-hero-github {
+    position: static;
+    margin: 10px 0 0;
+  }
+
+  .docs-hero-gear {
+    width: 72px;
+    height: 72px;
+    max-width: 72px;
+    max-height: 72px;
+    right: 10px;
+    top: 12px;
+    transform: none;
+    opacity: 0.9;
+  }
+
+  .gs-hero-visual {
+    position: relative !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    height: 150px !important;
+    margin: 8px 0 0;
+  }
+
+  .gs-hero-robot-wrap {
+    left: 50%;
+    width: 240px;
+    height: 150px;
+    transform: translateX(-50%) scale(0.92);
+  }
+
+  .gs-hero-robot.welcome-robot {
+    left: 0;
+    bottom: 4px;
+    width: 240px;
+    height: 150px;
+  }
+}
+
+body.gs-tab-robotics #tips-library,
+body.gs-tab-robotics .gs-closing,
+body.gs-tab-vr #tips-library,
+body.gs-tab-vr .gs-closing {
+  display: none;
+}
+
+/* Robotics GIFs stay LEFT of copy before expand — never flip. */
+.gs-feature.gs-feature--gif-left,
+body.gs-tab-robotics .gs-feature,
+.gs-feature[id^="robotics-"],
+.gs-feature.gs-feature--gif-left.gs-feature--flip,
+body.gs-tab-robotics .gs-feature--flip {
+  grid-template-areas: "media copy";
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.95fr);
+}
+
+.gs-robotics-head {
+  margin: 0 0 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.7);
+}
+
+.gs-robotics-head h3 {
+  margin: 0.2rem 0 0.4rem;
+}
+
+.gs-robotics-ip {
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+}
+
+.gs-robotics-ip-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b949e;
+}
+
+.gs-robotics-ip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.gs-robotics-ip-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(1, 4, 9, 0.54);
+  color: #e6edf3;
+  padding: 12px 13px;
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.gs-robotics-ip-input::placeholder {
+  color: rgba(139, 148, 158, 0.78);
+}
+
+.gs-robotics-ip-input:focus {
+  border-color: rgba(88, 166, 255, 0.66);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.14);
+}
+
+.gs-ip-help-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.gs-robotics-ip-examples {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.gs-robotics-ip-examples code {
+  font-size: 0.82em;
+}
+
+.setup-page.setup-page--docs {
+  max-width: 760px;
+  margin: 18px 0 0;
+  padding: 0 0 48px;
+}
+
+/* Full Documentation — category-first browse */
+.docs-catalog-landing {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.docs-catalog-landing .docs-catalog-count {
+  margin: 0;
+}
+
+.docs-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.docs-cat-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%),
+    rgba(22, 27, 34, 0.94);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.docs-cat-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(88, 166, 255, 0.48);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(88, 166, 255, 0.16);
+}
+
+.docs-cat-card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92px;
+  color: #79b8ff;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(88, 166, 255, 0.18), transparent 52%),
+    linear-gradient(160deg, #161b22, #0d1117);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.7);
+}
+
+.docs-cat-thumb-svg {
+  width: 72px;
+  height: 56px;
+}
+
+.docs-cat-card-thumb--robotics { color: #58a6ff; }
+.docs-cat-card-thumb--wiring { color: #3fb950; }
+.docs-cat-card-thumb--projects { color: #d2a8ff; }
+.docs-cat-card-thumb--ai-cad { color: #79b8ff; }
+.docs-cat-card-thumb--agent-store { color: #f0883e; }
+.docs-cat-card-thumb--help { color: #a5d6ff; }
+.docs-cat-card-thumb--cloud { color: #80cbc4; }
+.docs-cat-card-thumb--architect { color: #e3b341; }
+.docs-cat-card-thumb--rigging { color: #f778ba; }
+.docs-cat-card-thumb--modeling { color: #9ecbff; }
+.docs-cat-card-thumb--sketch-canvas { color: #ffa657; }
+
+.docs-cat-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 14px;
+}
+
+.docs-cat-card-copy strong {
+  font-size: 0.98rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: #e6edf3;
+}
+
+.docs-cat-card-blurb {
+  color: #9da7b3;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.docs-cat-card-count {
+  margin-top: 2px;
+  color: #79b8ff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.docs-catalog-back {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 14px;
+  color: #58a6ff;
+  font-size: 0.86rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.docs-catalog-back:hover {
+  color: #d8ebff;
+}
+
+.docs-category-head--view {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.docs-category-head--view .docs-cat-card-thumb {
+  width: 72px;
+  height: 64px;
+  flex-shrink: 0;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 12px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+}
+
+.docs-category-head--view .docs-cat-thumb-svg {
+  width: 56px;
+  height: 44px;
+}
+
+.docs-category-head a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.docs-category-head a:hover {
+  color: #d8ebff;
+}
+
+.docs-catalog-search-results .docs-category {
+  margin-top: 22px;
+}
+
+.docs-catalog-category-view .agent-docs-head {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(48, 54, 61, 0.85);
+}
+
+.docs-catalog-category-view .agent-docs-head h4 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 640px) {
+  .docs-category-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* docui1 — chip row on one line; Getting Started is the green CTA; Credibility is off the tabs. */
+.info-page .docs-category-tabs {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.info-page .docs-category-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 6px 11px;
+  font-size: 0.74rem;
+}
+
+.info-page .docs-category-tab--started {
+  border-color: rgba(46, 160, 67, 0.58);
+  background: linear-gradient(135deg, rgba(35, 134, 54, 0.88), rgba(46, 160, 67, 0.3));
+  color: #f0fff4;
+}
+
+.info-page .docs-category-tab--started:hover,
+.info-page .docs-category-tab--started.active {
+  border-color: rgba(46, 160, 67, 0.78);
+  color: #f0fff4;
+  background: linear-gradient(135deg, rgba(35, 134, 54, 0.96), rgba(46, 160, 67, 0.42));
+}
+
+.docs-credibility-corner {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  z-index: 40;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 148, 158, 0.28);
+  background: rgba(13, 17, 23, 0.78);
+  color: #8b949e;
+  text-decoration: none;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.docs-credibility-corner:hover,
+.docs-credibility-corner.active {
+  color: #e6edf3;
+  opacity: 1;
+}
+
+/* xfeed1 — combined X timeline on the Updates left rail. */
+.updates-body {
+  --updates-x-rail: 0px;
+}
+
+.updates-shell {
+  display: block;
+  width: 100%;
+  max-width: min(1420px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.updates-x-rail {
+  margin: 0 20px 18px;
+}
+
+.updates-x-panel {
+  position: relative;
+  border: 1px solid rgba(88, 166, 255, 0.2);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(88, 166, 255, 0.14), transparent 42%),
+    rgba(13, 17, 23, 0.78);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+/* xfeed3 — one Discord control, pinned to the rail corner. */
+.updates-x-discord {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(88, 101, 242, 0.38);
+  border-radius: 999px;
+  background: rgba(1, 4, 9, 0.55);
+  text-decoration: none;
+}
+
+.updates-x-discord:hover {
+  background: rgba(88, 101, 242, 0.2);
+  border-color: rgba(88, 101, 242, 0.7);
+}
+
+.updates-x-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 48px 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  color: #e6edf3;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.updates-x-summary::-webkit-details-marker {
+  display: none;
+}
+
+.updates-x-summary small {
+  color: #8b949e;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.updates-x-head {
+  display: none;
+  padding: 14px 52px 8px 14px;
+}
+
+.updates-x-topline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.updates-x-logo {
+  display: block;
+  flex: 0 0 auto;
+  color: #e6edf3;
+}
+
+.updates-x-logo--title {
+  width: 18px;
+  height: 18px;
+}
+
+.updates-x-summary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 36px;
+}
+
+.updates-x-handles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.updates-x-handle {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid rgba(139, 148, 158, 0.22);
+  border-radius: 999px;
+  background: rgba(1, 4, 9, 0.42);
+  color: #e6edf3;
+  text-decoration: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.updates-x-handle:hover {
+  color: #fff;
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.updates-x-scroll {
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 10px 14px;
+  scrollbar-width: thin;
+}
+
+.updates-x-status {
+  margin: 8px 6px 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.updates-x-more {
+  text-align: center;
+}
+
+.updates-x-card {
+  display: block;
+  margin: 0 0 10px;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(139, 148, 158, 0.18);
+  border-radius: 16px;
+  background: rgba(1, 4, 9, 0.38);
+  color: inherit;
+  text-decoration: none;
+}
+
+.updates-x-card:hover {
+  border-color: rgba(88, 166, 255, 0.38);
+  background: rgba(22, 27, 34, 0.72);
+}
+
+.updates-x-card-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.updates-x-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: #161b22;
+  flex: 0 0 auto;
+}
+
+.updates-x-card-meta strong {
+  display: block;
+  font-size: 0.82rem;
+  color: #e6edf3;
+}
+
+.updates-x-card-meta span {
+  color: #8b949e;
+  font-size: 0.72rem;
+}
+
+.updates-x-card p {
+  margin: 0;
+  color: #c9d1d9;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.updates-x-media {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(48, 54, 61, 0.8);
+  background: #010409;
+  max-height: 160px;
+  object-fit: cover;
+}
+
+@media (min-width: 981px) {
+  .updates-body {
+    --updates-x-rail: 320px;
+  }
+
+  .updates-shell {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+    gap: 12px 20px;
+    align-items: start;
+    padding: 0 16px;
+  }
+
+  .updates-x-rail {
+    position: sticky;
+    top: 72px;
+    z-index: 6;
+    margin: 16px 0 0;
+    height: calc(100vh - 92px);
+  }
+
+  .updates-x-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .updates-x-summary {
+    display: none;
+  }
+
+  .updates-x-head {
+    display: block;
+  }
+
+  .updates-x-scroll {
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .updates-body .updates-page {
+    max-width: min(1040px, 100%);
+    margin-left: 0;
+  }
+
+  /* Keep Credibility on the docs column, not over the tweet rail. */
+  .updates-body .docs-credibility-corner {
+    left: calc(var(--updates-x-rail) + 36px);
+  }
+}
+
+@media (max-width: 980px) {
+  .updates-x-rail {
+    margin: 12px 16px 0;
+  }
+
+  .updates-x-panel:not([open]) .updates-x-scroll,
+  .updates-x-panel:not([open]) .updates-x-head {
+    display: none;
+  }
+
+  .updates-body .docs-credibility-corner {
+    left: auto;
+    right: 14px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}

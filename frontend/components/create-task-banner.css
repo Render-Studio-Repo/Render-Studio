@@ -1,0 +1,243 @@
+/* VibeCAD / FreeCAD-style Tasks panel — docks on viewport right edge */
+
+#create-task-banner,
+.create-task-banner {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 40;
+  width: min(300px, calc(100% - 20px));
+  max-width: 320px;
+  pointer-events: none;
+}
+
+.create-task-banner.hidden {
+  display: none !important;
+}
+
+.create-task-banner .ctb-inner {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  border-radius: 6px;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.ctb-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid #30363d;
+  background: linear-gradient(180deg, #252b33, #1c2128);
+  flex-shrink: 0;
+}
+
+.ctb-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ctb-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ctb-close:hover {
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ctb-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+  margin-top: 1px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+.ctb-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ctb-eyebrow {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f0883e;
+  line-height: 1.2;
+}
+
+.ctb-title {
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: #e6edf3;
+  line-height: 1.25;
+}
+
+.ctb-hint {
+  font-size: 0.68rem;
+  color: #8b949e;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ctb-hint--error {
+  color: #f85149;
+}
+
+.ctb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ctb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ctb-section-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #f0883e;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ctb-section-hint {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #8b949e;
+  font-size: 0.65rem;
+}
+
+.ctb-field {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: #c9d1d9;
+}
+
+.ctb-field-label {
+  color: #8b949e;
+  line-height: 1.3;
+}
+
+.ctb-field input,
+.ctb-field select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e6edf3;
+  font-size: 0.78rem;
+}
+
+.ctb-field input:focus,
+.ctb-field select:focus {
+  outline: none;
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.18);
+}
+
+.ctb-check {
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+}
+
+.ctb-kernel {
+  margin: 0;
+  padding: 0 10px 6px;
+  font-size: 0.62rem;
+  color: #6e7681;
+  flex-shrink: 0;
+}
+
+.ctb-field--hidden {
+  display: none !important;
+}
+
+.ctb-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 8px 10px 10px;
+  border-top: 1px solid #30363d;
+  background: #161b22;
+  flex-shrink: 0;
+}
+
+.ctb-actions .btn {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 0.78rem;
+  min-width: 72px;
+}
+
+.ctb-actions .ctb-ok:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Tasks stays open with live Extrude — viewport arrow/ghost stay interactive. */
+body.create-task-banner-open .ribbon-dialog-overlay {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .create-task-banner {
+    top: 8px;
+    right: 8px;
+    left: auto;
+    bottom: 8px;
+    width: min(300px, calc(100% - 16px));
+    max-width: 320px;
+    max-height: none;
+  }
+
+  .ctb-field {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}

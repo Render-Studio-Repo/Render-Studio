@@ -1,0 +1,98 @@
+{
+  "kind": "openarm_training_episode",
+  "token": "train1",
+  "episode_id": "ep_smoke",
+  "mode": "demo",
+  "task": "Hey Astra, pick up the cube",
+  "astra_instruction": "Hey Astra, pick up the cube",
+  "sample_count": 5,
+  "outcome": {
+    "success": true,
+    "valid": true,
+    "hard_limit_violations": 0,
+    "labeled_at": "2026-09-17T09:10:00Z"
+  },
+  "samples_preview": [
+    {
+      "sequence": 1,
+      "mode": "demo",
+      "action": {
+        "action_space": "mujoco_qpos",
+        "left": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "right": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "sequence": 2,
+      "mode": "demo",
+      "action": {
+        "action_space": "mujoco_qpos",
+        "left": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "right": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "sequence": 3,
+      "mode": "demo",
+      "action": {
+        "action_space": "mujoco_qpos",
+        "left": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "right": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}

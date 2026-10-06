@@ -1,0 +1,158 @@
+.assist-dialog{color:#e0e8f0;background:#141c23;border:1px solid #3c505e;border-radius:14px;padding:0;width:min(1100px,94vw);max-height:90vh;box-shadow:0 25px 90px #0009}.assist-dialog::backdrop{background:#050b11bd}.assist-dialog header,.assist-dialog footer,.assist-toolbar,.assist-tabs{display:flex;align-items:center;gap:10px;padding:14px 18px;flex-wrap:wrap}.assist-dialog header{justify-content:space-between;border-bottom:1px solid #34414b}.assist-dialog h2{margin:0;font-size:19px}.assist-content{padding:16px;overflow:auto;max-height:76vh}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) button,:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) select{background:#22313d;color:inherit;border:1px solid #425565;border-radius:7px;padding:7px 12px;cursor:pointer}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) button:disabled{opacity:.45;cursor:default}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) button:hover:not(:disabled),.assist-tabs .active{background:#21476a;border-color:#5cb3ff}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) input,:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) textarea{background:#0d151c;color:inherit;border:1px solid #3c5265;border-radius:6px;padding:9px;box-sizing:border-box}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) textarea{display:block;width:100%;margin:8px 0}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) input[type=search]{flex:1;min-width:180px}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) a{color:#85c8ff;display:inline-block;margin:4px 12px 4px 0}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) small{color:#9cabb8;display:block}:is(.assist-dialog,.parts-list-viewer,.catalog-parts-list) pre{white-space:pre-wrap;overflow-wrap:anywhere}.assist-parts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:14px}.assist-parts-list>div{display:grid;grid-template-columns:150px 1fr 160px;align-items:center;gap:14px;border-bottom:1px solid #354654}.assist-part{padding:12px;background:#18252f;border-radius:9px;overflow-wrap:anywhere}.assist-part h3{margin:8px 0}.assist-part-thumb{height:100px;display:flex;align-items:center;justify-content:center;background:#0d151c;border-radius:7px;color:#63cbb6;font-size:40px}.assist-part-thumb img{max-width:100%;max-height:100%;object-fit:contain}.assist-parts-list .assist-part-thumb{width:80px;height:60px;float:left;margin:0 12px 8px 0}.assist-part dl{display:grid;grid-template-columns:1fr 1fr;font-size:12px;gap:5px}.assist-part dd{margin:0}.assist-check{display:block;font-size:11px;margin-bottom:6px}.assist-compare{display:grid;grid-template-columns:1fr 1fr;gap:18px}.assist-agent{position:sticky;bottom:-16px;margin:16px 0 0 auto;background:#182936;padding:15px;border:1px solid #425c71;border-radius:12px;max-width:470px;box-shadow:0 0 15px #0005}.assist-agent textarea{resize:vertical}.assist-status{white-space:pre-wrap}.assist-questions label{display:block;margin:16px 0}.assist-folder{display:flex;align-items:center;gap:8px;padding:9px 12px;width:100%;background:#14222c;color:#dcecf7;border:0;border-bottom:1px solid #334653;text-align:left;cursor:pointer}.assist-folder-icon{color:#69d9b1}.assist-folder-arrow{margin-left:auto;opacity:0;color:#8acbff}.assist-folder:hover .assist-folder-arrow,.assist-folder:focus-visible .assist-folder-arrow{opacity:1}.assist-icon{background:transparent;color:#a3c7df;border:1px solid #4b6577;border-radius:50%;width:24px;height:24px;flex:0 0 24px;cursor:pointer}.prompt-target-row{min-height:38px!important;padding:4px!important;gap:5px!important}.prompt-target-picker-btn{min-height:32px!important;max-height:36px;padding:3px 6px!important}.prompt-target-picker-thumb{width:30px!important;height:28px!important;min-width:30px!important}.prompt-target-picker-subtitle{display:none!important}#prompt-target-mode{height:29px;padding:3px 7px!important}.assist-intents{border-top:1px solid #599fc6;padding:6px 0;display:flex;flex-wrap:wrap;gap:4px}.assist-intents:empty{display:none}.assist-intents span{border-radius:8px;background:#15364b;color:#8fceef;padding:3px 7px;font-size:10px}.assist-followup-link{border:0;background:transparent;color:#81c6ff;font-size:11px;cursor:pointer;margin:4px 0 6px;padding:0;display:block;text-align:left}.assist-dialog [hidden],.assist-intents[hidden]{display:none!important}@media(max-width:650px){.assist-compare{grid-template-columns:1fr}.assist-parts-list>div{display:block}.assist-dialog{width:96vw}.assist-agent{max-width:none}.assist-toolbar{padding:8px 0}}
+.assist-folder{box-sizing:border-box;list-style:none}.assist-folder::-webkit-details-marker{display:none}.assist-folder::before{content:'▸';color:#8ca1af}.assist-folder-group[open] .assist-folder::before{content:'▾'}.assist-folder-arrow{background:transparent;border:0;font-size:17px;cursor:pointer;padding:0 4px}.assist-folder-children{display:grid;padding:6px 12px;background:#101b24;gap:2px}.assist-folder-children button{background:transparent;border:0;color:#8dcedc;text-align:left;padding:7px 14px;cursor:pointer}.assist-folder-children button:hover{background:#203440;border-radius:5px}
+
+.parts-list-viewer{position:absolute;inset:36px 0 0;z-index:7;background:#101820;color:#e0e8f0;display:flex;flex-direction:column;min-height:0}.parts-list-viewer[hidden]{display:none!important}.parts-list-viewer>header{display:flex;align-items:center;gap:16px;padding:12px 18px;border-bottom:1px solid #34414b}.parts-list-viewer h2{font-size:18px;margin:0}.parts-list-viewer>header span{font-size:12px;color:#9babb7;flex:1}.parts-list-viewer .assist-content{flex:1;max-height:none;min-height:0;padding:12px 18px}.parts-list-viewer .assist-toolbar,.parts-list-viewer .assist-tabs{padding:8px 0}.parts-list-viewer .assist-agent{bottom:0}.assist-parts-list .assist-part dl{display:none}.assist-part-actions{display:grid;gap:6px}.assist-parts-list>div{grid-template-columns:65px minmax(200px,1fr) 165px;padding:10px 0}.assist-draft{color:#e6bd73!important}.assist-parts-grid .assist-part-row{background:#17232c;border:1px solid #324651;border-radius:10px;padding:10px}.assist-parts-grid .assist-part-actions{margin-top:8px}.parts-folder-icon{color:#71cfb1}.browser-parts-folder{position:relative}.browser-parts-open{position:absolute;right:22px;top:2px;opacity:0;background:#1b2d39!important;color:#80d1b5!important}.browser-parts-folder:hover>.browser-parts-open,.browser-parts-open:focus-visible{opacity:1}.browser-parts-cart{display:inline-flex;align-items:center;justify-content:center;margin-left:8px;width:24px;height:24px;border:1px solid #3a5e65;border-radius:5px;background:#17313a;color:#8ce0c5;cursor:pointer}.browser-parts-cart[hidden]{display:none!important}.viewport-browser-panel-titles{flex-wrap:wrap;flex-direction:row!important;align-items:center}.viewport-browser-panel-titles .viewport-browser-sub{flex-basis:100%}.assist-part p{margin:5px 0;font-size:12px}.assist-parts-list .assist-part{background:transparent}.assist-agent small{font-size:11px}.assist-agent label{display:block}
+.micro-edit-ribbon{display:flex;gap:10px;align-items:center;border-top:1px solid #2b3a46;padding:5px 12px;font-size:11px;color:#b7c9d6;background:#111b24}.micro-edit-ribbon label{display:flex;align-items:center;gap:5px;cursor:pointer}.micro-edit-ribbon input{accent-color:#67bda8}.micro-edit-ribbon button{background:#20323e;color:#d9e9f2;border:1px solid #3c5365;border-radius:5px;padding:4px 10px;cursor:pointer}.micro-edit-ribbon small{color:#7e95a6}.micro-dialog{width:min(1000px,94vw)}.micro-dialog h3{font-size:15px}.micro-dialog label{font-size:12px}.micro-dialog select{margin:4px 0}.micro-scope{display:grid;grid-template-columns:1fr 2fr;gap:12px}.micro-scope label{display:flex;flex-direction:column}.micro-scope input{width:100%}.micro-scope details{grid-column:1/-1}.micro-scope details>div{max-height:180px;overflow:auto}.micro-scope fieldset label{display:block;font-size:11px}.micro-dialog fieldset{border:1px solid #334b59;border-radius:7px;margin:10px 0;padding:10px}.micro-dialog fieldset label{margin-right:12px}.micro-model-options{display:grid;gap:6px}.micro-model-options label{display:flex;align-items:center;gap:8px}.micro-model-options input[type=number]{width:60px;margin-left:auto}.micro-repair{display:block;margin-top:12px}.micro-ratings{display:grid;gap:12px}.micro-ratings>label{display:flex;align-items:center;justify-content:space-between;gap:18px}.micro-ratings>label:has(textarea){display:block}.micro-results{display:grid;gap:12px;margin:14px 0}.micro-results article{border:1px solid #35505c;background:#17252f;border-radius:9px;padding:12px}.micro-results h4{margin:0 0 5px}.micro-results p{margin:6px 0;font-size:12px}.micro-results button{margin:6px 6px 6px 0}.micro-results pre{max-height:230px;overflow:auto;font-size:11px}.micro-run-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.micro-hint{color:#91a9b9;font-size:12px}.micro-source{overflow-wrap:anywhere}.micro-dialog [data-results]>button{display:block;margin:8px 0;text-align:left;width:100%}
+.main-column:not([data-shell-tab="parts"]) .parts-list-viewer{display:none!important}
+/* The compact Solid toolbar has one fixed row; reserve a real second row. */
+.assist-dialog{margin:auto}
+.micro-scope input[type=search]{flex:none;height:36px;width:100%;margin-top:6px}
+.micro-scope input[type=checkbox]{width:auto;flex:none;margin:0}
+.micro-scope fieldset label{display:flex;align-items:center;gap:8px;min-height:26px;line-height:1.35}
+.micro-dialog [data-debug-config]>p{font-size:12px;color:#a7bac9;line-height:1.45;margin:8px 0}
+.micro-dialog [data-single]>label{display:flex;gap:12px;align-items:center}
+.micro-scope fieldset label{flex-direction:row;justify-content:flex-start;text-align:left}
+
+/* CAD micro-edits live in the shared prompt gear, not a second prompt row. */
+#prompt-cad-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%}
+#prompt-cad-tools[hidden]{display:none!important}
+#prompt-cad-tools .micro-edit-ribbon{flex:1;min-width:0;justify-content:flex-start;padding:0;border:0;background:transparent;box-sizing:border-box;gap:8px}
+.micro-edit-toggle{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;padding:0 10px;border:1px solid var(--border,#30363d);border-radius:999px;background:rgba(255,255,255,.04);cursor:pointer}
+.micro-edit-toggle [data-open-bench]{font-weight:700;color:#d9e9f2}
+
+/* ragicon1: Parts/BOM uses the Docs Render Agent fab, just smaller. */
+.assist-dialog{position:relative}
+.catalog-parts-list{position:relative}
+.parts-list-viewer .assist-content{padding-bottom:72px}
+.catalog-parts-list .catalog-parts-host{max-height:none;flex:1;min-height:0;overflow:auto;padding-bottom:72px}
+:is(.parts-list-viewer,.assist-dialog,.catalog-parts-list)>.render-agent-fab--parts{
+  position:absolute;
+  right:16px;
+  bottom:16px;
+  z-index:8;
+  padding:7px 10px;
+  gap:6px;
+  font-size:12px;
+  font-weight:650;
+  background:transparent;
+  color:inherit;
+  border:1px solid rgba(139,148,158,.24);
+  border-radius:999px;
+  box-shadow:none;
+}
+:is(.parts-list-viewer,.assist-dialog,.catalog-parts-list)>.render-agent-fab--parts:hover{
+  background:rgba(22,27,34,.92);
+  border-color:rgba(88,166,255,.45);
+}
+:is(.parts-list-viewer,.assist-dialog,.catalog-parts-list)>.render-agent-fab--parts img{
+  width:26px;
+  height:26px;
+  border-radius:7px;
+  object-fit:contain;
+  background:transparent;
+}
+
+/* partthumb=20260916-1: product photos in list + grid; teal square only as fallback. */
+.assist-part-thumb{
+  position:relative;
+  overflow:hidden;
+  background:#e8eef2;
+  color:transparent;
+  font-size:0;
+}
+.assist-part-thumb-fallback{
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  background:linear-gradient(135deg,#2aa889,#1b7c6c);
+}
+.assist-part-thumb img{
+  position:relative;
+  z-index:1;
+  width:100%;
+  height:100%;
+  max-width:none;
+  max-height:none;
+  object-fit:contain;
+  background:#fff;
+}
+.assist-parts-list .assist-part-thumb{
+  width:92px;
+  height:92px;
+  border-radius:10px;
+  margin:0 14px 0 0;
+}
+.assist-parts-grid .assist-part-thumb{
+  height:180px;
+  border-radius:10px;
+}
+.assist-part-thumb:has(img) .assist-part-thumb-fallback{opacity:0}
+.assist-part-thumb--empty .assist-part-thumb-fallback,
+.assist-part-thumb:not(:has(img)) .assist-part-thumb-fallback{opacity:1}
+/* mcmthumb1: chip checkbox, not tiny Select text */
+.assist-check{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  height:32px;
+  margin:4px 10px 0 0;
+  padding:0;
+  border-radius:10px;
+  border:1px solid #3d5160;
+  background:#18222b;
+  cursor:pointer;
+  flex:0 0 auto;
+  font-size:0;
+  color:transparent;
+}
+.assist-check input{
+  position:absolute;
+  opacity:0;
+  width:1px;
+  height:1px;
+  pointer-events:none;
+}
+.assist-check-box{
+  width:16px;
+  height:16px;
+  border-radius:5px;
+  border:1.5px solid #8b9aa6;
+  background:#0d1419;
+  display:block;
+}
+.assist-check:has(input:checked),
+.assist-part-row:has(input:checked) .assist-check{
+  border-color:#3ecf8e;
+  background:#16352f;
+  box-shadow:0 0 0 1px #3ecf8e55;
+}
+.assist-check:has(input:checked) .assist-check-box{
+  border-color:#3ecf8e;
+  background:#3ecf8e;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23081412' stroke-width='2' d='M2 6.2 4.7 9 10 3'/></svg>");
+  background-size:10px 10px;
+  background-repeat:no-repeat;
+  background-position:center;
+}
+/* amazon1 */
+.assist-nolink{
+  display:inline-flex;
+  align-items:center;
+  padding:3px 8px;
+  border-radius:999px;
+  background:#3a2a16;
+  color:#ffd9a0;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.assist-part-blurb{margin:8px 0;color:#c8d0d8;line-height:1.45}
+.assist-shop-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+
+/* Supplier searches for exact McMaster parts. */
+.assist-vendor-search{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:10px;padding:9px;border:1px solid #49616e;border-radius:8px;background:#11212b}
+.assist-vendor-search label{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}
+.assist-vendor-search select{max-width:140px}
+.assist-vendor-search small{width:100%;font-weight:400}

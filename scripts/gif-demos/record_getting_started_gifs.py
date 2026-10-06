@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -17,14 +18,15 @@ from pathlib import Path
 
 from playwright.async_api import Browser, Page, async_playwright
 
-BASE = "http://127.0.0.1:8001"
+_REPO = Path(__file__).resolve().parents[2]
+BASE = os.environ.get("GIF_DEMO_BASE") or "http://127.0.0.1:8001"
 EMAIL = "demo.docs.gif@r3d-studios.com"
 PASSWORD = "DemoGif2026!"
 PROJECT_ID = "2a5e7651"  # fallback; record_demo prefers seeded Robot Arm
 ROBOT_ARM_SOURCE = "505279e3"
-OUT = Path("/home/ubuntu/frontend/docs/media")
-RAW = Path("/home/ubuntu/scripts/gif-demos/raw-v2")
-BLUEPRINT = Path("/home/ubuntu/scripts/gif-demos/demo-blueprint.png")
+OUT = Path(os.environ.get("GIF_DEMO_OUT") or _REPO / "frontend" / "docs" / "media")
+RAW = Path(os.environ.get("GIF_DEMO_RAW") or _REPO / "scripts" / "gif-demos" / "raw-v2")
+BLUEPRINT = Path(os.environ.get("GIF_DEMO_BLUEPRINT") or Path(__file__).resolve().parent / "demo-blueprint.png")
 USER_ID = "4d950fbd-b44"
 
 OUT.mkdir(parents=True, exist_ok=True)

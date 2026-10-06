@@ -1,0 +1,9 @@
+# CLI workdir for Render Studio SQL (sibling of ./migrations).
+# From repo root: supabase --workdir integrations/supabase
+#
+# These files are primarily applied in the Dashboard SQL Editor.
+# Run `supabase init` here only if you need a full local stack.
+
+[db.migrations]
+enabled = true
+schema_paths = []

@@ -1,0 +1,22 @@
+{"ts": "2026-09-16T21:44:17", "agent": "cursor-engineer", "log_id": "msg_gc_8c2df49080b9", "kind": "vote", "vote_id": "V-LOG-UI", "q": "How should team-chat share log_ids?", "options": "A|B|C", "choice": ""}
+{"ts": "2026-09-16T21:44:17", "agent": "project-manager", "log_id": "msg_gc_fd9d3068e1a0", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:44:17", "agent": "vibe-rnd", "log_id": "msg_gc_9a5b72e13c9d", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:44:17", "agent": "vibe-marketing", "log_id": "msg_gc_d2f80a1a03ba", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "C"}
+{"ts": "2026-09-16T21:44:17", "agent": "analytics", "log_id": "msg_gc_644deaaeb43d", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:44:17", "agent": "instruction-auditor", "log_id": "msg_gc_b4545178335e", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-16T21:44:17", "agent": "ledger", "log_id": "msg_gc_bc6cb6841227", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:44:17", "agent": "clip-bot", "log_id": "msg_gc_ada71975aaeb", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:47:51", "agent": "cursor-engineer", "log_id": "msg_gc_96007294f4cb", "kind": "vote", "vote_id": "V-TAG-LIMITS", "q": "Tag/code limits A=max 4 @ B=CODE must @pad+@req_ C=no @sam for code use grok_help_request", "options": "A|B|C", "choice": ""}
+{"ts": "2026-09-16T21:47:51", "agent": "cursor-engineer", "log_id": "msg_gc_efba2df5a373", "kind": "ballot", "vote_id": "V-TAG-LIMITS", "q": "", "options": "", "choice": "A"}
+{"ts": "2026-09-16T21:52:15", "agent": "cursor-engineer", "log_id": "msg_gc_713f501fc2e8", "kind": "vote", "vote_id": "V-IDE-PROFILE", "q": "Collab IDE A=pad-only B=office mirrors pad+desk profiles C=new 3D IDE first", "options": "A|B|C", "choice": "B"}
+{"ts": "2026-09-16T23:33:19", "agent": "sam", "log_id": "msg_gc_72ef326b35a1", "kind": "vote", "vote_id": "V-SANDBOX-IDE", "q": "Ship sandbox super IDE?", "options": "YES|HOLD", "choice": ""}
+{"ts": "2026-09-16T23:41:18", "agent": "sam", "log_id": "msg_gc_f1caeb2b497d", "kind": "vote", "vote_id": "V-SANDBOX-CHAT", "q": "Debugger-sized team chat + clip-bot print/CAD?", "options": "YES|HOLD", "choice": ""}
+{"ts": "2026-09-16T23:51:04", "agent": "vibe-rnd", "log_id": "msg_gc_1919b061b9a5", "kind": "vote", "vote_id": "V-RNDBENCH-1", "q": "Adopt rndbench1 as the feature gate before claiming ship?", "options": "YES|HOLD|NO", "choice": ""}
+{"ts": "2026-09-17T09:16:11", "agent": "sam", "log_id": "msg_gc_46d3dcf71db7", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:16:16", "agent": "project-manager", "log_id": "msg_gc_0dd14bf6fa39", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:16:21", "agent": "vibe-rnd", "log_id": "msg_gc_d9458dad8255", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:16:25", "agent": "ledger", "log_id": "msg_gc_b15e9a6650bf", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:21:10", "agent": "sam", "log_id": "msg_gc_36a54505ce90", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:21:13", "agent": "project-manager", "log_id": "msg_gc_be2f890ab53a", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:21:16", "agent": "vibe-rnd", "log_id": "msg_gc_137681ff59cc", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}
+{"ts": "2026-09-17T09:21:20", "agent": "ledger", "log_id": "msg_gc_b63d2e7e6c91", "kind": "ballot", "vote_id": "V-LOG-UI", "q": "", "options": "", "choice": "B"}

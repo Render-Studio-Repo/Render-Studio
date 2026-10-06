@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skills Library — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/marketplace/marketplace-fx.css?v=20260715-appstore-2" />
+</head>
+<body class="info-page marketplace-futuristic skills-library-visual-page">
+  <div class="marketplace-fx" aria-hidden="true">
+    <div class="marketplace-grid-bg"></div>
+    <div class="marketplace-scan"></div>
+    <div class="marketplace-orb marketplace-orb--a"></div>
+    <div class="marketplace-orb marketplace-orb--b"></div>
+  </div>
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab active" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+</div>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content skills-page">
+        <header class="info-hero skills-hero">
+          <div>
+            <p class="info-eyebrow">Agent skills · Visual Library</p>
+            <h2>Skills Library</h2>
+          </div>
+          <p class="info-lead">
+            Agent skills from
+            <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
+            — full Python tooling (step, inspect, snapshot, URDF, SDF, DXF, and more) synced to the server.
+            Skills are available by default; Render Studio auto-selects the relevant ones for each prompt instead of
+            injecting every skill every time. With <strong>CAD</strong> available, exported STEP files are validated
+            via the skill's Python inspect tools after each build.
+          </p>
+        </header>
+
+        <section class="skills-browser-controls" aria-label="Skills library controls">
+          <label class="skills-search">
+            <span>Search skills</span>
+            <input id="skills-search" type="search" placeholder="Search CAD, DXF, robot, mold, Bambu..." />
+          </label>
+          <label class="skills-sort">
+            <span>Sort</span>
+            <select id="skills-sort">
+              <option value="name">Name</option>
+              <option value="active">Active first</option>
+              <option value="tools">Most tools</option>
+              <option value="references">Most references</option>
+            </select>
+          </label>
+          <div class="skills-view-toggle" role="group" aria-label="View mode">
+            <button type="button" class="active" data-skills-view="grid">Grid</button>
+            <button type="button" data-skills-view="list">List</button>
+            <button type="button" data-skills-view="compact">Compact</button>
+          </div>
+        </section>
+
+        <p id="skills-status" class="skills-status muted"></p>
+        <div id="skills-list" class="skills-list"></div>
+        <div id="skill-detail" class="skill-detail hidden"></div>
+
+        <section class="info-section">
+          <h3>How it works</h3>
+          <ul class="info-list">
+            <li><strong>Skills available by default</strong> — CAD, Blueprint Vision, URDF, SDF, SRDF, DXF, step-parts, gcode, bambu-labs, cad-viewer, implicit-cad, sendcutsend, mold generation, and installed Agent Store skills.</li>
+            <li><strong>Auto routing</strong> — prompts only inject the relevant skills, such as Blueprint Vision for images or Silicone Mold Generation for mold/casting requests.</li>
+            <li><strong>Python tools</strong> — many skills ship <code>scripts/</code> CLIs; Render Studio runs CAD inspect on STEP after builds when CAD is selected.</li>
+            <li><strong>Sync updates</strong> — run <code>scripts/sync-skills-from-text-to-cad.sh</code> on the server to pull latest from GitHub.</li>
+          </ul>
+        </section>
+      </article>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initSkillsLibraryPage } from "../components/skills-library.js?v=20260715-square-media&leakfix85";
+    initSkillsLibraryPage({
+      listEl: document.getElementById("skills-list"),
+      detailEl: document.getElementById("skill-detail"),
+      statusEl: document.getElementById("skills-status"),
+      searchEl: document.getElementById("skills-search"),
+      sortEl: document.getElementById("skills-sort"),
+      viewButtons: document.querySelectorAll("[data-skills-view]"),
+    });
+  </script>
+<script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+</body>
+</html>

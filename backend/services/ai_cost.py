@@ -7,6 +7,30 @@ from typing import Any
 
 # USD per 1M tokens — OpenAI list prices (Responses / Chat Completions).
 # Cached input is typically 10% of input unless the model has no cache discount (Pro).
+# Astra / Sol long context: prompts >272K input bill the *full request* at 2× input/cache
+# and 1.5× output (developers.openai.com/api/docs/pricing, Sep 2026).
+_LONG_CTX_ASTRA = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 20.0,
+    "long_context_output": 75.0,
+    "long_context_cached_input": 2.0,
+    "long_context_cache_write": 25.0,
+}
+_LONG_CTX_SOL = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 8.0,
+    "long_context_output": 30.0,
+    "long_context_cached_input": 0.80,
+    "long_context_cache_write": 10.0,
+}
+_LONG_CTX_GPT61_SOL = {
+    "long_context_threshold": 272_000,
+    "long_context_input": 4.0,
+    "long_context_output": 15.0,
+    "long_context_cached_input": 0.20,
+    "long_context_cache_write": 5.0,
+}
+# gpt-5.5 family still uses the older Sol-class long-ctx table.
 _LONG_CTX_5X = {
     "long_context_threshold": 272_000,
     "long_context_input": 10.0,
@@ -15,46 +39,59 @@ _LONG_CTX_5X = {
 }
 _LONG_CTX_TERRA = {
     "long_context_threshold": 272_000,
-    "long_context_input": 5.0,
-    "long_context_output": 22.5,
-    "long_context_cached_input": 0.5,
+    "long_context_input": 4.0,
+    "long_context_output": 18.0,
+    "long_context_cached_input": 0.4,
 }
 _LONG_CTX_LUNA = {
     "long_context_threshold": 272_000,
-    "long_context_input": 2.0,
-    "long_context_output": 9.0,
-    "long_context_cached_input": 0.2,
+    "long_context_input": 0.40,
+    "long_context_output": 1.80,
+    "long_context_cached_input": 0.04,
 }
+_ASTRA_RATES = {
+    "input": 10.0,
+    "output": 50.0,
+    "cached_input": 1.0,
+    "cache_write": 12.5,
+    **_LONG_CTX_ASTRA,
+}
+_SOL_RATES = {
+    "input": 4.0,
+    "output": 20.0,
+    "cached_input": 0.40,
+    "cache_write": 5.0,
+    **_LONG_CTX_SOL,
+}
+_GPT61_SOL_RATES = {
+    "input": 2.0,
+    "output": 10.0,
+    "cached_input": 0.10,
+    "cache_write": 2.5,
+    **_LONG_CTX_GPT61_SOL,
+}
+_CODEX_RATES = {"input": 1.75, "output": 14.0, "cached_input": 0.175}
 
 OPENAI_PRICING: dict[str, dict[str, float]] = {
     # Pro: no cached-input discount (OpenAI docs).
     "gpt-5.5-pro": {"input": 30.0, "output": 180.0, "cached_input": 30.0},
     "gpt-5.4-pro": {"input": 30.0, "output": 180.0, "cached_input": 30.0},
-    "gpt-5.6-sol": {
-        "input": 5.0,
-        "output": 30.0,
-        "cached_input": 0.5,
-        **_LONG_CTX_5X,
-    },
+    "gpt-6.1-sol": dict(_GPT61_SOL_RATES),
+    "gpt-5.6-sol": dict(_SOL_RATES),
     "gpt-5.6-terra": {
-        "input": 2.5,
-        "output": 15.0,
-        "cached_input": 0.25,
+        "input": 2.0,
+        "output": 12.0,
+        "cached_input": 0.2,
         **_LONG_CTX_TERRA,
     },
     "gpt-5.6-luna": {
-        "input": 1.0,
-        "output": 6.0,
-        "cached_input": 0.1,
+        "input": 0.20,
+        "output": 1.20,
+        "cached_input": 0.02,
         **_LONG_CTX_LUNA,
     },
     # Alias `gpt-5.6` routes to Sol.
-    "gpt-5.6": {
-        "input": 5.0,
-        "output": 30.0,
-        "cached_input": 0.5,
-        **_LONG_CTX_5X,
-    },
+    "gpt-5.6": dict(_SOL_RATES),
     "gpt-5.5": {
         "input": 5.0,
         "output": 30.0,
@@ -67,10 +104,13 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
         "cached_input": 0.25,
         **_LONG_CTX_TERRA,
     },
-    "gpt-5.3-codex": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
-    "gpt-5.3": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
-    "gpt-5.2-codex": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
-    "gpt-5.2": {"input": 1.75, "output": 14.0, "cached_input": 0.175},
+    # Astra Pro is a reasoning access mode, not a separate list price.
+    "gpt-6-astra": dict(_ASTRA_RATES),
+    "gpt-6-astra-pro": dict(_ASTRA_RATES),
+    "gpt-5.3-codex": dict(_CODEX_RATES),
+    "gpt-5.3": dict(_CODEX_RATES),
+    "gpt-5.2-codex": dict(_CODEX_RATES),
+    "gpt-5.2": dict(_CODEX_RATES),
     "gpt-5.1": {"input": 1.25, "output": 10.0, "cached_input": 0.125},
     "gpt-5": {"input": 1.25, "output": 10.0, "cached_input": 0.125},
     "gpt-4.1-mini": {"input": 0.4, "output": 1.6, "cached_input": 0.1},
@@ -87,7 +127,10 @@ OPENAI_PRICING: dict[str, dict[str, float]] = {
 }
 
 ANTHROPIC_PRICING: dict[str, dict[str, float]] = {
-    # Fable/Mythos: $10/$50 + cache write 1.25× / cache read 0.1× (Anthropic list).
+    # Fable 5.1: same $10/$50 as Fable 5; cache reads $0.25/MTok (Anthropic list, Sep 2026).
+    "claude-fable-5-1": {"input": 10.0, "output": 50.0, "cached_input": 0.25, "cache_write": 12.5},
+    "claude-mythos-5-1": {"input": 10.0, "output": 50.0, "cached_input": 0.25, "cache_write": 12.5},
+    # Fable/Mythos 5: $10/$50 + cache write 1.25× / cache read 0.1× (Anthropic list).
     "claude-fable-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
     "claude-mythos-5": {"input": 10.0, "output": 50.0, "cached_input": 1.0, "cache_write": 12.5},
     # Opus 5 / 4.x: $5/$25 (Anthropic list, Jul 2026).
@@ -135,6 +178,24 @@ XAI_PRICING: dict[str, dict[str, float]] = {
     },
 }
 
+# Gemini API list prices (USD per 1M tokens). 3.8 Flash intro pricing through 2026-12-31.
+GEMINI_PRICING: dict[str, dict[str, float]] = {
+    "gemini-3.8-flash": {"input": 0.75, "output": 3.75, "cached_input": 0.075},
+    "gemini-3.7-flash": {"input": 0.75, "output": 3.75, "cached_input": 0.075},
+    "gemini-3.6-flash": {"input": 0.75, "output": 3.75, "cached_input": 0.075},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.0, "cached_input": 0.125},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50, "cached_input": 0.030},
+}
+
+# DashScope / Qwen list prices (USD per 1M tokens, international ballpark).
+QWEN_PRICING: dict[str, dict[str, float]] = {
+    "qwen3-coder-plus": {"input": 1.00, "output": 5.00, "cached_input": 0.10},
+    "qwen3-coder-flash": {"input": 0.30, "output": 1.50, "cached_input": 0.03},
+    "qwen-max": {"input": 1.60, "output": 6.40, "cached_input": 0.16},
+    "qwen-plus": {"input": 0.40, "output": 1.20, "cached_input": 0.04},
+    "qwen-turbo": {"input": 0.05, "output": 0.20, "cached_input": 0.005},
+}
+
 
 def _pricing_table(provider: str) -> dict[str, dict[str, float]]:
     if provider == "anthropic":
@@ -143,6 +204,10 @@ def _pricing_table(provider: str) -> dict[str, dict[str, float]]:
         return KIMI_PRICING
     if provider in {"xai", "grok"}:
         return XAI_PRICING
+    if provider in {"gemini", "google"}:
+        return GEMINI_PRICING
+    if provider in {"qwen", "dashscope", "alibaba"}:
+        return QWEN_PRICING
     return OPENAI_PRICING
 
 
@@ -158,6 +223,8 @@ def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str,
         # Whole-token containment (e.g. "haiku" inside "claude-haiku-4-5").
         if f"-{key}-" in f"-{name}-" or name.endswith(f"-{key}") or name.startswith(f"{key}-"):
             return table[key]
+    if name in {"chatgpt", "codex", "chatgpt-default", "default"}:
+        return table.get("gpt-5.3-codex") or dict(_CODEX_RATES)
     # Heuristics for unknown / future model ids (no per-model allowlist required).
     if provider == "anthropic":
         if any(tok in name for tok in ("fable", "mythos")):
@@ -181,31 +248,40 @@ def _pricing_for_model(model: str | None, provider: str = "openai") -> dict[str,
             "cached_input": 0.30,
             **_LONG_CTX_GROK,
         }
+    if provider in {"gemini", "google"}:
+        if "pro" in name:
+            return {"input": 1.25, "output": 10.0, "cached_input": 0.125}
+        return {"input": 0.75, "output": 3.75, "cached_input": 0.075}
+    if provider in {"qwen", "dashscope", "alibaba"}:
+        if "turbo" in name or "flash" in name:
+            return {"input": 0.30, "output": 1.50, "cached_input": 0.03}
+        if "max" in name:
+            return {"input": 1.60, "output": 6.40, "cached_input": 0.16}
+        if "coder" in name:
+            return {"input": 1.00, "output": 5.00, "cached_input": 0.10}
+        return {"input": 0.40, "output": 1.20, "cached_input": 0.04}
+    if "astra" in name:
+        return dict(_ASTRA_RATES)
     if "pro" in name:
         return {"input": 30.0, "output": 180.0, "cached_input": 30.0}
     if "sol" in name:
-        return {
-            "input": 5.0,
-            "output": 30.0,
-            "cached_input": 0.5,
-            **_LONG_CTX_5X,
-        }
+        return dict(_SOL_RATES)
     if "terra" in name:
         return {
-            "input": 2.5,
-            "output": 15.0,
-            "cached_input": 0.25,
+            "input": 2.0,
+            "output": 12.0,
+            "cached_input": 0.2,
             **_LONG_CTX_TERRA,
         }
     if "luna" in name:
         return {
-            "input": 1.0,
-            "output": 6.0,
-            "cached_input": 0.1,
+            "input": 0.20,
+            "output": 1.20,
+            "cached_input": 0.02,
             **_LONG_CTX_LUNA,
         }
     if "codex" in name:
-        return {"input": 1.75, "output": 14.0, "cached_input": 0.175}
+        return dict(_CODEX_RATES)
     if name.startswith("o1-pro") or name.startswith("o3-pro"):
         return {"input": 20.0, "output": 80.0, "cached_input": 20.0}
     if name.startswith(("o1", "o3", "o4")):
@@ -351,11 +427,27 @@ def usage_from_anthropic_response(data: dict[str, Any]) -> dict[str, int]:
     return payload
 
 
+def should_apply_long_context(model: str | None, meta: dict[str, Any] | None = None) -> bool:
+    """Long-context (272K) is per API request, not Codex session-cumulative usage."""
+    meta = meta or {}
+    source = str(
+        meta.get("billing_source") or meta.get("key_source") or meta.get("ai_key_source") or ""
+    ).strip().lower()
+    if source in {"chatgpt", "chatgpt_subscription", "codex"}:
+        return False
+    name = (model or "").strip().lower()
+    # Astra / Astra Pro in this studio always run via Codex CLI (`codex exec`).
+    if "astra" in name or name in {"chatgpt", "codex", "chatgpt-default", "default"}:
+        return False
+    return True
+
+
 def estimate_cost_usd(
     model: str | None,
     usage: dict[str, int] | None,
     *,
     provider: str = "openai",
+    apply_long_context: bool | None = None,
 ) -> float | None:
     if not usage:
         return None
@@ -365,14 +457,21 @@ def estimate_cost_usd(
     cache_creation = int(usage.get("cache_creation_input_tokens") or 0)
     if input_tokens == 0 and output_tokens == 0 and cached_input == 0 and cache_creation == 0:
         return None
-    prices = _pricing_for_model(model, provider)
-    if input_tokens >= int(prices.get("long_context_threshold") or 10**18):
-        prices = {
-            **prices,
-            "input": prices.get("long_context_input", prices["input"]),
-            "output": prices.get("long_context_output", prices["output"]),
-            "cached_input": prices.get("long_context_cached_input", prices.get("cached_input", prices["input"])),
-        }
+    prices = dict(_pricing_for_model(model, provider))
+    if apply_long_context is None:
+        apply_long_context = should_apply_long_context(model)
+    # Codex CLI usage is session-cumulative across many turns. The 272K long-context
+    # multiplier is per API request — do not apply it to a summed session blob.
+    if apply_long_context and input_tokens >= int(prices.get("long_context_threshold") or 10**18):
+        prices["input"] = float(prices.get("long_context_input", prices["input"]))
+        prices["output"] = float(prices.get("long_context_output", prices["output"]))
+        prices["cached_input"] = float(
+            prices.get("long_context_cached_input", prices.get("cached_input", prices["input"]))
+        )
+        if "long_context_cache_write" in prices:
+            prices["cache_write"] = float(prices["long_context_cache_write"])
+        elif "cache_write" not in prices:
+            prices["cache_write"] = prices["input"] * 1.25
     # Anthropic reports uncached input separately from cache read/write.
     billable_input = max(0, input_tokens - (cached_input if provider != "anthropic" else 0))
     cache_write_rate = float(prices.get("cache_write", prices["input"] * 1.25))
@@ -433,7 +532,12 @@ def summarize_ai_traces(traces: list[dict[str, Any]] | dict[str, Any] | None) ->
         totals["cache_creation_input_tokens"] += int(usage.get("cache_creation_input_tokens") or 0)
         call_cost = trace.get("cost_usd")
         if call_cost is None:
-            call_cost = estimate_cost_usd(model, usage, provider=provider or "openai")
+            call_cost = estimate_cost_usd(
+                model,
+                usage,
+                provider=provider or "openai",
+                apply_long_context=should_apply_long_context(model, trace),
+            )
         if call_cost is not None:
             cost_usd += float(call_cost)
     if calls == 0:
@@ -485,6 +589,87 @@ def usage_fields_for_history(ai_traces: list[dict[str, Any]] | dict[str, Any] | 
     return {}
 
 
+CHAT_PLAN_KEY_SOURCES = frozenset({
+    "chatgpt",
+    "chatgpt_subscription",
+    "subscription",
+})
+
+
+def infer_provider(entry: dict[str, Any] | None, model: str | None = None) -> str:
+    """Provider used for pricing and the account-menu split.
+
+    History rows often defaulted missing provider to ``openai``, which dumped Claude
+    (and Kimi/Gemini) spend into the OpenAI bucket. Model id wins when it is unambiguous.
+    """
+    row = entry or {}
+    name = str(model or row.get("model") or "").strip().lower()
+    stored = str(row.get("provider") or "").strip().lower()
+    if stored in {"kimi", "moonshot"}:
+        stored = "kimi"
+    elif stored in {"xai", "grok"}:
+        stored = "xai"
+    elif stored in {"gemini", "google"}:
+        stored = "gemini"
+    elif stored in {"qwen", "dashscope", "alibaba"}:
+        stored = "qwen"
+
+    guessed = ""
+    if any(tok in name for tok in ("claude", "anthropic", "fable", "mythos", "sonnet", "haiku", "opus")):
+        guessed = "anthropic"
+    elif "kimi" in name or "moonshot" in name:
+        guessed = "kimi"
+    elif "gemini" in name:
+        guessed = "gemini"
+    elif "qwen" in name:
+        guessed = "qwen"
+    elif "grok" in name:
+        guessed = "xai"
+    elif name or stored:
+        guessed = "openai"
+
+    if guessed and guessed != "openai" and (not stored or stored == "openai"):
+        return guessed
+    return stored or guessed or "openai"
+
+
+def is_chatgpt_plan_entry(entry: dict[str, Any] | None) -> bool:
+    """True when the prompt billed a ChatGPT/Codex login, not an API key."""
+    row = entry or {}
+    source = str(
+        row.get("key_source") or row.get("billing_source") or row.get("ai_key_source") or ""
+    ).strip().lower()
+    if source in CHAT_PLAN_KEY_SOURCES:
+        return True
+    # ``codex`` as key_source is ChatGPT device-auth in this app. Codex-on-API-key
+    # stores personal/team/platform instead.
+    if source == "codex":
+        return True
+    return False
+
+
+def entries_attributed_to_user(entries: list[dict[str, Any]], user_id: str) -> list[dict[str, Any]]:
+    """Keep this user's prompts; include unattributed rows only on solo projects."""
+    uid = str(user_id or "").strip()
+    if not uid:
+        return list(entries)
+    other_ids = {
+        str(e.get("user_id")).strip()
+        for e in entries
+        if str(e.get("user_id") or "").strip() and str(e.get("user_id")).strip() != uid
+    }
+    kept: list[dict[str, Any]] = []
+    for entry in entries:
+        raw = str(entry.get("user_id") or "").strip()
+        if not raw:
+            if not other_ids:
+                kept.append(entry)
+            continue
+        if raw == uid:
+            kept.append(entry)
+    return kept
+
+
 def parse_month_param(month: str | None) -> tuple[int, int]:
     """Parse YYYY-MM or return current UTC month."""
     now = datetime.now(timezone.utc)
@@ -525,21 +710,38 @@ def entry_effective_cost(entry: dict[str, Any]) -> float | None:
     """Best-effort USD cost for one prompt history row."""
     usage = entry.get("usage")
     model = entry.get("model")
-    provider = entry.get("provider") or "openai"
+    provider = infer_provider(entry, model)
+    status = str(entry.get("status") or "").strip().lower()
+    if status == "running":
+        return None
     if usage and str(model or "").lower().startswith("claude-fable-5"):
         # Early Fable 5 rows were recorded with placeholder Haiku-like pricing.
         return estimate_cost_usd(model, usage, provider=provider)
     if entry.get("cost_usd") is not None:
         try:
-            return float(entry["cost_usd"])
+            stored = float(entry["cost_usd"])
         except (TypeError, ValueError):
-            pass
+            stored = None
+        else:
+            # Re-price when the row was tagged OpenAI but the model is clearly Claude/Kimi.
+            stored_prov = str(entry.get("provider") or "").strip().lower()
+            if usage and provider != "openai" and stored_prov in {"", "openai"}:
+                recomputed = estimate_cost_usd(
+                    model,
+                    usage,
+                    provider=provider,
+                    apply_long_context=should_apply_long_context(model, entry),
+                )
+                if recomputed is not None:
+                    return recomputed
+            return stored
     if not usage:
         return None
     return estimate_cost_usd(
         model,
         usage,
         provider=provider,
+        apply_long_context=should_apply_long_context(model, entry),
     )
 
 
@@ -610,6 +812,9 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     cost_usd = 0.0
     openai_cost_usd = 0.0
     anthropic_cost_usd = 0.0
+    kimi_cost_usd = 0.0
+    chatgpt_cost_usd = 0.0
+    other_cost_usd = 0.0
     tracked = 0
     providers_seen: list[str] = []
     models_seen: list[str] = []
@@ -617,6 +822,8 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     for entry in entries:
         usage = entry.get("usage") or {}
         entry_cost = entry_effective_cost(entry)
+        if str(entry.get("status") or "").strip().lower() == "running":
+            continue
         if entry_cost is None and not usage:
             continue
         tracked += 1
@@ -624,7 +831,17 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
             totals[key] += int(usage.get(key) or 0)
         entry_cost = float(entry_cost or 0)
         cost_usd += entry_cost
-        prov = (entry.get("provider") or "openai").lower()
+        prov = infer_provider(entry)
+        if is_chatgpt_plan_entry(entry):
+            chatgpt_cost_usd += entry_cost
+        elif prov == "openai":
+            openai_cost_usd += entry_cost
+        elif prov == "anthropic":
+            anthropic_cost_usd += entry_cost
+        elif prov == "kimi":
+            kimi_cost_usd += entry_cost
+        else:
+            other_cost_usd += entry_cost
         if prov not in providers_seen:
             providers_seen.append(prov)
         model = entry.get("model") or ""
@@ -652,14 +869,18 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         model_item["total_tokens"] += int(usage.get("total_tokens") or 0)
         model_item["cost_usd"] += entry_cost
         model_item["ai_calls"] += int(entry.get("ai_calls") or 0)
-        if prov == "openai":
-            openai_cost_usd += entry_cost
-        elif prov == "anthropic":
-            anthropic_cost_usd += entry_cost
     # Dominant provider: whichever has the most spend
     dominant_provider: str | None = None
     if providers_seen:
-        dominant_provider = max(providers_seen, key=lambda p: anthropic_cost_usd if p == "anthropic" else openai_cost_usd)
+        spend_by_provider = {
+            "openai": openai_cost_usd + chatgpt_cost_usd,
+            "anthropic": anthropic_cost_usd,
+            "kimi": kimi_cost_usd,
+        }
+        dominant_provider = max(
+            providers_seen,
+            key=lambda p: spend_by_provider.get(p, other_cost_usd),
+        )
     dominant_model = models_seen[0] if len(models_seen) == 1 else (", ".join(models_seen) if models_seen else None)
     return {
         "prompt_count": len(entries),
@@ -669,6 +890,10 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "cost_usd": round(cost_usd, 4),
         "openai_cost_usd": round(openai_cost_usd, 4),
         "anthropic_cost_usd": round(anthropic_cost_usd, 4),
+        "kimi_cost_usd": round(kimi_cost_usd, 4),
+        "chatgpt_cost_usd": round(chatgpt_cost_usd, 4),
+        "other_cost_usd": round(other_cost_usd, 4),
+        "cost_basis": "estimated_list_price",
         "provider": dominant_provider,
         "model": dominant_model,
         "model_breakdown": sorted(

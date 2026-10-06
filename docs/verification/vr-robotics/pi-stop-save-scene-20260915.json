@@ -1,0 +1,137 @@
+{
+  "autoViser": {
+    "count": 1,
+    "visible": true
+  },
+  "sharedMovement": {
+    "owner": [
+      0.25,
+      0.75,
+      -0.75
+    ],
+    "guest": [
+      0.25,
+      0.75,
+      -0.75
+    ],
+    "ownerArm": [
+      0.1,
+      0,
+      0.4
+    ],
+    "guestArm": [
+      0.1,
+      0,
+      0.4
+    ],
+    "guestTeleop": false
+  },
+  "before": [
+    "No emotes yet. A records; B stops and adds the take."
+  ],
+  "after": [
+    "\u203a New B-saved take"
+  ],
+  "controls": {
+    "aRisingEdges": 2,
+    "rawB": false,
+    "resets": [
+      {
+        "type": "y",
+        "action": "session_reset"
+      }
+    ],
+    "controlSockets": 1,
+    "recording": false
+  },
+  "requests": [
+    {
+      "url": "https://192.168.1.77:8443/teleop/status",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emote/accept",
+      "method": "POST",
+      "body": "{}"
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    }
+  ],
+  "cloudRequests": [
+    "https://render3d.app/api/robotics/hand-cam/status",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530490049",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530490049",
+    "https://render3d.app/api/robotics/workspace",
+    "https://render3d.app/api/robotics/live",
+    "https://render3d.app/api/robotics/live/mock-scene/action",
+    "https://render3d.app/api/robotics/live/mock-scene/action",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530490610",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530490611",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530491152",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530491152",
+    "https://render3d.app/api/robotics/live",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530491173",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530491173",
+    "https://render3d.app/api/robotics/live/mock-scene/action",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530491564",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530491564",
+    "https://render3d.app/api/robotics/hand-cam/status",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg?t=1789530491567",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg?t=1789530491567"
+  ],
+  "pageErrors": [],
+  "statuses": [
+    [
+      "ok",
+      "Take added to Emotes"
+    ]
+  ],
+  "safety": "All Pi HTTP and WebSocket requests mocked. No robot movement or recording performed. Home return remains unsupported by the current Pi API.",
+  "editor": {
+    "editorStarted": true,
+    "pageErrors": [],
+    "piRequestsWithoutEnable": [],
+    "appModule": "/studio/app.js?v=20260915-pitriggerviser2-20260915-pistopsave1-20260915-picontrols1-20260915-landiscovery2-20260915-load-resources2-project-open4-debu"
+  },
+  "realPiModel": {
+    "nodes": 145,
+    "meshes": 22,
+    "sceneSize": [
+      0.1894712300723584,
+      0.43395000137687745,
+      0.47569310100170503
+    ],
+    "loadedAssets": 19,
+    "errors": [],
+    "pageErrors": [],
+    "source": "Read-only capture of actual Pi Viser geometry. Rendering only; no robot commands."
+  },
+  "tests": {
+    "nodePassed": 70,
+    "backendPassed": 6
+  },
+  "publicSceneApi": {
+    "openStatus": 200,
+    "temporarySceneCleanupStatus": 200
+  },
+  "home": {
+    "requested": "Pi existing saved Home",
+    "available": "session_reset only; no joint homing",
+    "ssh": "configured user access denied",
+    "implemented": false
+  }
+}

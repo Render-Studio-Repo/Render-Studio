@@ -1,0 +1,36 @@
+{
+  "checks": [
+    {
+      "check": "12 loaded model previews from all 3 consumers share 1 GPU context; closing all releases it",
+      "active": 1,
+      "models": 12,
+      "images": [
+        12290,
+        12230,
+        12226,
+        12226,
+        12242,
+        12214,
+        12214,
+        12214,
+        12214,
+        12214,
+        12018,
+        11882
+      ]
+    },
+    {
+      "check": "Reopening acquires 1 fresh context and closing releases it"
+    },
+    {
+      "check": "Wiring thumbnails use 1 context per batch, release it after idle, reacquire on demand and keep source geometry",
+      "during": 1,
+      "after": 0,
+      "reacquired": 1,
+      "cleared": 0,
+      "valid": true,
+      "sharedGeometryDisposed": 0
+    }
+  ],
+  "pageErrors": []
+}

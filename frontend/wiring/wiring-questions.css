@@ -1,0 +1,19 @@
+.wiring-questions-open { position:absolute; top:12px; right:16px; z-index:16; border:1px solid #568eac; border-radius:9px; padding:9px 12px; color:#e3f6ff; background:#174663; cursor:pointer; font:600 12px system-ui; }
+.wiring-questions-open[hidden] { display:none; }
+.wiring-questions-dialog { position:fixed; inset:0; margin:auto; box-sizing:border-box; color:#edf6fc; background:#14212d; border:1px solid #3e5b70; border-radius:16px; padding:26px; width:min(550px,calc(100vw - 60px)); max-height:80vh; box-shadow:0 24px 100px #0008; font:14px/1.5 system-ui; }
+.wiring-questions-dialog::backdrop { background:#06111cb8; backdrop-filter:blur(4px); }
+.wiring-questions-dialog h2 { margin:0 0 8px; font-size:22px; line-height:1.3; }
+.wiring-questions-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.wiring-questions-dialog .wiring-questions-close { flex:0 0 32px; width:32px; height:32px; display:grid; place-items:center; margin:-6px -6px 0 0; padding:0; border-color:transparent; background:transparent; color:#b9c9d5; font-size:24px; line-height:1; }
+.wiring-questions-dialog .wiring-questions-close:hover { border-color:#527187; background:#203545; color:#fff; }
+.wiring-questions-dialog .wiring-questions-close:focus-visible { outline:2px solid #58b8e8; outline-offset:2px; }
+.wiring-questions-dialog p { color:#aebfcd; margin:8px 0 22px; }
+.wiring-question { display:flex; flex-direction:column; gap:9px; margin:20px 0; white-space:pre-line; }
+.wiring-question textarea { resize:vertical; border:1px solid #3e5b70; border-radius:8px; padding:11px; background:#0c1822; color:#edf6fc; font:14px/1.5 system-ui; }
+.wiring-question textarea:focus { outline:2px solid #58b8e8; outline-offset:2px; }
+.wiring-question-options,.wiring-questions-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.wiring-questions-dialog button { border:1px solid #405d70; background:#203545; color:#edf6fc; padding:9px 13px; border-radius:8px; cursor:pointer; font:13px system-ui; }
+.wiring-questions-actions { justify-content:flex-end; margin-top:22px; }
+.wiring-questions-dialog .primary { background:#277da7; border-color:#54b8e3; }
+.wiring-questions-dialog button:disabled { opacity:.6; cursor:wait; }
+.wiring-questions-dialog .wiring-questions-error { color:#ffa5a5; }

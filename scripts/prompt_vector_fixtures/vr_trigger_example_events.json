@@ -1,0 +1,6 @@
+[
+  {"at_ms": 0, "event": "exposed"},
+  {"at_ms": 2100, "event": "contradiction_detected", "claim_id": "claim-kernel-switch", "evidence_ids": ["snap-001", "snap-004"]},
+  {"at_ms": 2900, "event": "claim_corrected", "claim_id": "claim-kernel-switch", "text": "No kernel switch is recorded."},
+  {"at_ms": 3800, "event": "followup_proposed", "action_code": "compare_overlay_on_off"}
+]

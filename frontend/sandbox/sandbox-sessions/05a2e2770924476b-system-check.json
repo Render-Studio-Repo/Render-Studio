@@ -1,0 +1,22 @@
+{
+  "kind": "sandbox_system_check",
+  "token": "map1",
+  "session_id": "05a2e2770924476b",
+  "open_arm": "2.0",
+  "started_at": "2026-09-17T08:10:54.960Z",
+  "ended_at": "2026-09-17T08:12:31.297Z",
+  "files_touched": [],
+  "refs": [
+    {
+      "ref_id": "ref-openarm-20",
+      "kind": "product",
+      "label": "OpenArm 2.0",
+      "path": "openarm-teleop/rig.schema.json",
+      "note": "Headset avatar → OpenArm proxy; simulation only until URDF calibrated"
+    }
+  ],
+  "voice_steps": 0,
+  "corrective_steps": 0,
+  "reversed": [],
+  "ask": "Analyze mapped sandbox diffs vs last golden snapshot. List regressions for viewport.boot, viewport.models, vr.controllers.trigger, OpenArm 2.0 teleop packet path. Do not promote to production."
+}

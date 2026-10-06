@@ -45,25 +45,39 @@ def configured() -> bool:
 
 
 def public_config() -> dict[str, Any]:
+    from backend.services import marketplace_config_service
+
+    cfg = marketplace_config_service.public_config()
+    fee = max(0, min(30, int(cfg.get("platform_fee_percent") or PLATFORM_FEE_PERCENT)))
+    payouts = bool(cfg.get("payouts_enabled", True))
     return {
         "configured": configured(),
         "publishable_key": (getattr(settings, "stripe_publishable_key", None) or "").strip(),
-        "platform_fee_percent": PLATFORM_FEE_PERCENT,
-        "platform_fee_bps": PLATFORM_FEE_BPS,
+        "platform_fee_percent": fee,
+        "platform_fee_bps": fee * 100,
         "min_price_cents": MIN_PRICE_CENTS,
         "supports_link": True,
-        "supports_bank_payouts": True,
-        "supports_paypal": True,
-        "supports_crypto_wallet": True,
-        "supports_cash_app": True,
-        "supports_venmo": True,
-        "supports_apple_pay": True,
+        "supports_bank_payouts": payouts and bool(cfg.get("stripe_connect_enabled", True)),
+        "supports_paypal": payouts and bool(cfg.get("paypal_payouts_enabled", True)),
+        "supports_crypto_wallet": payouts,
+        "supports_cash_app": payouts,
+        "supports_venmo": payouts,
+        "supports_apple_pay": payouts,
+        "payouts_enabled": payouts,
+        "require_login_to_purchase": bool(cfg.get("require_login_to_purchase", True)),
     }
 
 
 def platform_fee_cents(price_cents: int) -> int:
+    from backend.services import marketplace_config_service
+
     price = max(0, int(price_cents or 0))
-    return max(0, (price * PLATFORM_FEE_BPS + 5000) // 10000)
+    try:
+        pct = int(marketplace_config_service.load().get("platform_fee_percent") or PLATFORM_FEE_PERCENT)
+    except Exception:
+        pct = PLATFORM_FEE_PERCENT
+    bps = max(0, min(30, pct)) * 100
+    return max(0, (price * bps + 5000) // 10000)
 
 
 def seller_net_cents(price_cents: int) -> int:
@@ -267,6 +281,52 @@ def set_payout_preference(user: dict[str, Any], method: str, details: dict[str, 
         user["id"],
         payout_method=method,
         payout_details_json=json.dumps(existing, separators=(",", ":")),
+    )
+    return seller_status(user)
+
+
+def disconnect_stripe(user: dict[str, Any]) -> dict[str, Any]:
+    account = get_seller_account(user["id"]) or {}
+    method = str(account.get("payout_method") or "stripe")
+    if method == "stripe":
+        method = "paypal" if str(account.get("paypal_email") or "").strip() else "stripe"
+    upsert_seller_account(
+        user["id"],
+        stripe_account_id="",
+        charges_enabled=0,
+        payouts_enabled=0,
+        details_submitted=0,
+        payout_method=method,
+    )
+    return seller_status(user)
+
+
+def disconnect_paypal(user: dict[str, Any]) -> dict[str, Any]:
+    account = get_seller_account(user["id"]) or {}
+    method = str(account.get("payout_method") or "stripe")
+    if method == "paypal":
+        method = "stripe" if account.get("stripe_account_id") else "stripe"
+    upsert_seller_account(user["id"], paypal_email="", payout_method=method)
+    return seller_status(user)
+
+
+def disconnect_payout_wallet(user: dict[str, Any], method: str = "phantom") -> dict[str, Any]:
+    method = str(method or "phantom").strip().lower().replace("-", "_")
+    account = get_seller_account(user["id"]) or {}
+    try:
+        existing = json.loads(account.get("payout_details_json") or "{}")
+    except Exception:
+        existing = {}
+    if not isinstance(existing, dict):
+        existing = {}
+    existing.pop(method, None)
+    next_method = str(account.get("payout_method") or "stripe")
+    if next_method == method:
+        next_method = "stripe" if account.get("stripe_account_id") else ("paypal" if account.get("paypal_email") else "stripe")
+    upsert_seller_account(
+        user["id"],
+        payout_details_json=json.dumps(existing, separators=(",", ":")),
+        payout_method=next_method,
     )
     return seller_status(user)
 
@@ -541,6 +601,18 @@ def handle_stripe_webhook(payload: bytes, sig_header: str | None) -> dict[str, A
         if isinstance(pi, dict):
             pi = pi.get("id")
         purchase = mark_session_paid(session_id, pi)
+        if metadata.get("kind") == "marketplace_boost":
+            from backend.services import marketplace_premium_service
+
+            boost = marketplace_premium_service.fulfill_paid_boost(session_id)
+            return {"handled": True, "boost": boost}
+        if purchase:
+            try:
+                from backend.services import marketplace_commerce_service
+
+                marketplace_commerce_service.on_purchase_paid(dict(purchase))
+            except Exception:
+                logger.warning("Marketplace purchase fulfillment failed", exc_info=True)
         return {"handled": True, "purchase": purchase}
     if etype == "account.updated":
         acct_id = data.get("id")

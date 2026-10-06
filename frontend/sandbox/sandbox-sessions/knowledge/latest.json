@@ -1,0 +1,33 @@
+{
+  "id": "RCPT-20260928-BAMBU-LOCAL-HANDOFF-REV-1",
+  "kind": "receipt",
+  "agent_id": "cursor-engineer",
+  "log_id": "",
+  "receipt_id": "RCPT-20260928-BAMBU-LOCAL-HANDOFF",
+  "score": null,
+  "label": "passed",
+  "beneficial": null,
+  "summary": "macOS Bambu export downloads the valid local 3MF without launching the unsupported remote-URL import dialog; supported desktop platforms retain protocol open.",
+  "body": {
+    "receipt_id": "RCPT-20260928-BAMBU-LOCAL-HANDOFF",
+    "revision_id": "RCPT-20260928-BAMBU-LOCAL-HANDOFF-REV-1",
+    "status": "passed",
+    "summary": "macOS Bambu export downloads the valid local 3MF without launching the unsupported remote-URL import dialog; supported desktop platforms retain protocol open.",
+    "feature_ids": [
+      "export.slicer-local-handoff"
+    ],
+    "feature_checks": {
+      "slicer-local-handoff": "passed: 3/3"
+    },
+    "evidence": [
+      "node --test frontend/components/slicer-prefs.test.js",
+      "node --check frontend/components/file-actions.js",
+      "node --check frontend/studio/app.js",
+      "Screenshot 2026-09-27 at 8.02.03 PM: Bambu Studio remote URL import failure"
+    ],
+    "rollback": "Restore the prior slicer protocol-open decision and UI copy.",
+    "token": "bambu-local1"
+  },
+  "created_at": "2026-09-28T01:14:10.796567+00:00",
+  "token": "kb1"
+}

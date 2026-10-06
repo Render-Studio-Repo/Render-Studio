@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "updated_at": "2026-10-06T23:40:00.000Z",
+  "policy": {
+    "source_of_truth": true,
+    "preflight": "node scripts/feature-map.mjs preflight --changed <paths>",
+    "verify": "node scripts/feature-map.mjs verify --changed <paths>",
+    "unknown_is_ok": false
+  },
+  "features": [
+    {
+      "id": "release.public-source",
+      "name": "Complete public Render Studio source release",
+      "lock": "on",
+      "criticality": "high",
+      "contract": "The public branch contains the complete runnable product source and installer while excluding credentials, user data, generated recordings, private deployment profiles, and personal administrator defaults.",
+      "paths": [
+        ".env.example", ".github/", ".gitignore",
+        "Install Render Studio.cmd", "Install Render Studio.command", "README.md",
+        "Start Render Studio.cmd", "Start Render Studio.command",
+        "ai-context/", "backend/", "demos/", "deploy/", "docs/", "extensions/",
+        "frontend/", "integrations/", "mac-render-studio/", "mcp/",
+        "requirements-freeze.txt", "requirements.txt", "scripts/",
+        "server-configurations/", "services/", "snap/", "static/", "supabase/"
+      ],
+      "receipt_ids": ["RCPT-20261006-PUBLIC-FULL-RELEASE"],
+      "checks": [
+        {
+          "id": "public-release-audit",
+          "argv": ["python3", "scripts/public-release-audit.py"],
+          "mandatory": true
+        },
+        {
+          "id": "public-installer-contract",
+          "argv": ["python3", "-m", "unittest", "scripts.test-installers", "-v"],
+          "mandatory": true
+        },
+        {
+          "id": "public-backend-syntax",
+          "argv": ["python3", "-m", "py_compile", "backend/main.py", "backend/config.py", "backend/services/platform_roles_service.py"],
+          "mandatory": true
+        }
+      ],
+      "client_checks": [
+        "Start the public backend and confirm GET /api/health returns status ok.",
+        "Open /setup.html and confirm the first-run account, database, AI access, and instance choices render."
+      ]
+    }
+  ]
+}

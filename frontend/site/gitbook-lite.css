@@ -1,0 +1,10 @@
+/* GitBook-like docs chrome. Isolated — do not put in styles.css */
+.gb{display:grid;grid-template-columns:220px 1fr;gap:0;min-height:70vh;border:1px solid #30363d;background:#fff;color:#24292f}
+.gb-side{padding:1rem .85rem;background:#f5f7f9;border-right:1px solid #d0d7de;font-size:13px}
+.gb-side a{display:block;padding:.35rem .4rem;color:#0969da;text-decoration:none}
+.gb-main{padding:1.25rem 1.5rem;overflow:auto}
+.gb-main h3{margin-top:0}
+.gb-main pre{background:#f6f8fa;border:1px solid #d0d7de;padding:.75rem;overflow:auto;font-size:12px}
+.gb-main table{width:100%;border-collapse:collapse;font-size:13px}
+.gb-main th,.gb-main td{border:1px solid #d0d7de;padding:.4rem .5rem;text-align:left}
+body.info-page .gb{color:#24292f}

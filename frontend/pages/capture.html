@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Render Studio · Phone capture</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="stylesheet" href="/site/capture.css?v=20260727-phone-capture" />
+</head>
+<body>
+  <main class="cap">
+    <header class="cap-head">
+      <p class="cap-eyebrow">Render Studio</p>
+      <h1>Add a clip</h1>
+      <p class="cap-sub" data-cap-hint>Record from your phone and send it to the desktop editor.</p>
+    </header>
+
+    <section class="cap-stage">
+      <video class="cap-preview" data-cap-preview playsinline muted autoplay></video>
+      <p class="cap-status" data-cap-status role="status"></p>
+    </section>
+
+    <label class="cap-label">
+      <span>Label (so AI knows what this is)</span>
+      <input type="text" data-cap-label maxlength="80" placeholder="e.g. Printed part in hand" />
+    </label>
+
+    <div class="cap-actions">
+      <button type="button" class="cap-btn secondary" data-cap-flip>Flip camera</button>
+      <button type="button" class="cap-btn accent" data-cap-record>Record</button>
+      <button type="button" class="cap-btn secondary hidden" data-cap-stop>Stop</button>
+    </div>
+
+    <div class="cap-alt">
+      <label class="cap-upload">
+        <input type="file" accept="video/*,video/mp4,video/webm,video/quicktime" data-cap-file hidden />
+        <span>Or upload a video from Photos</span>
+      </label>
+    </div>
+
+    <p class="cap-foot muted">Keep this page open until upload finishes. Then check the desktop editor timeline.</p>
+  </main>
+  <script type="module" src="/site/capture.js?v=20260727-phone-capture"></script>
+</body>
+</html>

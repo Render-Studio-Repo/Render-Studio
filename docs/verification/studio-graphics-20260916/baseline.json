@@ -1,0 +1,35 @@
+[
+  {
+    "scenario": "normal",
+    "errors": [],
+    "state": {
+      "ready": true,
+      "engine": "three.js r172",
+      "requests": 1,
+      "prefs": true,
+      "panel": false
+    }
+  },
+  {
+    "scenario": "transient",
+    "errors": [],
+    "state": {
+      "ready": false,
+      "engine": null,
+      "requests": 4,
+      "prefs": true,
+      "panel": false
+    }
+  },
+  {
+    "scenario": "blocked",
+    "errors": [],
+    "state": {
+      "ready": false,
+      "engine": null,
+      "requests": 4,
+      "prefs": true,
+      "panel": false
+    }
+  }
+]

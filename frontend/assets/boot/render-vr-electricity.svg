@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="320" height="320">
+  <title>Electricity around the mark</title>
+  <defs>
+    <filter id="renderVrElecGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#renderVrElecGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle class="render-vr-ring" cx="160" cy="160" r="118"/>
+    <circle class="render-vr-ring render-vr-bolt--c" cx="160" cy="160" r="136" stroke="#22d3ee"/>
+    <path class="render-vr-bolt" stroke="#ecfeff" stroke-width="2.1" d="M78 92 L96 118 L78 132 L108 158 L88 176"/>
+    <path class="render-vr-bolt render-vr-bolt--b" stroke="#67e8f9" stroke-width="1.9" d="M242 88 L218 114 L236 130 L206 156 L228 178"/>
+    <path class="render-vr-bolt render-vr-bolt--c" stroke="#22d3ee" stroke-width="1.8" d="M96 230 L122 208 L138 236 L160 210 L182 238 L206 214"/>
+    <path class="render-vr-bolt" stroke="#fb923c" stroke-width="2" d="M214 214 L236 198 L228 232 L258 218"/>
+    <path class="render-vr-bolt render-vr-bolt--b" stroke="#fdba74" stroke-width="1.6" d="M70 188 L92 176 L84 210 L108 196"/>
+  </g>
+</svg>

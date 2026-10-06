@@ -19,7 +19,7 @@ import numpy as np
 
 MESH_SUFFIXES = {".stl", ".obj", ".glb", ".gltf", ".ply", ".off", ".3mf"}
 BREP_SUFFIXES = {".step", ".stp", ".iges", ".igs", ".brep", ".brp"}
-ARCHIVE_SUFFIXES = {".f3z", ".zip"}
+ARCHIVE_SUFFIXES = {".f3z", ".zip", ".f3d"}
 PROPRIETARY_SUFFIXES = {".f3d", ".sldprt", ".sldasm", ".x_t", ".x_b", ".sat", ".sab", ".jt", ".3dxml"}
 EXTRACTABLE_INSIDE = MESH_SUFFIXES | BREP_SUFFIXES | {".smt"}
 
@@ -73,17 +73,21 @@ def _project_view(vertices: np.ndarray, view: str) -> tuple[np.ndarray, np.ndarr
     return np.column_stack([x, y]), depth
 
 
-def _rasterize_mesh(mesh: Any, view: str, size: int = 384) -> bytes:
-    """Fast orthographic preview: depth-shaded point splat + convex outline."""
-    verts = np.asarray(mesh.vertices, dtype=np.float64)
-    if len(verts) == 0:
-        blank = np.full((size, size, 4), 255, dtype=np.uint8)
-        return _png_rgba(blank)
+def _camera_direction(view: str) -> np.ndarray:
+    """World-space vector from the model toward the camera (matches `_project_view` depth)."""
+    if view == "top":
+        vec = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    elif view == "front":
+        vec = np.array([0.0, -1.0, 0.0], dtype=np.float64)
+    elif view == "side":
+        vec = np.array([-1.0, 0.0, 0.0], dtype=np.float64)
+    else:
+        vec = np.array([0.5, 0.5, -0.7], dtype=np.float64)
+    n = float(np.linalg.norm(vec))
+    return vec / n if n > 1e-9 else vec
 
-    if len(verts) > 80_000:
-        rng = np.random.default_rng(1)
-        verts = verts[rng.choice(len(verts), size=80_000, replace=False)]
 
+def _project_pixels(verts: np.ndarray, view: str, size: int) -> dict[str, Any]:
     xy, depth = _project_view(verts, view)
     mins = xy.min(axis=0)
     maxs = xy.max(axis=0)
@@ -92,9 +96,139 @@ def _rasterize_mesh(mesh: Any, view: str, size: int = 384) -> bytes:
     mins = mins - pad
     maxs = maxs + pad
     span = np.maximum(maxs - mins, 1e-6)
-    s = float(min((size - 1) / span[0], (size - 1) / span[1]))
-    px = ((xy[:, 0] - mins[0]) * s + (size - 1 - span[0] * s) * 0.5).astype(np.int32)
-    py = ((size - 1) - ((xy[:, 1] - mins[1]) * s + (size - 1 - span[1] * s) * 0.5)).astype(np.int32)
+    scale = float(min((size - 1) / span[0], (size - 1) / span[1]))
+    px = (xy[:, 0] - mins[0]) * scale + (size - 1 - span[0] * scale) * 0.5
+    py = (size - 1) - ((xy[:, 1] - mins[1]) * scale + (size - 1 - span[1] * scale) * 0.5)
+    return {
+        "xy": xy,
+        "depth": depth,
+        "mins": mins,
+        "maxs": maxs,
+        "span": span,
+        "scale": scale,
+        "px": px,
+        "py": py,
+    }
+
+
+_MAX_THUMB_FACES = 80_000
+_DEFAULT_FACE_RGB = np.array([168, 184, 204], dtype=np.float64)
+
+
+def _select_preview_face_indices(faces: np.ndarray, verts: np.ndarray, limit: int) -> np.ndarray:
+    """Keep the largest faces so a dense assembly still reads as a solid, not dots."""
+    if len(faces) <= limit:
+        return np.arange(len(faces), dtype=np.int32)
+    e0 = verts[faces[:, 1]] - verts[faces[:, 0]]
+    e1 = verts[faces[:, 2]] - verts[faces[:, 0]]
+    area = np.linalg.norm(np.cross(e0, e1), axis=1)
+    area = np.nan_to_num(area, nan=0.0, posinf=0.0, neginf=0.0)
+    return np.argpartition(area, -limit)[-limit:].astype(np.int32)
+
+
+def _rasterize_mesh_faces(mesh: Any, view: str, size: int, frame: dict[str, Any]) -> np.ndarray | None:
+    """Solid triangle fill. Outline=fill closes the 1px gaps that looked like dotted edges."""
+    faces = np.asarray(getattr(mesh, "faces", []), dtype=np.int32)
+    verts = np.asarray(mesh.vertices, dtype=np.float64)
+    if len(faces) < 1 or len(verts) < 3:
+        return None
+    n = len(verts)
+    keep = (
+        (faces[:, 0] >= 0) & (faces[:, 1] >= 0) & (faces[:, 2] >= 0)
+        & (faces[:, 0] < n) & (faces[:, 1] < n) & (faces[:, 2] < n)
+    )
+    faces = faces[keep]
+    if len(faces) < 1:
+        return None
+    finite = np.isfinite(verts).all(axis=1)
+    faces = faces[finite[faces[:, 0]] & finite[faces[:, 1]] & finite[faces[:, 2]]]
+    if len(faces) < 1:
+        return None
+    pick = _select_preview_face_indices(faces, verts, _MAX_THUMB_FACES)
+    faces = faces[pick]
+    i0, i1, i2 = faces[:, 0], faces[:, 1], faces[:, 2]
+    px = frame["px"]
+    py = frame["py"]
+    depth = frame["depth"]
+    e0 = verts[i1] - verts[i0]
+    e1 = verts[i2] - verts[i0]
+    normals = np.cross(e0, e1)
+    nlen = np.linalg.norm(normals, axis=1)
+    good = np.isfinite(nlen) & (nlen > 1e-8)
+    if not np.any(good):
+        return None
+    i0, i1, i2 = i0[good], i1[good], i2[good]
+    normals = np.clip(
+        np.nan_to_num(normals[good] / nlen[good][:, None], nan=0.0, posinf=0.0, neginf=0.0),
+        -1.0,
+        1.0,
+    )
+    light = np.array([0.45, -0.35, 0.82], dtype=np.float64)
+    camera = _camera_direction(view)
+    with np.errstate(all="ignore"):
+        facing = normals @ camera
+    if float(np.mean(facing > 0.0)) < 0.2:
+        facing = -facing
+    front = facing > 0.02
+    if int(front.sum()) >= max(8, len(normals) // 20):
+        i0, i1, i2 = i0[front], i1[front], i2[front]
+        normals = normals[front]
+    with np.errstate(all="ignore"):
+        lit = np.clip(normals @ light, 0.0, 1.0)
+    shade = 0.28 + 0.72 * np.clip(np.nan_to_num(lit, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
+    colors = np.clip(_DEFAULT_FACE_RGB[None, :] * shade[:, None], 0, 255).astype(np.uint8)
+    order = np.argsort((depth[i0] + depth[i1] + depth[i2]) / 3.0)
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+    image = Image.new("RGB", (size, size), (246, 246, 246))
+    draw = ImageDraw.Draw(image)
+    x0, y0 = px[i0], py[i0]
+    x1, y1 = px[i1], py[i1]
+    x2, y2 = px[i2], py[i2]
+    for idx in order:
+        color = (int(colors[idx, 0]), int(colors[idx, 1]), int(colors[idx, 2]))
+        pts = [
+            (float(x0[idx]), float(y0[idx])),
+            (float(x1[idx]), float(y1[idx])),
+            (float(x2[idx]), float(y2[idx])),
+        ]
+        draw.polygon(pts, fill=color, outline=color)
+    return np.asarray(image)
+
+
+def _rasterize_mesh(mesh: Any, view: str, size: int = 384) -> bytes:
+    """Orthographic preview: solid faces when possible, else depth-shaded vertex splat."""
+    verts = np.asarray(mesh.vertices, dtype=np.float64)
+    if len(verts) == 0:
+        blank = np.full((size, size, 4), 255, dtype=np.uint8)
+        return _png_rgba(blank)
+
+    render_size = size * 2 if size <= 512 else size
+    frame = _project_pixels(verts, view, render_size)
+    solid = _rasterize_mesh_faces(mesh, view, render_size, frame)
+    if solid is not None and solid.size:
+        if render_size != size:
+            from PIL import Image
+
+            resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+            im = Image.fromarray(solid).resize((size, size), resample)
+            solid = np.asarray(im)
+        alpha = np.full((size, size), 255, dtype=np.uint8)
+        return _png_rgba(np.dstack([solid, alpha]))
+
+    frame = _project_pixels(verts, view, size)
+    depth = frame["depth"]
+    mins = frame["mins"]
+    span = frame["span"]
+    scale = frame["scale"]
+    px = frame["px"].astype(np.int32)
+    py = frame["py"].astype(np.int32)
+    if len(verts) > 80_000:
+        rng = np.random.default_rng(1)
+        pick = rng.choice(len(verts), size=80_000, replace=False)
+        px, py, depth = px[pick], py[pick], depth[pick]
 
     rgb = np.full((size, size, 3), 246, dtype=np.uint8)
     znorm = depth - depth.min()
@@ -122,8 +256,8 @@ def _rasterize_mesh(mesh: Any, view: str, size: int = 384) -> bytes:
         if view != "iso" and len(outline) >= 2:
             ink = np.array([28, 48, 72], dtype=np.uint8)
             pts = np.asarray(outline, dtype=np.float64)
-            opx = ((pts[:, 0] - mins[0]) * s + (size - 1 - span[0] * s) * 0.5).astype(np.int32)
-            opy = ((size - 1) - ((pts[:, 1] - mins[1]) * s + (size - 1 - span[1] * s) * 0.5)).astype(np.int32)
+            opx = ((pts[:, 0] - mins[0]) * scale + (size - 1 - span[0] * scale) * 0.5).astype(np.int32)
+            opy = ((size - 1) - ((pts[:, 1] - mins[1]) * scale + (size - 1 - span[1] * scale) * 0.5)).astype(np.int32)
             for i in range(len(opx)):
                 x0, y0 = int(opx[i]), int(opy[i])
                 x1, y1 = int(opx[(i + 1) % len(opx)]), int(opy[(i + 1) % len(opy)])
@@ -169,9 +303,17 @@ def _silhouette_polyline(mesh: Any, view: str = "top", max_points: int = 48) -> 
 
 
 def extract_cad_from_archive(path: Path, dest_dir: Path | None = None) -> Path | None:
-    """Pull the first usable CAD/mesh file out of Fusion .f3z / zip archives."""
-    if path.suffix.lower() not in ARCHIVE_SUFFIXES:
+    """Pull the first usable CAD/mesh file out of Fusion .f3z / .f3d / zip archives."""
+    suffix = path.suffix.lower()
+    if suffix not in ARCHIVE_SUFFIXES:
         return None
+    # .f3d is often proprietary binary — only proceed when it is actually a zip.
+    if suffix == ".f3d":
+        try:
+            if not zipfile.is_zipfile(path):
+                return None
+        except Exception:
+            return None
     dest_dir = dest_dir or path.parent
     try:
         with zipfile.ZipFile(path, "r") as zf:
@@ -183,6 +325,8 @@ def extract_cad_from_archive(path: Path, dest_dir: Path | None = None) -> Path |
                     preferred.append((0, n))
                 elif ext in MESH_SUFFIXES:
                     preferred.append((1, n))
+                elif ext == ".smt":
+                    preferred.append((2, n))
             if not preferred:
                 return None
             preferred.sort(key=lambda row: (row[0], len(row[1])))
@@ -215,6 +359,18 @@ def load_reference_mesh(path: Path) -> Any:
         path = extracted
         suffix = path.suffix.lower()
 
+    if suffix in PROPRIETARY_SUFFIXES:
+        from backend.services.cad_proprietary_convert import try_convert_proprietary_cad
+
+        converted = try_convert_proprietary_cad(path, path.parent)
+        if converted and converted.get("path"):
+            path = Path(converted["path"])
+            suffix = path.suffix.lower()
+        else:
+            raise ValueError(
+                f"{Path(path).suffix} is a proprietary CAD format. Export STEP (.step) or mesh (.stl/.glb) "
+                "from Fusion/SolidWorks and attach that so the AI can read the geometry."
+            )
     if suffix in {".iges", ".igs"}:
         return cad_service.import_iges_mesh(path)
     if suffix in {".brep", ".brp"}:
@@ -223,12 +379,57 @@ def load_reference_mesh(path: Path) -> Any:
         return cad_service.load_mesh(path)
     if suffix in MESH_SUFFIXES:
         return cad_service.load_mesh(path)
-    if suffix in PROPRIETARY_SUFFIXES:
-        raise ValueError(
-            f"{path.suffix} is a proprietary CAD format. Export STEP (.step) or mesh (.stl/.glb) "
-            "from Fusion/SolidWorks and attach that so the AI can read the geometry."
-        )
     return cad_service.load_mesh(path)
+
+
+def _load_solid_preview_mesh(path: Path) -> Any:
+    """Triangle meshes only — skip crease Line/Path nodes that turn thumbs into a point cloud."""
+    import trimesh
+
+    suffix = path.suffix.lower()
+    if suffix in MESH_SUFFIXES:
+        loaded = trimesh.load(path, force="scene")
+        if isinstance(loaded, trimesh.Trimesh):
+            return loaded
+        if not isinstance(loaded, trimesh.Scene):
+            return load_reference_mesh(path)
+        scene = loaded
+        parts: list[Any] = []
+        try:
+            graph_nodes = list(scene.graph.nodes_geometry)
+        except Exception:
+            graph_nodes = []
+        if graph_nodes:
+            for node_name in graph_nodes:
+                try:
+                    transform, geom_name = scene.graph[node_name]
+                    geom = scene.geometry[geom_name]
+                except Exception:
+                    continue
+                if not isinstance(geom, trimesh.Trimesh) or len(getattr(geom, "faces", [])) < 1:
+                    continue
+                chunk = geom.copy()
+                try:
+                    chunk.apply_transform(transform)
+                except Exception:
+                    pass
+                parts.append(chunk)
+        else:
+            for geom in scene.geometry.values():
+                if isinstance(geom, trimesh.Trimesh) and len(getattr(geom, "faces", [])) >= 1:
+                    parts.append(geom)
+        if parts:
+            try:
+                return trimesh.util.concatenate(parts)
+            except Exception:
+                return parts[0]
+    return load_reference_mesh(path)
+
+
+def preview_png_bytes(path: Path, *, view: str = "iso", size: int = 384) -> bytes:
+    """Fast iso/ortho PNG of a mesh or STEP, for sidebar thumbs and similar stills."""
+    mesh = _load_solid_preview_mesh(path)
+    return _rasterize_mesh(mesh, view, size=size)
 
 
 def analyze_reference_geometry(path: Path, *, include_views: bool = True) -> dict[str, Any]:

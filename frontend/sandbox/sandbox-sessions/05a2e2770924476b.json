@@ -1,0 +1,20 @@
+{
+  "sessionId": "05a2e2770924476b",
+  "startedAt": "2026-09-17T08:10:54.960Z",
+  "reason": "sandbox_on",
+  "openArm": "2.0",
+  "token": "map1",
+  "entries": [],
+  "voiceSteps": [],
+  "refs": [
+    {
+      "ref_id": "ref-openarm-20",
+      "kind": "product",
+      "label": "OpenArm 2.0",
+      "path": "openarm-teleop/rig.schema.json",
+      "note": "Headset avatar → OpenArm proxy; simulation only until URDF calibrated"
+    }
+  ],
+  "status": "closed",
+  "endedAt": "2026-09-17T08:12:31.542Z"
+}

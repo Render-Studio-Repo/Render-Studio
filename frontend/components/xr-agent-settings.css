@@ -1,0 +1,73 @@
+/* Standalone desktop/companion voice-agent settings. */
+.xrag-settings-overlay { position: fixed; inset: 0; z-index: 15000; display: grid; place-items: center; padding: 24px; background: #050a14b8; backdrop-filter: blur(12px); color: #e8eef8; font: 14px/1.45 system-ui, sans-serif; }
+.xrag-settings-overlay[hidden], .xrag-settings-overlay [hidden] { display: none !important; }
+.xrag-settings-panel { box-sizing: border-box; min-width: 0; display: flex; flex-direction: column; width: min(780px, 100%); max-height: min(900px, 92dvh); overflow: hidden; background: #121b2a; border: 1px solid #344158; border-radius: 20px; box-shadow: 0 26px 100px #0009; }
+.xrag-settings-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 26px 16px; }
+.xrag-settings-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .15em; color: #7ab8e9; }
+.xrag-settings-header h2 { margin: 4px 0 0; font-size: 24px; font-weight: 650; letter-spacing: -.025em; }
+.xrag-settings-overlay .xrag-button { appearance: none; border: 1px solid #3a4b63; border-radius: 9px; background: #1c293d; color: #e8eef8; padding: 9px 13px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
+.xrag-settings-overlay .xrag-button:hover { background: #2a3c55; }
+.xrag-settings-overlay .xrag-button:disabled { opacity: .45; cursor: default; }
+.xrag-settings-overlay .xrag-primary { color: #061326; background: #91c6f3; border-color: #91c6f3; }
+.xrag-settings-overlay .xrag-primary:hover { background: #b1d9fb; }
+.xrag-settings-overlay .xrag-close { font-size: 25px; line-height: 1; padding: 5px 10px; background: transparent; border: 0; }
+.xrag-settings-overlay input:not([type=checkbox]):not([type=range]), .xrag-settings-overlay select, .xrag-settings-overlay textarea { box-sizing: border-box; min-width: 0; width: 100%; background: #0c1421; border: 1px solid #35445b; border-radius: 8px; padding: 10px 11px; color: #e8eef8; font: inherit; font-size: 13px; }
+.xrag-settings-overlay input::placeholder, .xrag-settings-overlay textarea::placeholder { color: #8395af; }
+.xrag-settings-overlay :is(input,select,textarea,button):focus-visible { outline: 2px solid #8fc8fb; outline-offset: 3px; }
+.xrag-settings-overlay input.xrag-search:not([type=checkbox]):not([type=range]) { width: calc(100% - 52px); margin: 0 26px 16px; padding-left: 14px; flex-shrink: 0; }
+.xrag-tabs { display: flex; gap: 7px; padding: 0 26px 15px; border-bottom: 1px solid #2a384d; }
+.xrag-tabs .xrag-button { background: transparent; border-color: transparent; font-size: 13px; }
+.xrag-tabs .xrag-button.is-active { background: #233a54; color: #b3dcff; }
+.xrag-settings-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 5px 26px 20px; }
+.xrag-group { padding: 18px 0; border-bottom: 1px solid #29374a; }
+.xrag-group:last-child { border-bottom: 0; }
+.xrag-group h3 { margin: 0 0 5px; font-size: 15px; }
+.xrag-description { margin: 4px 0 12px; color: #a2b2c8; font-size: 12px; line-height: 1.6; }
+.xrag-field { display: grid; gap: 8px; padding-top: 14px; }
+.xrag-field-label { display: flex; flex-direction: column; gap: 4px; }
+.xrag-field-label strong, .xrag-field > strong { font-size: 13px; font-weight: 550; }
+.xrag-field-label small { color: #9dacc1; font-size: 12px; line-height: 1.5; }
+.xrag-toggle { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 14px 0 2px; }
+.xrag-toggle input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #93c8f5; cursor: pointer; }
+.xrag-field input[type=range] { width: 100%; accent-color: #93c8f5; }
+.xrag-voice-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.xrag-voice-row { display: flex; gap: 8px; align-items: center; }
+.xrag-voice-row .xrag-voice-name { flex: 1; text-align: left; text-transform: capitalize; }
+.xrag-voice-row .xrag-voice-name.is-selected { background: #233a54; color: #b3dcff; border-color: #4a7aa3; }
+.xrag-voice-row .xrag-button.is-playing { background: #244d70; color: #b6e5ff; }
+.xrag-field textarea, .xrag-correction textarea { resize: vertical; min-height: 84px; }
+.xrag-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.xrag-settings-footer { display: flex; gap: 9px; flex-wrap: wrap; padding: 15px 26px 22px; border-top: 1px solid #2a384d; }
+.xrag-settings-footer .xrag-button:last-child { margin-left: auto; }
+.xrag-status { color: #b9d8f5; font-size: 12px; padding: 0 26px; }
+.xrag-status:not(:empty) { padding-bottom: 12px; }
+.xrag-review-toolbar { display: flex; align-items: center; gap: 18px; padding: 20px 0 12px; }
+.xrag-review-toolbar .xrag-description { margin: 0; flex: 1; }
+.xrag-review-toolbar .xrag-button { white-space: nowrap; }
+.xrag-change { margin-top: 12px; padding: 17px; border: 1px solid #33445c; border-radius: 12px; background: #172336; }
+.xrag-change-heading { display: flex; align-items: flex-start; gap: 12px; justify-content: space-between; }
+.xrag-change h3 { margin: 0; font-size: 14px; }
+.xrag-badge { font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 5px; background: #344359; color: #c7d5e5; white-space: nowrap; text-transform: uppercase; }
+.xrag-badge-succeeded, .xrag-badge-accepted { background: #244d45; color: #a2ead4; }
+.xrag-badge-failed, .xrag-badge-rejected { background: #52313f; color: #f6bacc; }
+.xrag-badge-running { background: #244d70; color: #b6e5ff; }
+.xrag-change-prompt, .xrag-result, .xrag-history-entry p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; margin: 10px 0; }
+.xrag-result { color: #c3d7eb; border-left: 2px solid #70a8d5; padding-left: 10px; }
+.xrag-correction { display: grid; gap: 8px; margin-top: 12px; }
+.xrag-correction .xrag-button { justify-self: start; }
+.xrag-history-entry { padding: 16px 0; border-bottom: 1px solid #2b394e; }
+.xrag-history-entry > strong { font-size: 12px; color: #bdddf8; }
+.xrag-history-entry time { float: right; color: #93a6bf; font-size: 10px; }
+.xrag-pane-history > .xrag-description { padding-top: 15px; }
+.xrag-empty { color: #99acc4; padding: 35px 12px; text-align: center; font-size: 13px; }
+@media (max-width: 580px) {
+  .xrag-settings-overlay { padding: 10px; }
+  .xrag-settings-panel { max-height: 96dvh; border-radius: 15px; }
+  .xrag-settings-header { padding: 19px 17px 14px; }
+  .xrag-settings-overlay input.xrag-search:not([type=checkbox]):not([type=range]) { width: calc(100% - 34px); margin-left: 17px; margin-right: 17px; }
+  .xrag-tabs, .xrag-settings-footer { padding-left: 17px; padding-right: 17px; }
+  .xrag-settings-body { padding-left: 17px; padding-right: 17px; }
+  .xrag-review-toolbar { align-items: stretch; flex-direction: column; gap: 10px; }
+  .xrag-settings-footer .xrag-button:last-child { margin-left: 0; }
+  .xrag-voice-list { grid-template-columns: 1fr; }
+}

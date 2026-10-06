@@ -1,0 +1,235 @@
+/* Receive-money settings + public pay button */
+
+.recv-pay-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.recv-pay-panel h4,
+.recv-pay-panel h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.recv-pay-lead {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  opacity: 0.78;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.recv-pay-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.recv-pay-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.recv-pay-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.recv-pay-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recv-pay-copy b,
+.recv-pay-row b {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.recv-pay-copy small,
+.recv-pay-row small {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  opacity: 0.7;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.recv-pay-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recv-pay-input,
+.recv-pay-select,
+.recv-pay-row input[type="text"],
+.recv-pay-row input[type="email"],
+.recv-pay-panel select {
+  width: min(220px, 100%);
+  min-width: 0;
+  min-height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(2, 6, 14, 0.55);
+  color: inherit;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.recv-pay-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.recv-pay-actions--field {
+  min-width: 0;
+}
+
+.recv-pay-actions--footer {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.recv-pay-toggle {
+  appearance: none;
+  flex: 0 0 auto;
+  min-width: 52px;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(13, 17, 23, 0.86);
+  color: #d7dee8;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.recv-pay-toggle.is-on,
+.recv-pay-toggle[aria-pressed="true"] {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(16, 185, 129, 0.18);
+  color: #d1fae5;
+}
+
+.recv-pay-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recv-pay-status {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  white-space: normal;
+}
+
+.recv-pay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: #041016;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7dd3fc 0%, #34d399 55%, #fbbf24 100%);
+  box-shadow: 0 8px 22px rgba(52, 211, 153, 0.22);
+}
+
+.recv-pay-btn:hover {
+  filter: brightness(1.06);
+}
+
+.recv-pay-btn small {
+  font-weight: 550;
+  opacity: 0.78;
+}
+
+.recv-pay-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12040;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 14, 0.72);
+}
+
+.recv-pay-card {
+  width: min(420px, 94vw);
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: linear-gradient(180deg, #1c232d 0%, #0b1018 100%);
+  color: #f8fafc;
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.recv-pay-card h3 {
+  margin: 0;
+}
+
+.recv-pay-qr {
+  width: 168px;
+  height: 168px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+  justify-self: center;
+}
+
+.recv-pay-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  word-break: break-all;
+  opacity: 0.9;
+}
+
+.user-profile-head-pay {
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .recv-pay-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recv-pay-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .recv-pay-input,
+  .recv-pay-select {
+    width: 100%;
+  }
+}

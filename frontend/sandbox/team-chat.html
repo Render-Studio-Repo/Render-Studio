@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sandbox team chat — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/team-chat.css?v=teamchat-ra5-chat1" />
+  <link rel="stylesheet" href="/site/vision-desk.css?v=20260917-chat1" />
+  <link rel="stylesheet" href="/sandbox/sandbox.css?v=sandbox1-remix1-oavis1&sbfix=20260917-2&astraoffice=20260917-1" />
+</head>
+<body class="info-page team-chat-page sb1-embed">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <p class="muted small">sandbox1 · MCP feed → this window · IDE sim for sandbox files</p>
+    </header>
+    <main class="info-main">
+      <article class="info-content team-chat">
+        <nav class="sb-chat-tabs" aria-label="Team chat views">
+          <button type="button" data-chat-view="chat" aria-selected="true">Chat</button>
+          <button type="button" data-chat-view="requests" aria-selected="false">Requests</button>
+          <button type="button" data-chat-view="vote" aria-selected="false">Vote</button>
+          <button type="button" data-chat-view="pad" aria-selected="false">Pad</button>
+        </nav>
+        <div class="sb-chat-tools">
+          <input id="sb-chat-search" type="search" placeholder="Search this thread" aria-label="Search messages" />
+          <span id="sb-chat-count" aria-live="polite"></span>
+        </div>
+        <div class="team-chat-layout">
+          <section id="team-messenger" class="render-agent-panel" aria-label="Team messenger">
+            <header class="render-agent-head">
+              <div class="render-agent-title">
+                <strong>Render Agent</strong>
+                <span>Sandbox board · /mcp/team-chat/feed</span>
+              </div>
+            </header>
+            <div class="render-agent-people-row">
+              <div id="render-agent-members" class="render-agent-members" aria-label="Thread members"></div>
+            </div>
+            <div id="render-agent-messages" class="render-agent-messages" aria-live="polite"></div>
+            <form id="render-agent-form" class="render-agent-form hw-composer sb-chat-composer">
+              <div class="hw-composer-shell">
+                <textarea id="render-agent-input" rows="1" placeholder="Type @ or /me /update /stats…"></textarea>
+                <div id="render-agent-mention-menu" class="prompt-mention-menu hidden" role="listbox"></div>
+                <div id="render-agent-slash-menu" class="prompt-mention-menu hidden" role="listbox"></div>
+                <button type="submit" class="hw-ask-btn" aria-label="Ask">
+                  <span>Ask</span>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M1.5 8.5 14 2.2l-3.1 11.4-2.7-4.1L1.5 8.5Zm7.1 1.1 1.5 2.3L12.4 5 8.6 9.6Z"/></svg>
+                </button>
+              </div>
+            </form>
+            <div class="sb-chat-compose-tools">
+              <button type="button" id="sb-chat-voice">🎙 Voice</button>
+              <label class="sb-chat-file-label">Attach text file<input id="sb-chat-file" type="file" accept=".txt,.md,.json,.log,text/*" hidden /></label>
+              <span id="sb-chat-tool-status" role="status"></span>
+            </div>
+            <p id="render-agent-status" class="render-agent-status muted small"></p>
+          </section>
+          <section id="team-requests" class="team-requests" aria-label="Requests thread">
+            <header>
+              <strong>Requests</strong>
+              <span class="muted small">peer ×2 → Ledger → Sam</span>
+            </header>
+            <div id="team-request-list"></div>
+            <form id="sam-request-form" class="team-request-form">
+              <textarea id="sam-request-text" rows="2" placeholder="File a request as Sam…"></textarea>
+              <button type="submit" class="btn secondary btn-compact">Request</button>
+            </form>
+            <p id="sam-request-status" class="muted small"></p>
+            <div id="team-tag-list" class="team-tag-list"></div>
+          </section>
+        </div>
+        <section id="team-vote" class="team-vote">
+          <header>
+            <strong>Vote</strong>
+            <span class="muted small">MCP grok_vote</span>
+          </header>
+          <div id="team-vote-board"></div>
+        </section>
+        <section id="team-ide" class="team-ide">
+          <header>
+            <strong>Pad</strong>
+            <span class="muted small">simulate files · sandbox1</span>
+          </header>
+          <div class="team-ide-grid">
+            <textarea id="team-ide-body" spellcheck="false"></textarea>
+            <div id="team-ide-log" class="muted small"></div>
+          </div>
+          <form id="team-ide-form" class="team-ide-form">
+            <input id="team-ide-note" placeholder="note" />
+            <button type="submit" class="btn accent btn-compact">Save pad as sam</button>
+          </form>
+        </section>
+        <div id="team-chat-root" class="muted small"></div>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/site/group-chat.js?v=sandbox1-feed1-ampm1"></script>
+  <script type="module" src="/site/team-chat.js?v=sandbox1-feed1"></script>
+  <script type="module" src="/sandbox/team-chat-shell.js?v=workspace3"></script>
+</body>
+</html>

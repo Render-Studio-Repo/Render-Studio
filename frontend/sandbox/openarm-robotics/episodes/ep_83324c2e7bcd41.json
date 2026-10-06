@@ -1,0 +1,37 @@
+{
+  "kind": "openarm_training_episode",
+  "token": "train1",
+  "episode_id": "ep_83324c2e7bcd41",
+  "mode": "policy",
+  "task": "Verified cube pick · Episode 0",
+  "astra_instruction": "Verified cube pick · Episode 0",
+  "started_at": "2026-09-29T17:14:46.469Z",
+  "open_arm": "2.0",
+  "source": "dimos/pi_hardware",
+  "data_source": "dimos",
+  "capture_kind": "commanded_ee_poses",
+  "training_ready": false,
+  "missing_fields": [
+    "measured_joint_state",
+    "synchronized_camera_frames"
+  ],
+  "dataset_format": "render-studio-recording/v1",
+  "project_id": "5bf8e783",
+  "demo": "[object Object]",
+  "robot": "null",
+  "episode_dir": "openarm-robotics/episodes",
+  "outcome": {
+    "success": null,
+    "failure_mode": null,
+    "hard_limit_violations": 0,
+    "valid": false,
+    "labeled_at": "2026-09-29T17:15:11.215Z"
+  },
+  "feature_checks": {},
+  "note": "Partial recording. Inspect missing_fields before dataset conversion or training.",
+  "ended_at": "2026-09-29T17:15:11.215Z",
+  "feature_checks_saved": true,
+  "sample_count": 0,
+  "samples_preview": [],
+  "sample_chunks": []
+}

@@ -1,0 +1,189 @@
+{
+  "history": [
+    {
+      "at": "2026-09-17T14:28:27.500Z",
+      "remix_id": null,
+      "project_id": null,
+      "path": "examples/character-motion-loop.js",
+      "note": "File IDE save",
+      "agent": "cursor"
+    },
+    {
+      "at": "2026-09-17T14:44:41.122Z",
+      "remix_id": "remix_08852bd1ec29",
+      "project_id": "46250178",
+      "project_name": "PROMPT - Quest Controller Calibration Nest",
+      "file_count": 16,
+      "note": "duplicated from file viewer",
+      "agents": [
+        "cursor-engineer",
+        "vibe-rnd",
+        "analytics",
+        "astra"
+      ]
+    },
+    {
+      "at": "2026-09-17T14:44:41.643Z",
+      "remix_id": "remix_65ec47a77244",
+      "project_id": "46250178",
+      "project_name": "PROMPT - Quest Controller Calibration Nest",
+      "file_count": 16,
+      "note": "duplicated from file viewer",
+      "agents": [
+        "cursor-engineer",
+        "vibe-rnd",
+        "analytics",
+        "astra"
+      ]
+    },
+    {
+      "at": "2026-09-17T14:44:42.485Z",
+      "remix_id": "remix_10afd86beaf8",
+      "project_id": "46250178",
+      "project_name": "PROMPT - Quest Controller Calibration Nest",
+      "file_count": 16,
+      "note": "duplicated from file viewer",
+      "agents": [
+        "cursor-engineer",
+        "vibe-rnd",
+        "analytics",
+        "astra"
+      ]
+    },
+    {
+      "at": "2026-09-17T14:44:42.980Z",
+      "remix_id": "remix_15e49941d99b",
+      "project_id": "46250178",
+      "project_name": "PROMPT - Quest Controller Calibration Nest",
+      "file_count": 16,
+      "note": "duplicated from file viewer",
+      "agents": [
+        "cursor-engineer",
+        "vibe-rnd",
+        "analytics",
+        "astra"
+      ]
+    },
+    {
+      "at": "2026-09-17T15:36:02.351Z",
+      "remix_id": "remix_15e49941d99b",
+      "project_id": "46250178",
+      "path": "examples/character-motion-loop.js",
+      "note": "File IDE auto-push",
+      "agent": "sam"
+    },
+    {
+      "at": "2026-09-17T15:36:03.054Z",
+      "remix_id": "remix_15e49941d99b",
+      "project_id": "46250178",
+      "path": "examples/character-motion-loop.js",
+      "note": "File IDE auto-push",
+      "agent": "sam"
+    },
+    {
+      "at": "2026-09-17T16:26:54.409Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "project_name": "PROMPT - Quest Controller Calibration Nest",
+      "file_count": 18,
+      "note": "duplicated from file viewer",
+      "agents": [
+        "cursor-engineer",
+        "vibe-rnd",
+        "analytics",
+        "astra"
+      ]
+    },
+    {
+      "at": "2026-09-17T16:57:39.850Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "live/wiring/schematic-2026-09-17T16-57-39.json",
+      "note": "Wiring schematic auto-push",
+      "agent": "cursor-engineer"
+    },
+    {
+      "at": "2026-09-18T06:37:36.387Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md",
+      "note": "daily crew score avg 100",
+      "agent": "render-agent"
+    },
+    {
+      "at": "2026-09-18T06:37:36.742Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json",
+      "note": "daily crew json 2026-09-18",
+      "agent": "analytics"
+    },
+    {
+      "at": "2026-09-18T06:37:39.649Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "live/prompts/render-agent-daily-2026-09-18T06-37-39.md",
+      "note": "Render Agent daily distribute",
+      "agent": "analytics"
+    },
+    {
+      "at": "2026-09-18T17:22:17.128Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md",
+      "note": "daily crew score avg 100",
+      "agent": "render-agent"
+    },
+    {
+      "at": "2026-09-18T17:22:17.652Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json",
+      "note": "daily crew json 2026-09-18",
+      "agent": "analytics"
+    },
+    {
+      "at": "2026-09-18T17:22:20.708Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "live/prompts/render-agent-daily-2026-09-18T17-22-20.md",
+      "note": "Render Agent daily distribute",
+      "agent": "analytics"
+    },
+    {
+      "at": "2026-09-23T19:16:26.652Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.md",
+      "note": "daily crew score avg 100",
+      "agent": "render-agent"
+    },
+    {
+      "at": "2026-09-23T19:16:27.081Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.json",
+      "note": "daily crew json 2026-09-23",
+      "agent": "analytics"
+    },
+    {
+      "at": "2026-09-23T19:16:30.530Z",
+      "remix_id": "remix_c63c5bdf8bce",
+      "project_id": "46250178",
+      "path": "live/prompts/render-agent-daily-2026-09-23T19-16-30.md",
+      "note": "Render Agent daily distribute",
+      "agent": "analytics"
+    }
+  ],
+  "href": "/sandbox/?remix=remix_c63c5bdf8bce&track=code-updates",
+  "token": "fileview1",
+  "kind": "code_update_link",
+  "md_path": "live/code-updates-link.md",
+  "remix_root": "remixes/remix_c63c5bdf8bce",
+  "tree": "remixes/remix_c63c5bdf8bce/tree.json",
+  "chunks": "remixes/remix_c63c5bdf8bce/chunks.json",
+  "active_remix": "remix_c63c5bdf8bce",
+  "source_project_id": "46250178",
+  "updated_at": "2026-09-23T19:16:30.530Z",
+  "ask": "Bots append here when sandbox code changes so Sam can pull any update back."
+}

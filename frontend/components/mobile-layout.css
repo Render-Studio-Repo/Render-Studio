@@ -1,0 +1,113 @@
+/* One phone action bar, bounded sheets, and menu layers above their tap catcher. */
+html.mobile-app-locked {
+  --mobile-action-bar-height: calc(64px + var(--mobile-dock-lift, 0px));
+}
+html.mobile-app-locked body.toolbar-nav-open .toolbar {
+  z-index: calc(var(--mobile-ui-z, 2147483000) + 4) !important;
+}
+html.mobile-app-locked body.toolbar-nav-open #toolbar-nav-backdrop {
+  z-index: calc(var(--mobile-ui-z, 2147483000) + 3) !important;
+  touch-action: manipulation;
+}
+html.mobile-app-locked .toolbar .toolbar-nav-toggle {
+  min-width:44px;
+  min-height:44px;
+  touch-action:manipulation;
+}
+html.mobile-app-locked .toolbar-nav.is-open .toolbar-nav-menu {
+  position:fixed;
+  top:calc(56px + env(safe-area-inset-top, 0px));
+  left:max(12px, env(safe-area-inset-left, 0px));
+  right:max(12px, env(safe-area-inset-right, 0px));
+  width:auto;
+  min-width:0;
+  max-width:none;
+  max-height:calc(var(--app-height, 100dvh) - 72px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  box-sizing:border-box;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
+}
+html.mobile-app-locked .toolbar-nav-close { display:flex; flex-shrink:0; }
+html.mobile-app-locked .toolbar-nav .mobile-nav-pages .nav-tab {
+  min-height:44px !important;
+  height:auto;
+  line-height:1.3;
+  display:flex;
+  align-items:center;
+}
+html.mobile-app-locked #mobile-app-banner {
+  height:var(--mobile-action-bar-height);
+  min-height:0;
+  box-sizing:border-box;
+  justify-content:space-between;
+  gap:4px;
+}
+html.mobile-app-locked #mobile-app-banner > .mobile-app-banner-btn {
+  flex:1 1 0;
+  min-width:44px;
+  max-width:none;
+  padding:4px 2px;
+  touch-action:manipulation;
+}
+html.mobile-app-locked #mobile-more-sheet .mobile-app-banner-social {
+  display:flex;
+  justify-content:center;
+  margin:12px 0 0;
+  padding-top:8px;
+  border-top:1px solid var(--border);
+  gap:12px;
+}
+html.mobile-app-locked #mobile-more-sheet .mobile-app-banner-social-link { width:44px; height:44px; }
+html.mobile-app-locked #btn-xr-vr.viewport-xr-fab,
+html.mobile-app-locked #mobile-select-fab {
+  bottom:calc(var(--mobile-action-bar-height) + 12px) !important;
+  min-width:48px !important;
+  height:48px !important;
+  box-sizing:border-box;
+}
+html.mobile-app-locked #mobile-browser-fab {
+  bottom:calc(var(--mobile-action-bar-height) + 68px) !important;
+}
+html.mobile-app-locked #mobile-tools-popup:not(.hidden),
+html.mobile-app-locked #mobile-select-popup:not(.hidden) {
+  position:fixed;
+  bottom:calc(var(--mobile-action-bar-height) + 12px) !important;
+  max-height:calc(var(--app-height, 100dvh) - var(--mobile-action-bar-height) - 80px);
+  overflow-y:auto;
+  box-sizing:border-box;
+  overscroll-behavior:contain;
+  touch-action:pan-y;
+}
+html.mobile-app-locked #mobile-more-sheet .mobile-more-sheet-card {
+  bottom:var(--mobile-action-bar-height);
+  max-height:calc(var(--app-height, 100dvh) - var(--mobile-action-bar-height) - 20px);
+  overflow-y:auto;
+  box-sizing:border-box;
+  overscroll-behavior:contain;
+}
+/* While a sheet is open, its controls own the viewport control area. */
+html.mobile-app-locked:has(#mobile-tools-popup:not(.hidden)) #mobile-select-fab,
+html.mobile-app-locked:has(#mobile-tools-popup:not(.hidden)) #mobile-browser-fab,
+html.mobile-app-locked:has(#mobile-tools-popup:not(.hidden)) #btn-xr-vr,
+html.mobile-app-locked:has(#mobile-select-popup:not(.hidden)) #mobile-select-fab,
+html.mobile-app-locked:has(#mobile-select-popup:not(.hidden)) #mobile-browser-fab,
+html.mobile-app-locked:has(#mobile-select-popup:not(.hidden)) #btn-xr-vr { visibility:hidden !important; }
+/* Keep direct manipulation and its undo path; the desktop form occupies no phone space. */
+html.mobile-app-locked:not(.vr-headset-browser) .gizmo-panel,
+html.mobile-app-locked:not(.vr-headset-browser) .gizmo-drag-hud { display:none !important; pointer-events:none !important; }
+html.mobile-app-locked .viewport-hud-stack {
+  bottom:calc(var(--mobile-action-bar-height) + 128px) !important;
+  left:12px !important;
+  right:12px !important;
+  width:auto !important;
+  max-width:calc(100% - 24px) !important;
+}
+html.mobile-app-locked .toolbar .toolbar-nav-toggle,
+html.mobile-app-locked .toolbar #btn-auth {
+  width:44px !important;
+  height:44px !important;
+  min-width:44px !important;
+  min-height:44px !important;
+}
+html.mobile-app-locked .toolbar-nav-menu > * { flex-shrink:0; }

@@ -1,169 +1,58 @@
 # Repair loop
 
-Read this file when generation, export, inspection, positioning, snapshot review, CAD Viewer setup, or documentation validation fails.
+Use the failing command and geometry to localize the problem, correct the
+responsible source or arguments, then rerun the failed and affected checks.
+Preserve specified features and dimensions; disclose any necessary deviation.
 
-## Loop
+## Source and build failures
 
-1. Read the failing command output.
-2. Classify the failure.
-3. Make the smallest responsible source or command change.
-4. Rerun the failed command.
-5. Rerun any dependent validation checks.
-6. Report remaining risk or deliberate deviations.
+- **Syntax or import error:** use the traceback to correct the source or
+  dependency. Keep geometry creation inside model functions and their helpers.
+- **Script exits without outputs:** confirm `__main__` calls the decorated model,
+  that it returns a native shape, and that its decorators declare the intended
+  outputs. Function names are not discovered by convention.
+- **Unexpected freshness:** run `cadgen store why <model>.py`; check tracked
+  inputs and whether the parent was rerun after a child changed. See the
+  [model contract](step-generation.md#freshness-cadgen-store-why).
+- **Installation or version mismatch:** run `cadgen doctor <skill-dir>` and
+  follow the specific error. See [migrations](migrations.md).
 
-## Failure classes and fixes
+## Geometry failures
 
-### Source import or syntax failure
+| Symptom | Useful checks and possible remedies |
+| --- | --- |
+| Missing or invalid body | Check profile closure, cut placement, zero thickness and the first failing operation. Use the Python diagnostics in [inspection](inspection-and-validation.md). |
+| Missing hole/pocket | Check feature mode, selector, cut depth and the intended through-condition against the saved geometry. |
+| Wrong scale or extents | Check units, radius versus diameter, primitive alignment and extrusion direction; measure the relevant dimensions. |
+| Fillet/chamfer failure | Check edge selection and local space. Consider feature order or equivalent profile construction. Change a required radius only as an explicit design decision. |
+| Loft failure or distorted surface | Inspect wire correspondence, winding, self-crossings and disconnected sections. Prefixes or adjacent pairs can localize the problem; a successful pair does not prove a valid full loft. |
+| Slow Boolean | Time the suspect operation or inspect a stack sample. Consider simpler surfaces, tool extents, batching or staged cuts while preserving the required feature. |
+| Selector no longer matches | Reopen with `read_scene`, enumerate candidates, and measure their geometry. Numeric refs are revision-scoped. |
+| Assembly placement mismatch | Check local datums, fixed/moving order, axis direction and transform composition. Measure the required signed gaps and angles on saved geometry. |
 
-Likely causes:
+Version-specific pitfalls and construction alternatives are in
+[build123d modeling](build123d-modeling.md). For assembly corrections, see
+[positioning](positioning.md).
 
-- invalid Python syntax
-- missing import
-- wrong build123d symbol
-- function not named `gen_step()`
-- executable code outside the intended function has side effects
+## Viewer and snapshots
 
-Fix:
+Show the result as in [Show the model](../SKILL.md#show-the-model). With the CLI viewer,
+`cadgen viewer --help` lists its options. If showing fails, report the failure and use
+Python geometry checks plus snapshots.
 
-- correct imports and syntax
-- ensure `gen_step()` returns the STEP-ready shape or compound
-- keep output paths in CLI commands, not inside `gen_step()`
+Snapshot commands take saved documents, not model scripts. Run the model first
+when its output is missing; otherwise verify the input format/path, Chromium
+installation and the reported options. Missing derived render data is compiled
+on demand; adjacent GLB/topology files are not a prerequisite. Try a single
+supported view when isolating a request error, then restore the views needed
+for the review. See [snapshot review](snapshot-review.md).
 
-### Invalid or missing geometry
+## Check the repair
 
-Likely causes:
+When a repair could affect other geometry, compare before/after documents using
+`read_scene` and the dimensions, volumes or relationships that should remain
+invariant. Resolve labels independently in each revision. For shape changes,
+native Boolean differences can show both added and removed material.
 
-- open sketch
-- subtractive profile outside target
-- zero thickness
-- boolean operation failed
-- construction geometry used as exported geometry
-
-Fix:
-
-- close profiles intended to become faces
-- verify dimensions are positive
-- make subtractive tools pass through when through-cuts are intended
-- simplify the failing feature and rebuild incrementally
-
-### Fillet or chamfer failure
-
-Likely causes:
-
-- radius/length exceeds local geometry
-- selected edges include tiny or unintended edges
-- boolean operation created complex edge topology
-
-Fix:
-
-- reduce radius/length
-- filter selected edges more narrowly
-- apply fillets later in the model
-- split edge groups by feature intent
-
-### Wrong scale or bounding box
-
-Likely causes:
-
-- units mismatch
-- mistaken diameter/radius
-- extrusion direction or amount wrong
-- part not centered as assumed
-- direct imported STEP uses unexpected units
-
-Fix:
-
-- check parameter values
-- inspect facts and planes
-- measure critical extents
-- correct source dimensions or import handling
-
-### Missing feature
-
-Likely causes:
-
-- wrong `Mode.ADD`/`Mode.SUBTRACT`
-- feature profile not inside target
-- blind cut too shallow
-- selector changed after prior operation
-
-Fix:
-
-- confirm feature mode
-- increase cut length for through-cuts
-- inspect topology or planes
-- regenerate and measure/check feature-specific refs
-
-### Selector fragility
-
-Likely causes:
-
-- arbitrary index selection
-- topology changed after fillet or boolean
-- similar faces/edges are indistinguishable
-
-Fix:
-
-- select by axis, plane, position, normal, or inspected reference
-- use `refs --facts --planes --positioning` to rediscover stable references
-- add construction datums or simplify operations if needed
-
-### Positioning or joint mismatch
-
-Likely causes: wrong part-local origin or datum, reversed `AssemblyHelper` fixed/moving order, `.connect_to()` moving the wrong part, inverted joint axis, sign errors in symmetric placement, an explicit `Location` not recomputed after a parameter change, or a joint defined in world coordinates when a part-local datum was intended.
-
-Fix:
-
-- inspect `refs --positioning`, then `frame` and `align` on the relevant selectors
-- verify the source-level `AssemblyHelper` target order, joint labels, and `joint_location` definitions
-- apply the smallest source correction from the list in `positioning.md` (Source-level positioning corrections)
-- regenerate the assembly from the Python source and rerun the failed check
-
-### CAD Viewer startup or link failure
-
-Likely causes:
-
-- Node/npm unavailable
-- CAD Viewer app not built or cannot start
-- active Viewer URL is missing the absolute `?dir=` for the project
-- returned link is missing an absolute `file=` path or points outside `?dir=`
-
-Fix:
-
-- rerun `$cad-viewer` with the same absolute `?dir=` for the project and an absolute `file=` path for each artifact
-- return one documented Viewer link per requested file
-- if unresolved, report the startup failure and rely on CLI facts/measurements plus snapshots for validation
-
-### CAD `scripts/snapshot` failure
-
-Likely causes:
-
-- target input path is wrong, missing, or not a STEP/STP file or same-stem Python generator
-- adjacent CAD Viewer GLB/topology artifact missing
-- invalid render flags
-
-Fix:
-
-- generate STEP first, then snapshot the primary `.step`/`.stp` artifact
-- retry only with simpler supported snapshot jobs, starting with a single `view` output before wireframe display or `section`
-- choose modes and packet size per `snapshot-review.md`
-
-## Diff after repair
-
-Use `diff` when the fix might have affected unrelated geometry:
-
-```bash
-python scripts/inspect diff path/to/before.step path/to/after.step --planes
-```
-
-## Reporting failed repairs
-
-If a check cannot be repaired in the current environment, report:
-
-```text
-- what failed
-- what was tried
-- which artifact is still usable
-- which validation claims cannot be made
-- what the next source-level correction should be
-```
+Report what failed, what was repaired and verified, and which requirements
+remain untested or unresolved. Identify any artifact that remains usable.

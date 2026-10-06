@@ -1,0 +1,44 @@
+{
+  "kind": "sandbox_merge_health",
+  "token": "remix1",
+  "remix_id": null,
+  "session_id": null,
+  "observed_at": "2026-09-17T15:33:05.982Z",
+  "safe_to_merge": false,
+  "probes": [
+    {
+      "id": "mcp.stats",
+      "ok": true,
+      "note": "stats reachable"
+    },
+    {
+      "id": "sandbox.rev",
+      "ok": true,
+      "note": "rev 1789659185769111384"
+    },
+    {
+      "id": "openarm.mujoco_web",
+      "ok": true,
+      "note": "mujoco web ok"
+    },
+    {
+      "id": "openarm.mujoco_scenes",
+      "ok": true,
+      "note": "v2 scenes ok"
+    },
+    {
+      "id": "openarm.rig_2_0",
+      "ok": true,
+      "note": "rig schema ok"
+    },
+    {
+      "id": "map1.session",
+      "ok": false,
+      "note": "no active map session"
+    }
+  ],
+  "failed": [
+    "map1.session"
+  ],
+  "ask": "Unsafe to merge: map1.session. Do not promote."
+}

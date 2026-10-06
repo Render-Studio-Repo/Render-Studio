@@ -1,0 +1,41 @@
+{
+  "rev": 5,
+  "ts": "2026-09-16T21:52:15",
+  "agent": "cursor-engineer",
+  "note": "v5 IDE profile: pad write, office mirrors, desks=who",
+  "body": "# collab IDE profile (harness lock 2026-09-16)\n# write = Team chat pad. office screen = mirror. desks = who.\n\ndef share_log(log_id, text, traceback_ids=None):\n    tb = \",\".join(traceback_ids or [])\n    total = len(text)\n    return f\"{log_id}: {text} tb={tb} total={total}\"\n",
+  "log": [
+    {
+      "rev": 1,
+      "agent": "analytics",
+      "note": "v1 stub share_log"
+    },
+    {
+      "rev": 2,
+      "agent": "vibe-rnd",
+      "note": "v2 add traceback_ids"
+    },
+    {
+      "rev": 3,
+      "agent": "vibe-marketing",
+      "note": "v3 PLANTED BUG totl"
+    },
+    {
+      "rev": 4,
+      "agent": "instruction-auditor",
+      "note": "v4 FIX totl\u2192total"
+    },
+    {
+      "rev": 5,
+      "agent": "cursor-engineer",
+      "note": "v5 IDE profile: pad write, office mirrors, desks=who"
+    }
+  ],
+  "profiles": {
+    "cursor-engineer": {
+      "last_rev": 5,
+      "ts": "2026-09-16T21:52:15",
+      "note": "v5 IDE profile: pad write, office mirrors, desks=who"
+    }
+  }
+}

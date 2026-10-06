@@ -1,0 +1,67 @@
+/* Live voice-mold prototype — Tools panel */
+
+.voice-mold-panel {
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.55);
+  display: grid;
+  gap: 8px;
+}
+
+.voice-mold-panel.is-live {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
+
+.voice-mold-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.voice-mold-head strong {
+  font-size: 13px;
+}
+
+.voice-mold-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-mold-controls select {
+  min-width: 180px;
+  max-width: 100%;
+}
+
+.voice-mold-hold.is-holding {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+.voice-mold-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.voice-mold-log {
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.voice-mold-line {
+  margin: 0 0 6px;
+}
+
+.voice-mold-line--you { color: #93c5fd; }
+.voice-mold-line--agent { color: #bbf7d0; }

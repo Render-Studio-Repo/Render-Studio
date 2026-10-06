@@ -1,3 +1,9 @@
+"""DXF preview payload for Render Studio.
+
+Kept local (not cadgen) so uvicorn on Python 3.9 can import it. Skill sync
+must not delete this file — see scripts/sync-skills-from-text-to-cad.sh
+exclude for dxf/scripts/dxf/.
+"""
 from __future__ import annotations
 
 import math

@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "checks": [
+    "Production CSS hides 2D viewport and pins in 3D mode",
+    "All 21 project wire endpoints land on their named visible terminals; follow-ups and references survive loading",
+    "Actual terminal clicks create a connection, and undo removes exactly that connection",
+    "Dragging a 3D part persists its position; undo restores its prior position",
+    "Returning to Schematic restores the existing 2D viewport",
+    "Question popup reopens with answers intact and submits original links/references with structured answers",
+    "Named motor terminals recognize the connected external driver without inventing Arduino firmware",
+    "Breadboard center gap conducts only after adding a real jumper"
+  ],
+  "pageErrors": []
+}

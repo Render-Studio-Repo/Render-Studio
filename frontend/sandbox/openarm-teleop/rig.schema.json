@@ -1,0 +1,52 @@
+{
+  "schema_version": "0.1-demo",
+  "name": "openarm-headset-avatar-proxy",
+  "scope": "simulation_only",
+  "units": {"position": "metres", "angles": "radians", "time": "monotonic_seconds"},
+  "frames": {
+    "xr_reference": "local-floor",
+    "avatar_world": "right_handed_y_up",
+    "robot_world": "must_be_calibrated_against_openarm_urdf",
+    "transforms": ["T_world_xr", "T_robot_world", "T_tool_grip_left", "T_tool_grip_right"]
+  },
+  "tracked_inputs": {
+    "head": {"source": "WebXR viewer pose", "required": true},
+    "left_hand": {"source": "WebXR left grip pose", "required": true},
+    "right_hand": {"source": "WebXR right grip pose", "required": true},
+    "left_gripper": {"source": "controller trigger or finger distance", "range": [0, 1]},
+    "right_gripper": {"source": "controller trigger or finger distance", "range": [0, 1]}
+  },
+  "avatar": {
+    "root": "pelvis",
+    "nodes": ["pelvis", "chest", "head", "left_shoulder", "left_elbow", "left_wrist", "right_shoulder", "right_elbow", "right_wrist"],
+    "retarget": {
+      "head": "T_world_xr * viewer_pose",
+      "left_wrist": "T_world_xr * left_grip_pose * T_tool_grip_left",
+      "right_wrist": "T_world_xr * right_grip_pose * T_tool_grip_right",
+      "elbows": "two_bone_ik_with_side_specific_pole_and_joint_limits"
+    }
+  },
+  "robot": {
+    "source_description": "enactic/openarm_description OpenArm 2.0 URDF/xacro; load the actual version before hardware use",
+    "robot_version": "2.0",
+    "left_arm_joint_names": ["openarm_left_joint1", "openarm_left_joint2", "openarm_left_joint3", "openarm_left_joint4", "openarm_left_joint5", "openarm_left_joint6", "openarm_left_joint7"],
+    "right_arm_joint_names": ["openarm_right_joint1", "openarm_right_joint2", "openarm_right_joint3", "openarm_right_joint4", "openarm_right_joint5", "openarm_right_joint6", "openarm_right_joint7"],
+    "gripper": "one scalar per arm; confirm sign/range from the loaded robot description",
+    "action_representation": "pose[x,y,z,qw,qx,qy,qz,gripper] or qpos[joint1..joint7,gripper]",
+    "joint_axes_limits_and_link_lengths": "from_versioned_urdf_not_this_proxy"
+  },
+  "sample_record": {
+    "episode_id": "uuid",
+    "sequence": "integer_increasing",
+    "timestamp_ms": "monotonic",
+    "prompt_id": "string",
+    "rig_version": "string",
+    "head_pose": {"position": [0, 1.65, 0], "quaternion": [0, 0, 0, 1]},
+    "left_grip_pose": {"position": [-0.3, 1.2, -0.4], "quaternion": [0, 0, 0, 1]},
+    "right_grip_pose": {"position": [0.3, 1.2, -0.4], "quaternion": [0, 0, 0, 1]},
+    "controller_edges": [{"hand": "right", "control": "trigger", "edge": "down"}],
+    "scene": {"object_ids": ["cube-1"], "collision_count": 0},
+    "feature_checks": {"viewport.boot": "ok", "viewport.models": "ok", "vr.controllers.trigger": "ok"}
+  },
+  "safety_gates": ["calibration_valid", "fresh_pose", "joint_limits", "velocity_limits", "collision_free", "deadman_enabled", "human_enable_for_hardware"]
+}

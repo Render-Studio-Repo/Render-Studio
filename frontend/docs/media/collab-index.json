@@ -1,0 +1,277 @@
+{
+  "root": "collab-index",
+  "goal": "Crew collab index of notes + Drive API hits. Readjust from GET /mcp/drive-search not guesses.",
+  "files": [
+    {
+      "path": "README.md",
+      "text": "# Collab index\ninstance_public_factor=1\nWrite notes here. Agents: QUERY grok_drive_search then paste titles.\n"
+    },
+    {
+      "path": "notes/HOW-TO-READ-INDEX.md",
+      "text": "# claimed in Drive index\nThis file is the top hit for q=HOW-TO-READ-INDEX.\n"
+    },
+    {
+      "path": "api/drive-search.js",
+      "text": "export const DRIVE_SEARCH = \"/mcp/drive-searchh\";\nexport const TABLE = \"public.grok_drive_index\";\n"
+    },
+    {
+      "path": "pad/share_log.py",
+      "text": "def share_log(log_id, text, traceback_ids=None):\n    tb = \",\".join(traceback_ids or [])\n    totl = len(text)\n    return f\"{log_id}: {text} tb={tb} totl={totl}\"\n"
+    },
+    {
+      "path": "notes/START-EVERY-PROMPT.md",
+      "text": "# Read this on every Render prompt\nBoard first. REPORT ping= REPORT-PING-01.\n"
+    },
+    {
+      "path": "notes/REPAIR-LOOP.md",
+      "text": "# Repair loop (indexed)\n\nHow well it is working (16 Sep 2026):\n- Ladder exists: miss + failure_id \u2192 peer \u00d72 / 10 min \u2192 @ledger \u2192 mule rm_queue \u2192 COMM_NO_WAKE then Sam.\n- Verify = log_id on Team chat. GET /mcp/help-requests \u00b7 GET /mcp/reports.\n- Weak: REPORT-PING-01 only cursor-engineer filed. INDEX-QUIZ titles not pasted. COMM-MISS still on Drive for Ledger.\n- BENCH-COLLAB-01 baseline FAIL 4 planted faults until live/ writes.\n\nDo not skip Ledger. Do not @sam for code.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:08:42"
+    },
+    {
+      "path": "notes/TESTING.md",
+      "text": "# Testing notes (indexed)\n\nQUIZ-NOTES-02: prove from GET /mcp/drive-search.\nGold: q=HOW-TO-READ-INDEX \u2192 INDEX-T-MD-DUMP-01.md (HOW-TO-READ-INDEX.md is NOT in Drive).\nq=share_log \u2192 API-TRACKING-EXPLAINED.md.\ninstance_public_factor=0.\n\nTrip-up bench (collab-index.json): factor=1, fake Drive hit, drive-searchh, totl.\nFix via grok_collab_index path=live/<you>.py then REPORT.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:08:42"
+    },
+    {
+      "path": "slash/COMMANDS.md",
+      "text": "# Slash on Team chat\n\n/me <topic> \u2014 skill ON. Crew talks. One CODE @pad @cursor-engineer. Write live/<you>.\n/update \u2014 breakdown of what is live + repair loop.\n/stats \u2014 REPORT n/avg, help, files, COMM-MISS mentions, votes, bench.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:08:42"
+    },
+    {
+      "path": "live/README.md",
+      "text": "# live/\nBots: grok_collab_index action=post path=live/<you>.py text=<code>\nIndexed real time. Tree polls every 4s.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:08:42"
+    },
+    {
+      "path": "live/sandbox-office.md",
+      "text": "# Sandbox Office (harness)\nURL: /sandbox/ (stub /sandbox.html)\nCopy of Three office in frontend/sandbox/office.js \u2014 not an import of opensource-office.js.\nVoice: frontend/sandbox/voice.js same STT+POST as office-voice.js plus SpeechSynthesis TTS per desk.\nCharts: frontend/sandbox/charts.js SVG from GET /mcp/stats. Analytics desk owns live/charts.md (please write it).\nChat poll: GET /mcp/group-chat then group-chat.jsonl.\nOnly edit frontend/sandbox/.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:25:00"
+    },
+    {
+      "path": "live/cursor-engineer-office-voice.md",
+      "text": "# Office voice + refs + sandbox\nprompt_id=prm_office_voice_loop_1\nTalk: SpeechRecognition \u2192 POST /mcp/group-chat VOICE:\nHear: speechSynthesis. OpenAI Realtime not live.\nRefs: opensource.js FILES[] + office-editor pad + grok_collab_index.\nChart owner: analytics. GET /mcp/stats\nSandbox: /sandbox.html debug HUD. Prod: /opensource.html\nQUERY: GET /mcp/drive-search?q=HOW-TO-READ-INDEX\ninstance_public_factor=0. Hive-mind not verified.\n",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-16T22:25:22"
+    },
+    {
+      "path": "examples/character-motion-loop.js",
+      "text": "File IDE auto-push",
+      "agent": "sam",
+      "ts": "2026-09-17T10:36:02"
+    },
+    {
+      "path": "live/wiring/schematic-2026-09-17T16-57-39.json",
+      "text": "Wiring schematic auto-push",
+      "agent": "cursor-engineer",
+      "ts": "2026-09-17T11:57:39"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/best-set.json",
+      "text": "bot bench avg 67 best_set=cad-bot,cursor-engineer,instruction-auditor,analytics,clip-bot",
+      "agent": "analytics",
+      "ts": "2026-09-18T01:08:23"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-18T06-33-16.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-18T01:33:16"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-18T06-37-39.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-18T01:37:39"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-18T07-33-54.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-18T02:33:54"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md",
+      "text": "daily crew score avg 100",
+      "agent": "render-agent",
+      "ts": "2026-09-18T12:22:17"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json",
+      "text": "daily crew json 2026-09-18",
+      "agent": "analytics",
+      "ts": "2026-09-18T12:22:17"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-18T17-22-20.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-18T12:22:20"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-19.md",
+      "text": "daily crew score avg 100",
+      "agent": "render-agent",
+      "ts": "2026-09-18T22:44:19"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-19.json",
+      "text": "daily crew json 2026-09-19",
+      "agent": "analytics",
+      "ts": "2026-09-18T22:44:19"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-19T03-44-23.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-18T22:44:23"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-21.md",
+      "text": "daily crew score avg 100",
+      "agent": "render-agent",
+      "ts": "2026-09-21T14:17:44"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-21.json",
+      "text": "daily crew json 2026-09-21",
+      "agent": "analytics",
+      "ts": "2026-09-21T14:17:45"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-21T19-17-48.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-21T14:17:48"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.md",
+      "text": "daily crew score avg 100",
+      "agent": "render-agent",
+      "ts": "2026-09-23T14:16:26"
+    },
+    {
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.json",
+      "text": "daily crew json 2026-09-23",
+      "agent": "analytics",
+      "ts": "2026-09-23T14:16:26"
+    },
+    {
+      "path": "live/prompts/render-agent-daily-2026-09-23T19-16-30.md",
+      "text": "Render Agent daily distribute",
+      "agent": "analytics",
+      "ts": "2026-09-23T14:16:30"
+    }
+  ],
+  "log": [
+    {
+      "ts": "2026-09-18T01:33:15",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md"
+    },
+    {
+      "ts": "2026-09-18T01:33:15",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json"
+    },
+    {
+      "ts": "2026-09-18T01:33:16",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-18T06-33-16.md"
+    },
+    {
+      "ts": "2026-09-18T01:37:36",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md"
+    },
+    {
+      "ts": "2026-09-18T01:37:36",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json"
+    },
+    {
+      "ts": "2026-09-18T01:37:39",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-18T06-37-39.md"
+    },
+    {
+      "ts": "2026-09-18T02:33:50",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md"
+    },
+    {
+      "ts": "2026-09-18T02:33:50",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json"
+    },
+    {
+      "ts": "2026-09-18T02:33:54",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-18T07-33-54.md"
+    },
+    {
+      "ts": "2026-09-18T12:22:17",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.md"
+    },
+    {
+      "ts": "2026-09-18T12:22:17",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-18.json"
+    },
+    {
+      "ts": "2026-09-18T12:22:20",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-18T17-22-20.md"
+    },
+    {
+      "ts": "2026-09-18T22:44:19",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-19.md"
+    },
+    {
+      "ts": "2026-09-18T22:44:19",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-19.json"
+    },
+    {
+      "ts": "2026-09-18T22:44:23",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-19T03-44-23.md"
+    },
+    {
+      "ts": "2026-09-21T14:17:44",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-21.md"
+    },
+    {
+      "ts": "2026-09-21T14:17:45",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-21.json"
+    },
+    {
+      "ts": "2026-09-21T14:17:48",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-21T19-17-48.md"
+    },
+    {
+      "ts": "2026-09-23T14:16:26",
+      "agent": "render-agent",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.md"
+    },
+    {
+      "ts": "2026-09-23T14:16:26",
+      "agent": "analytics",
+      "path": "sandbox-sessions/knowledge/daily-2026-09-23.json"
+    },
+    {
+      "ts": "2026-09-23T14:16:30",
+      "agent": "analytics",
+      "path": "live/prompts/render-agent-daily-2026-09-23T19-16-30.md"
+    }
+  ]
+}

@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from backend.config import settings
 from backend.database import get_conn
 
-HANDLE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,23}$")
+HANDLE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{2,23}$")
 
 
 def _now() -> str:
@@ -20,19 +21,27 @@ def _now() -> str:
 
 
 def slugify_handle(raw: str, *, fallback: str = "user") -> str:
-    text = re.sub(r"[^A-Za-z0-9_]", "", (raw or "").strip())
-    if text and text[0].isdigit():
+    text = (raw or "").strip().lstrip("@")
+    text = re.sub(r"[\s]+", "-", text)
+    text = re.sub(r"[^A-Za-z0-9_-]", "", text)
+    text = re.sub(r"[-_]{2,}", "-", text).strip("-_")
+    if text and text[0] in "-_":
         text = f"u{text}"
     text = text[:24] or fallback
     if len(text) < 3:
         text = (text + "user")[:3]
+    if not re.match(r"^[a-zA-Z0-9]", text):
+        text = f"u{text}"[:24]
     return text
 
 
 def validate_handle(handle: str) -> str:
     cleaned = (handle or "").strip().lstrip("@")
     if not HANDLE_RE.match(cleaned):
-        raise ValueError("Handle must be 3–24 chars: start with a letter, then letters, numbers, or _")
+        raise ValueError(
+            "Handle must be 3–24 characters: letters, numbers, underscores, or dashes "
+            "(must start with a letter or number)"
+        )
     return cleaned
 
 
@@ -83,6 +92,10 @@ def migrate_user_handles(conn) -> None:
         except Exception:
             pass
         try:
+            conn.execute("ALTER TABLE users ADD COLUMN receive_payments_json TEXT")
+        except Exception:
+            pass
+        try:
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle_lower ON users(lower(handle))"
             )
@@ -119,12 +132,17 @@ def migrate_user_handles(conn) -> None:
         rows = conn.execute(
             "SELECT id, email, display_name, handle FROM users"
         ).fetchall()
+        # Do not auto-assign handles for users without one — they claim a handle
+        # at signup or via the claim prompt. Legacy rows that already have a handle
+        # keep it. Only backfill when a unique index would otherwise break profiles
+        # that somehow have an empty string.
         for row in rows:
-            if row["handle"]:
+            raw = (row["handle"] or "").strip()
+            if raw:
                 continue
-            seed = row["display_name"] or (row["email"] or "user").split("@")[0]
-            handle = ensure_unique_handle(conn, seed, exclude_user_id=row["id"])
-            conn.execute("UPDATE users SET handle = ? WHERE id = ?", (handle, row["id"]))
+            if row["handle"] is None:
+                continue
+            conn.execute("UPDATE users SET handle = NULL WHERE id = ?", (row["id"],))
 
 
 def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> dict[str, Any] | None:
@@ -174,17 +192,32 @@ def get_user_row(user_id: str | None = None, *, handle: str | None = None) -> di
 
 
 def update_store_settings(user_id: str, settings: dict[str, Any]) -> dict[str, Any]:
+    existing = {}
+    row = get_user_row(user_id) or {}
+    if isinstance(row.get("store_settings"), dict):
+        existing = dict(row["store_settings"])
+    src = {**existing, **(settings or {})}
     cleaned = {
-        "store_enabled": bool(settings.get("store_enabled", False)),
-        "store_title": str(settings.get("store_title") or "").strip()[:80],
-        "store_tagline": str(settings.get("store_tagline") or "").strip()[:180],
-        "default_license": str(settings.get("default_license") or "proprietary").strip()[:40],
-        "default_access_mode": str(settings.get("default_access_mode") or "paid").strip()[:20],
-        "default_billing_type": str(settings.get("default_billing_type") or "one_time").strip()[:20],
-        "default_currency": str(settings.get("default_currency") or "USD").strip().upper()[:8],
-        "default_price_cents": max(0, min(1_000_000, int(settings.get("default_price_cents") or 0))),
-        "download_enabled": bool(settings.get("download_enabled", True)),
-        "show_on_profile": bool(settings.get("show_on_profile", True)),
+        "store_enabled": bool(src.get("store_enabled", False)),
+        "store_title": str(src.get("store_title") or "").strip()[:80],
+        "store_tagline": str(src.get("store_tagline") or "").strip()[:180],
+        "default_license": str(src.get("default_license") or "proprietary").strip()[:40],
+        "default_access_mode": str(src.get("default_access_mode") or "paid").strip()[:20],
+        "default_billing_type": str(src.get("default_billing_type") or "one_time").strip()[:20],
+        "default_currency": str(src.get("default_currency") or "USD").strip().upper()[:8],
+        "default_price_cents": max(0, min(1_000_000, int(src.get("default_price_cents") or 0))),
+        "download_enabled": bool(src.get("download_enabled", True)),
+        "show_on_profile": bool(src.get("show_on_profile", True)),
+        "store_slug": str(src.get("store_slug") or "").strip()[:48],
+        "accent_color": str(src.get("accent_color") or "").strip()[:20],
+        "thumbnail_style": str(src.get("thumbnail_style") or "cover").strip()[:20],
+        "refunds_allowed": bool(src.get("refunds_allowed", True)),
+        "refund_window_days": max(0, min(365, int(src.get("refund_window_days") or 14))),
+        "ships_physical": bool(src.get("ships_physical", False)),
+        "ships_from": str(src.get("ships_from") or "").strip()[:120],
+        "featured_listing_ids": [
+            str(x) for x in (src.get("featured_listing_ids") or []) if str(x).strip()
+        ][:24],
     }
     with get_conn() as conn:
         try:
@@ -196,6 +229,14 @@ def update_store_settings(user_id: str, settings: dict[str, Any]) -> dict[str, A
             (json.dumps(cleaned, sort_keys=True), user_id),
         )
         conn.commit()
+    slug = cleaned.get("store_slug")
+    if slug:
+        try:
+            from backend.services import marketplace_storefront_service
+
+            marketplace_storefront_service.set_slug(user_id, slug)
+        except Exception:
+            pass
     user = get_user_row(user_id)
     return user or {}
 
@@ -274,7 +315,7 @@ def _user_projects(user_id: str, *, limit: int = 12) -> list[dict[str, Any]]:
             (user_id, limit),
         ).fetchall()
     out = []
-    root = Path(__file__).resolve().parents[2] / "projects"
+    root = Path(settings.projects_dir)
     for row in rows:
         pid = row["project_id"]
         meta_name = pid
@@ -337,6 +378,93 @@ def _user_posts(user_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
     ]
 
 
+def _user_store_listings(user_id: str, *, limit: int = 12) -> list[dict[str, Any]]:
+    try:
+        from backend.services import model_marketplace_service
+
+        rows = model_marketplace_service.list_listings(user_id=user_id, mine_only=True)
+    except Exception:
+        rows = []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        status = str(row.get("status") or "").lower()
+        if status not in {"approved", "published", "live"}:
+            continue
+        slug = row.get("slug") or row.get("id")
+        out.append(
+            {
+                "id": row.get("id"),
+                "slug": slug,
+                "name": row.get("name") or "Model",
+                "tagline": row.get("tagline") or "",
+                "price_cents": int(row.get("price_cents") or 0),
+                "currency": row.get("currency") or "USD",
+                "href": f"/model-store.html?seller={row.get('owner', {}).get('id') or user_id}",
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _activity_label(kind: str) -> str:
+    key = (kind or "cad").strip().lower()
+    if key in {"cad", "fusion", "onshape", "solidworks", "freecad"}:
+        return "generated a new model with CAD"
+    if key == "mesh":
+        return "generated a new mesh"
+    if key in {"render", "image"}:
+        return "generated a new render"
+    if key == "wiring":
+        return "generated a wiring schematic"
+    if key in {"urdf", "srdf", "sdf"}:
+        return f"generated a {key.upper()} robot description"
+    return f"generated a new {key} model"
+
+
+def _user_recent_activity(user_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    from backend.services import prompt_history_service
+
+    root = Path(settings.projects_dir)
+    activities: list[dict[str, Any]] = []
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT project_id FROM project_access
+             WHERE created_by = ?
+             ORDER BY created_at DESC
+             LIMIT 16
+            """,
+            (user_id,),
+        ).fetchall()
+    for row in rows:
+        pid = row["project_id"]
+        path = root / pid
+        if not path.is_dir():
+            continue
+        try:
+            entries = prompt_history_service.list_entries_lightweight(path, limit=12)
+        except Exception:
+            continue
+        for entry in entries:
+            if not entry.get("success"):
+                continue
+            if entry.get("user_id") and str(entry.get("user_id")) != str(user_id):
+                continue
+            kind = str(entry.get("kind") or "cad")
+            activities.append(
+                {
+                    "kind": kind,
+                    "label": _activity_label(kind),
+                    "project_id": pid,
+                    "filename": entry.get("filename") or "",
+                    "created_at": entry.get("created_at"),
+                }
+            )
+    activities.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return activities[:limit]
+
+
 def public_profile(user_id: str | None = None, *, handle: str | None = None, viewer: dict[str, Any] | None = None) -> dict[str, Any]:
     user = get_user_row(user_id, handle=handle)
     if not user:
@@ -358,22 +486,73 @@ def public_profile(user_id: str | None = None, *, handle: str | None = None, vie
         "profile_link": f"https://render3d.app{profile_path}",
         "is_self": bool(viewer and viewer.get("id") == user["id"]),
         "store": store,
+        "store_url": None,
         "availability": {"windows": []},
         "suggested_slots": [],
+        "calendar": {
+            "visibility": "internal",
+            "can_view": False,
+            "busy": [],
+            "suggested_slots": [],
+            "internal_only": True,
+            "connected": False,
+        },
         "projects": _user_projects(user["id"]),
         "posts": _user_posts(user["id"]),
+        "store_listings": _user_store_listings(user["id"]),
+        "activity": _user_recent_activity(user["id"]),
+        "tabs": (
+            ["profile", "store", "activity", "settings", "calendar"]
+            if bool(viewer and viewer.get("id") == user["id"])
+            else ["profile", "store", "activity", "calendar"]
+        ),
         "stats": {
             "projects": len(_user_projects(user["id"], limit=100)),
             "posts": len(_user_posts(user["id"], limit=100)),
         },
     }
+    profile["stats"]["store"] = len(profile["store_listings"])
+    profile["stats"]["activity"] = len(profile["activity"])
     try:
-        from backend.services.social_service import get_availability, suggested_slots
+        from backend.services import marketplace_storefront_service
+        from backend.config import settings as _settings
 
-        profile["availability"] = get_availability(user["id"])
-        profile["suggested_slots"] = suggested_slots(user["id"])
+        slug = marketplace_storefront_service.get_slug_for_user(user["id"])
+        if slug:
+            base = str(getattr(_settings, "public_base_url", None) or "https://render3d.app").rstrip("/")
+            profile["store_url"] = f"{base}/{slug}"
+            profile["store_path"] = f"/{slug}"
+            profile["store_slug"] = slug
+        else:
+            profile["store_path"] = profile_path
+    except Exception:
+        profile["store_path"] = profile_path
+    for item in profile["store_listings"]:
+        item["href"] = profile.get("store_path") or f"/model-store.html?seller={handle_value}"
+        if item.get("slug"):
+            item["product_href"] = f"/m/{item.get('kind') or 'model'}/{item['slug']}"
+    try:
+        from backend.services.calendar_service import calendar_view_for_viewer
+        from backend.services.social_service import get_availability
+
+        calendar = calendar_view_for_viewer(user["id"], viewer)
+        profile["calendar"] = calendar
+        profile["suggested_slots"] = calendar.get("suggested_slots") or []
+        is_self = bool(profile.get("is_self"))
+        if is_self or calendar.get("can_view"):
+            profile["availability"] = get_availability(user["id"])
+        else:
+            profile["availability"] = {"windows": []}
     except Exception:
         pass
+    try:
+        from backend.services import receive_payments_service
+
+        profile["receive_money"] = receive_payments_service.public_payload(
+            user["id"], handle=handle_value
+        )
+    except Exception:
+        profile["receive_money"] = {"show_button": False, "methods": []}
     return profile
 
 
@@ -403,13 +582,10 @@ def create_meeting_request(
 
     from backend.services.social_service import (
         _parse_iso,
-        build_ics,
         google_template_url,
         outlook_deeplink,
-        send_calendar_invite_email,
-        settings as _settings_unused,
     )
-    from backend.config import settings as app_settings
+    from backend.services import calendar_service, email_notification_service
 
     start_dt = _parse_iso(starts_at)
     end_dt = _parse_iso(ends_at)
@@ -417,12 +593,23 @@ def create_meeting_request(
         end_dt = start_dt + __import__("datetime").timedelta(minutes=30)
     if start_dt and end_dt and end_dt <= start_dt:
         raise ValueError("Meeting end must be after start")
+    if start_dt and end_dt:
+        try:
+            calendar_service.refresh_busy(to_user_id)
+        except Exception:
+            pass
+        if calendar_service.overlaps(start_dt, end_dt, calendar_service.cached_busy(to_user_id)):
+            raise ValueError("That time conflicts with their calendar")
 
     with get_conn() as conn:
         try:
             from backend.services.social_service import migrate_social_features
 
             migrate_social_features(conn)
+        except Exception:
+            pass
+        try:
+            calendar_service.migrate_calendar_schema(conn)
         except Exception:
             pass
         conn.execute(
@@ -461,34 +648,30 @@ def create_meeting_request(
 
     calendar_url = google_template_url(title=meeting_title, details=details, starts_at=start_dt, ends_at=end_dt)
     outlook_url = outlook_deeplink(title=meeting_title, details=details, starts_at=start_dt, ends_at=end_dt)
-    ics_body = None
     ics_download = f"/api/meeting-requests/{req_id}/ics"
-    email_result = {"ok": False, "error": "no_time"}
-    if start_dt and end_dt:
-        organizer = (app_settings.capacity_alert_from or "info@render3d.app").strip()
-        ics_body = build_ics(
-            uid=ics_uid,
-            title=meeting_title,
-            description=details,
-            starts_at=start_dt,
-            ends_at=end_dt,
-            organizer_email=organizer,
-            attendee_emails=[from_user.get("email") or "", target.get("email") or ""],
+    email_result = {"ok": False, "error": "not_sent"}
+    if send_email:
+        when_label = ""
+        if start_dt and end_dt:
+            when_label = f"{start_dt.isoformat()} → {end_dt.isoformat()}"
+        elif proposed_time:
+            when_label = proposed_time
+        else:
+            when_label = "a time they proposed in Studio"
+        email_result = email_notification_service.send_meeting_request_email(
+            to_email=target.get("email") or "",
+            requester_name=from_user.get("display_name") or from_handle,
+            when_label=when_label,
+            note=(message or "").strip(),
+            user_id=target.get("id"),
         )
-        if send_email and channel in {"calendar", "both"}:
-            email_result = send_calendar_invite_email(
-                to_emails=[from_user.get("email") or "", target.get("email") or ""],
-                subject=meeting_title,
-                body_text=f"{details}\n\nA calendar invite (.ics) is attached.",
-                ics_body=ics_body,
-            )
-            if email_result.get("ok"):
-                with get_conn() as conn:
-                    conn.execute(
-                        "UPDATE meeting_requests SET email_sent_at = ? WHERE id = ?",
-                        (_now(), req_id),
-                    )
-                    conn.commit()
+        if email_result.get("ok"):
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE meeting_requests SET email_sent_at = ? WHERE id = ?",
+                    (_now(), req_id),
+                )
+                conn.commit()
 
     chat_body = (
         f"📅 Meeting request for @[{target.get('display_name')}](user:{to_user_id})\n"
@@ -500,9 +683,7 @@ def create_meeting_request(
         chat_body += f"\nProposed: {proposed_time}"
     if message:
         chat_body += f"\n\n{message.strip()}"
-    chat_body += f"\n\nGoogle Calendar: {calendar_url}"
-    chat_body += f"\nOutlook: {outlook_url}"
-    chat_body += f"\nDownload .ics: https://render3d.app{ics_download}"
+    chat_body += "\n\nAccept or decline in Social → Requests."
 
     return {
         "id": req_id,
@@ -532,6 +713,7 @@ def create_meeting_request(
         "email": email_result,
         "chat_body": chat_body,
         "created_at": now,
+        "needs_accept": True,
     }
 
 
@@ -561,7 +743,12 @@ def meeting_ics_payload(req_id: str) -> tuple[str, str]:
     to_user = get_user_row(row["to_user_id"]) or {}
     title = f"Render Studio meeting: {from_user.get('display_name') or 'User'} ↔ {to_user.get('display_name') or 'User'}"
     details = (row.get("message") or "Render Studio meeting").strip()
+    if row.get("meet_url"):
+        details += f"\n\nGoogle Meet: {row['meet_url']}"
     organizer = (app_settings.capacity_alert_from or "info@render3d.app").strip()
+    from backend.services.calendar_service import org_invite_email, unique_attendee_emails
+
+    attendees = unique_attendee_emails(from_user.get("email") or "", to_user.get("email") or "", org_invite_email())
     ics = build_ics(
         uid=row.get("ics_uid") or f"{req_id}@render3d.app",
         title=title,
@@ -569,7 +756,9 @@ def meeting_ics_payload(req_id: str) -> tuple[str, str]:
         starts_at=start_dt,
         ends_at=end_dt,
         organizer_email=organizer,
-        attendee_emails=[from_user.get("email") or "", to_user.get("email") or ""],
+        attendee_emails=attendees,
+        reminder_minutes=30,
+        reminder_email=True,
     )
     return ics, f"render3d-meeting-{req_id}.ics"
 

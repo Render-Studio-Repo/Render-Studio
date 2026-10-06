@@ -265,10 +265,6 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
             step_name,
             "--glb",
             glb_name,
-            "--stl",
-            stl_name,
-            "--3mf",
-            three_mf_name,
             "--force",
         ],
         cwd=project_path,
@@ -288,7 +284,7 @@ def regenerate_model(project_path: Path, source_name: str) -> dict[str, Any]:
             except Exception:
                 pass
         try:
-            cad_service.colorize_assembly_glb_parts(glb_path)
+            cad_service.colorize_assembly_glb_parts(glb_path, force=True)
         except Exception:
             cad_service.apply_prompt_appearance_to_file(glb_path, "", seed=stem)
         jake_glb = project_path / f".{step_name}.glb"
@@ -338,7 +334,6 @@ def _regenerate_urdf_model(project_path: Path, source_path: Path) -> dict[str, A
     try:
         _rebuild_urdf_preview_glb(project_path, stem)
         artifacts["glb"] = f"{stem}.glb"
-        artifacts["stl"] = f"{stem}.stl"
     except Exception:
         pass
     return artifacts
@@ -403,7 +398,6 @@ def _rebuild_urdf_preview_glb(project_path: Path, stem: str) -> None:
         translate=[upper + forearm + wrist / 2, 0, z_arm],
     )
     combined = trimesh.util.concatenate(parts)
-    combined.export(project_path / f"{stem}.stl")
 
     vertices = combined.vertices.astype(np.float32)
     faces = combined.faces.astype(np.uint32)

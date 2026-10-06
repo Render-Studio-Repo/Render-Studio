@@ -1,0 +1,165 @@
+{
+  "alice": {
+    "joined": true,
+    "peers": [
+      "test-bob"
+    ],
+    "avatars": [
+      {
+        "id": "test-bob",
+        "head": true,
+        "body": true,
+        "left": true,
+        "right": true,
+        "position": [
+          0.45,
+          1.6,
+          -2
+        ],
+        "rotation": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "meshes": 5,
+        "triangles": 128
+      }
+    ],
+    "drawCalls": 9
+  },
+  "bob": {
+    "joined": true,
+    "peers": [
+      "test-alice"
+    ],
+    "avatars": [
+      {
+        "id": "test-alice",
+        "head": true,
+        "body": true,
+        "left": true,
+        "right": true,
+        "position": [
+          -0.45,
+          1.6,
+          -2
+        ],
+        "rotation": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "meshes": 5,
+        "triangles": 128
+      }
+    ],
+    "drawCalls": 9
+  },
+  "rotationOnly": {
+    "joined": true,
+    "peers": [
+      "test-alice"
+    ],
+    "avatars": [
+      {
+        "id": "test-alice",
+        "head": true,
+        "body": true,
+        "left": true,
+        "right": true,
+        "position": [
+          -0.45,
+          1.6,
+          -2
+        ],
+        "rotation": [
+          0,
+          0.7071067811865475,
+          0,
+          0.7071067811865475
+        ],
+        "meshes": 5,
+        "triangles": 128
+      }
+    ],
+    "drawCalls": 9
+  },
+  "desktopRosterFiltering": true,
+  "reconnected": {
+    "joined": true,
+    "peers": [
+      "test-alice"
+    ],
+    "avatars": [
+      {
+        "id": "test-alice",
+        "head": true,
+        "body": true,
+        "left": true,
+        "right": true,
+        "position": [
+          -0.45,
+          1.6,
+          -2
+        ],
+        "rotation": [
+          0,
+          0.7071067811865475,
+          0,
+          0.7071067811865475
+        ],
+        "meshes": 5,
+        "triangles": 128
+      }
+    ],
+    "drawCalls": 9
+  },
+  "floorBefore": [
+    {
+      "nativeHeight": 1.6,
+      "initialHeight": 1.6
+    },
+    {
+      "nativeHeight": 1.85,
+      "initialHeight": 4.85
+    }
+  ],
+  "floorAfter": [
+    {
+      "head": [
+        0,
+        1.6,
+        1.0999999999999996
+      ],
+      "floor": 0,
+      "nativeHeight": 1.6
+    },
+    {
+      "head": [
+        0,
+        1.85,
+        -1.1
+      ],
+      "floor": 0,
+      "nativeHeight": 1.85
+    }
+  ],
+  "stableBase": true,
+  "teleopRecenterDeferred": true,
+  "sharedModel": {
+    "realGltfLoadedBoth": true,
+    "centeredCadOrigin": true,
+    "halfTurnQuaternionPreserved": true,
+    "holdingVisible": true,
+    "heldByOtherBlocksGrab": true,
+    "releaseExact": true,
+    "handoffBothDirections": true,
+    "actualViewportGripHandoff": true,
+    "lateJoinReplay": true
+  },
+  "leaveRemovesAvatar": true,
+  "pageErrors": [],
+  "scope": "Two Chromium clients, real CollabHub relay and frontend modules, synthetic headset poses; isolated identities/server, no production connections or robot commands."
+}

@@ -7,23 +7,34 @@ backward-compatible clients.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
+import re
+import signal
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
 GENERATION_FILE = "generation.json"
+
+
+def _project_file_url(project_id: str, filename: str) -> str:
+    rel = str(filename or "").lstrip("/")
+    return f"/api/projects/{quote(str(project_id), safe='')}/files/{quote(rel, safe='/')}"
+
+
 # Wall-clock budget for *abandoned* (dead-worker) jobs. Live workers are never
 # killed by this — Sol / quality CAD 2.0 routinely needs far longer than 20 min.
-MAX_RUNNING_SECONDS = 6 * 60 * 60  # default full-job recovery window
-MAX_RUNNING_SECONDS_SOL = 9 * 60 * 60  # 5.6 / Fable-class jobs can span multiple long calls
+MAX_RUNNING_SECONDS = 16 * 60 * 60  # default full-job recovery window (desktop-length CAD)
+MAX_RUNNING_SECONDS_SOL = 16 * 60 * 60  # 5.6 / Fable-class jobs can span many long calls
 # Auto-resume on restart is DISABLED for every model (current and future).
 # The old path re-queued request_body from scratch and re-billed. Do not raise these.
 MAX_RESTART_COUNT = 0
@@ -31,13 +42,15 @@ MAX_RESTART_COUNT_EXPENSIVE = 0  # legacy alias — same policy for all models
 # Grace before declaring a dead-PID job abandoned.
 STALE_IDLE_SECONDS = 60
 MAX_PARALLEL_PROMPT_JOBS = 5
+PARALLEL_PROMPT_KINDS = frozenset({"prompt", "improve_lab"})
 
 _RUNNING_TRACES: dict[str, set[str]] = {}
 _CANCELED_PROJECTS: set[str] = set()
 _CANCELED_TRACES: set[str] = set()
 _listeners: list[Any] = []
-_FILE_LOCKS: dict[str, threading.RLock] = {}
+_FILE_LOCKS: dict[str, "_ProjectFileLock"] = {}
 _FILE_LOCKS_GUARD = threading.Lock()
+CANCEL_FLAGS_DIR = ".generation_flags"
 # Set on SIGTERM/shutdown so we stop accepting new gens and wait for ours to finish.
 _DRAINING = False
 _DRAINING_LOCK = threading.Lock()
@@ -54,6 +67,8 @@ _JOB_PUBLIC_KEYS = (
     "label",
     "message",
     "filename",
+    "duration",
+    "editor_name",
     "url",
     "error",
     "timeline_index",
@@ -62,6 +77,8 @@ _JOB_PUBLIC_KEYS = (
     "by_user_name",
     "by_avatar_url",
     "mode",
+    "harness",
+    "detached",
     "benign_interrupt",
     "server_restart_stop",
     "model",
@@ -73,6 +90,10 @@ _JOB_PUBLIC_KEYS = (
     "usage",
     "cost_usd",
     "ai_calls",
+    "blocker",
+    "client",
+    "lab_session_id",
+    "lab_slot",
 )
 
 
@@ -88,14 +109,146 @@ def _emit(project_path: Path, data: dict[str, Any]) -> None:
             logger.warning("generation listener failed: %s", exc, exc_info=True)
 
 
-def _file_lock(project_path: Path) -> threading.RLock:
+class _ProjectFileLock:
+    """Thread-reentrant lock plus cross-process flock on generation.json writes."""
+
+    def __init__(self, project_path: Path) -> None:
+        self._thread = threading.RLock()
+        self._path = project_path
+        self._fh: Any = None
+        self._depth = 0
+
+    def __enter__(self) -> "_ProjectFileLock":
+        self._thread.acquire()
+        self._depth += 1
+        if self._depth == 1:
+            try:
+                self._path.mkdir(parents=True, exist_ok=True)
+                lock_path = self._path / ".generation.lock"
+                self._fh = lock_path.open("a+")
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                if self._fh is not None:
+                    try:
+                        self._fh.close()
+                    except OSError:
+                        pass
+                    self._fh = None
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        try:
+            if self._depth == 1 and self._fh is not None:
+                try:
+                    fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+                try:
+                    self._fh.close()
+                except OSError:
+                    pass
+                self._fh = None
+        finally:
+            self._depth -= 1
+            self._thread.release()
+
+
+def _file_lock(project_path: Path) -> _ProjectFileLock:
     key = project_path.name
     with _FILE_LOCKS_GUARD:
         lock = _FILE_LOCKS.get(key)
         if lock is None:
-            lock = threading.RLock()
+            lock = _ProjectFileLock(project_path)
             _FILE_LOCKS[key] = lock
         return lock
+
+
+def _cancel_flags_dir(project_path: Path) -> Path:
+    return project_path / CANCEL_FLAGS_DIR
+
+
+def _cancel_flag_path(project_path: Path, trace_id: str | None) -> Path:
+    name = "cancel-project" if not trace_id else f"cancel-{trace_id}"
+    return _cancel_flags_dir(project_path) / name
+
+
+def write_cancel_flag(project_path: Path, trace_id: str | None = None) -> None:
+    try:
+        d = _cancel_flags_dir(project_path)
+        d.mkdir(parents=True, exist_ok=True)
+        _cancel_flag_path(project_path, trace_id).write_text("1", encoding="utf-8")
+    except OSError:
+        logger.debug("Could not write generation cancel flag for %s", project_path.name, exc_info=True)
+
+
+def clear_cancel_flags_for_start(project_path: Path, trace_id: str) -> None:
+    d = _cancel_flags_dir(project_path)
+    for name in ("cancel-project", f"cancel-{trace_id}"):
+        try:
+            (d / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _cancel_flag_set(project_path: Path, trace_id: str | None) -> bool:
+    d = _cancel_flags_dir(project_path)
+    if (d / "cancel-project").is_file():
+        return True
+    if trace_id and (d / f"cancel-{trace_id}").is_file():
+        return True
+    return False
+
+
+def _job_status_on_disk(project_path: Path, trace_id: str) -> str | None:
+    path = _path(project_path)
+    if not path.is_file() or not trace_id:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    want = str(trace_id)
+    for job in _jobs_from_data(data):
+        if str(job.get("trace_id") or job.get("id") or "") == want:
+            return str(job.get("status") or "") or None
+    return None
+
+
+def terminate_worker_pid(pid: Any, *, reason: str = "") -> bool:
+    """SIGTERM a detached generation session. Never signals this process."""
+    try:
+        value = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if value <= 0 or value == os.getpid():
+        return False
+    if not _process_is_alive(value):
+        return False
+    try:
+        os.killpg(value, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            os.kill(value, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError) as exc:
+            logger.warning("Could not signal generation worker pid=%s: %s", value, exc)
+            return False
+    logger.info("Signaled detached generation worker pid=%s (%s)", value, reason or "cancel")
+    return True
+
+
+def set_worker_pid(
+    project_path: Path,
+    pid: int,
+    *,
+    trace_id: str | None = None,
+    detached: bool = True,
+) -> dict[str, Any]:
+    def mutate(job: dict[str, Any]) -> None:
+        job["worker_pid"] = int(pid)
+        job["detached"] = bool(detached)
+        job["updated_at"] = _now_iso()
+
+    return _update_job(project_path, trace_id=trace_id, mutator=mutate)
 
 
 def _user_avatar_url(user: dict[str, Any] | None) -> str | None:
@@ -144,7 +297,7 @@ def _is_long_running_model(job: dict[str, Any] | None) -> bool:
     mode = str(job.get("mode") or "").strip().lower()
     if model.endswith("-sol") or "-sol" in model:
         return True
-    if speed == "quality" and mode in {"v2", "vibecad", "fusion", "architect"}:
+    if speed == "quality" and mode in {"v2", "vibecad", "mac", "fusion", "architect"}:
         return True
     return False
 
@@ -156,7 +309,7 @@ def _job_max_running_seconds(job: dict[str, Any] | None) -> float:
     model = str((job or {}).get("model") or "").strip()
     per_call = model_hard_timeout_seconds(model)
     # Multi-turn CAD needs several calls; keep a generous job-level window.
-    return max(float(MAX_RUNNING_SECONDS), per_call * 3.0)
+    return max(float(MAX_RUNNING_SECONDS), float(MAX_RUNNING_SECONDS_SOL), per_call * 3.0)
 
 
 def _job_age_seconds(job: dict[str, Any], *, now: datetime | None = None) -> float | None:
@@ -386,6 +539,7 @@ def _compose_document(jobs: list[dict[str, Any]]) -> dict[str, Any]:
         "label",
         "message",
         "filename",
+        "editor_name",
         "url",
         "error",
         "timeline_index",
@@ -394,6 +548,8 @@ def _compose_document(jobs: list[dict[str, Any]]) -> dict[str, Any]:
         "by_user_name",
         "by_avatar_url",
         "mode",
+        "harness",
+        "detached",
         "benign_interrupt",
         "model",
         "provider",
@@ -404,6 +560,11 @@ def _compose_document(jobs: list[dict[str, Any]]) -> dict[str, Any]:
         "request_body",
         "target_mode",
         "codex_agent",
+        "usage",
+        "cost_usd",
+        "ai_calls",
+        "blocker",
+        "client",
     ):
         if key in primary and primary.get(key) is not None:
             data[key] = primary.get(key)
@@ -586,6 +747,15 @@ def running_count(project_path: Path) -> int:
     return int(data.get("running_count") or len(list_running_jobs(project_path)))
 
 
+def _normalize_generation_client(value: Any) -> str | None:
+    token = str(value or "").strip().lower()
+    if token in {"xr", "vr", "headset", "quest"}:
+        return "xr"
+    if token in {"ui", "pc", "desktop"}:
+        return "ui"
+    return None
+
+
 def start(
     project_path: Path,
     *,
@@ -610,13 +780,14 @@ def start(
     """
     kind_norm = (kind or "prompt").lower()
     if allow_parallel is None:
-        allow_parallel = kind_norm == "prompt"
+        allow_parallel = kind_norm in PARALLEL_PROMPT_KINDS
 
     with _file_lock(project_path):
         if is_draining():
             raise GenerationCanceled(
                 "Server is restarting — generation was not started. Retry in a moment."
             )
+        clear_cancel_flags_for_start(project_path, str(trace_id))
         if project_path.name in _CANCELED_PROJECTS and is_running(project_path):
             # Only block when a project-wide cancel is active AND something still runs.
             raise GenerationCanceled("Generation canceled.")
@@ -670,12 +841,16 @@ def start(
             same_kind = [j for j in running if str(j.get("kind") or "").lower() == kind_norm]
             if not allow_parallel:
                 raise GenerationInProgress(_compose_document(jobs))
-            if kind_norm != "prompt":
+            if kind_norm not in PARALLEL_PROMPT_KINDS:
                 # Wiring/build stay exclusive per kind.
                 if same_kind:
                     raise GenerationInProgress(_compose_document(jobs))
             else:
-                prompt_running = [j for j in running if str(j.get("kind") or "prompt").lower() == "prompt"]
+                prompt_running = [
+                    j
+                    for j in running
+                    if str(j.get("kind") or "prompt").lower() in PARALLEL_PROMPT_KINDS
+                ]
                 if len(prompt_running) >= MAX_PARALLEL_PROMPT_JOBS:
                     raise GenerationInProgress(_compose_document(jobs))
 
@@ -695,6 +870,10 @@ def start(
             "restart_count": restart_count,
             "worker_pid": os.getpid(),
         }
+        harness = _harness_from_mode(mode)
+        if harness:
+            job["harness"] = harness
+            job["progress"] = {"harness": harness, "pct": 1, "label": label or "Starting…"}
         if speed:
             job["speed"] = str(speed).lower()
         elif isinstance(request_body, dict) and request_body.get("speed"):
@@ -717,8 +896,22 @@ def start(
             target = str(body.get("target_mode") or "").strip().lower()
             if target in {"new", "edit"}:
                 job["target_mode"] = target
-            if body.get("codex_agent") or body.get("jake_codex_agent"):
+            astra = str(body.get("model") or "").strip().lower().startswith("gpt-6-astra")
+            if body.get("codex_agent") or body.get("jake_codex_agent") or astra:
                 job["codex_agent"] = True
+            client = _normalize_generation_client(body.get("client") or body.get("source_client"))
+            if client:
+                job["client"] = client
+            if body.get("lab_session_id"):
+                job["lab_session_id"] = str(body.get("lab_session_id"))[:40]
+                try:
+                    job["lab_slot"] = int(body.get("lab_slot") or 0)
+                except (TypeError, ValueError):
+                    job["lab_slot"] = 0
+        if not job.get("client"):
+            client = _normalize_generation_client((request_body or {}).get("client") if isinstance(request_body, dict) else None)
+            if client:
+                job["client"] = client
 
         if settled_carry:
             from backend.services.ai_cost import usage_fields_for_history
@@ -792,6 +985,8 @@ def complete(project_path: Path, result: dict[str, Any], *, trace_id: str | None
         _untrack_running(project_path.name, tid)
         return public_summary(project_path)
 
+    parent_job = get_job_by_trace(project_path, tid) if tid else None
+
     def mutate(job: dict[str, Any]) -> None:
         if is_canceled(project_path, job.get("trace_id")):
             job["status"] = "canceled"
@@ -805,7 +1000,37 @@ def complete(project_path: Path, result: dict[str, Any], *, trace_id: str | None
         job.pop("error", None)
         job.pop("request_body", None)
 
-    return _update_job(project_path, trace_id=tid or None, mutator=mutate)
+    out = _update_job(project_path, trace_id=tid or None, mutator=mutate)
+    published: list[str] = []
+    for key in ("filename", "glb", "step"):
+        value = result.get(key)
+        if value:
+            published.append(str(value))
+    files = result.get("files")
+    if isinstance(files, dict):
+        published.extend(str(v) for v in files.values() if v)
+    elif isinstance(files, (list, tuple)):
+        published.extend(str(v) for v in files if v)
+    if published:
+        try:
+            from backend.services.cad_service import clear_deleted_catalogs_for_published
+
+            clear_deleted_catalogs_for_published(project_path, published)
+        except Exception:
+            logger.debug("deleted-catalog revive skipped after generation", exc_info=True)
+    try:
+        from backend.services.project_thumb import refresh_project_thumb
+
+        refresh_project_thumb(project_path)
+    except Exception:
+        logger.debug("project thumb skipped after generation", exc_info=True)
+    if parent_job and parent_job.get("kind") in {"prompt", "cad"}:
+        try:
+            from backend.services.electronics_build import after_cad_complete
+            after_cad_complete(project_path, parent_job, result)
+        except Exception:
+            logger.exception("Electronics follow-up failed after CAD completion project=%s", project_path.name)
+    return out
 
 
 def fail(
@@ -836,7 +1061,17 @@ def fail(
             job.update({k: v for k, v in extra.items() if v is not None and k != "status"})
         job.pop("request_body", None)
 
-    return _update_job(project_path, trace_id=trace_id, mutator=mutate)
+    out = _update_job(project_path, trace_id=trace_id, mutator=mutate)
+    # An unfinished CAD build can still contain useful, clearly marked draft
+    # sources. Publish its small Parts List index so the browser can discover it
+    # without parsing authoring manifests on the project-open path.
+    try:
+        if (project_path / "vibecad").is_dir() or (project_path / "parts_list.json").is_file():
+            from backend.services.parts_workspace import get_workspace
+            get_workspace(project_path)
+    except Exception:
+        logger.debug("draft parts recovery skipped after generation failure", exc_info=True)
+    return out
 
 
 def interrupt_for_restart(
@@ -930,8 +1165,9 @@ def stop_for_server_restart(
 
 
 PIPELINE_CHECKLIST = (
+    {"id": "hardware", "label": "McMaster catalog STEPs"},
     {"id": "analyze", "label": "Analyze prompt & references"},
-    {"id": "brief", "label": "Write CAD brief"},
+    {"id": "brief", "label": "Jake brief"},
     {"id": "ai_source", "label": "Write / edit build123d source"},
     {"id": "step", "label": "Run scripts/step (STEP / GLB)"},
     {"id": "inspect", "label": "Inspect geometry (facts / planes)"},
@@ -940,20 +1176,38 @@ PIPELINE_CHECKLIST = (
     {"id": "finalize", "label": "Finalize artifacts"},
 )
 
+VIBECAD_PIPELINE_CHECKLIST = (
+    {"id": "hardware", "label": "McMaster catalog STEPs"},
+    {"id": "analyze", "label": "Inspect project / engine"},
+    {"id": "brief", "label": "VibeCAD design review"},
+    {"id": "ai_source", "label": "Author build123d / FreeCAD source"},
+    {"id": "step", "label": "Run VibeCAD worker (STEP / GLB)"},
+    {"id": "inspect", "label": "Inspect named solids (worker facts)"},
+    {"id": "snapshot", "label": "Viewport capture (iso / top / front)"},
+    {"id": "snapshot_review", "label": "Visual review (fail-closed)"},
+    {"id": "finalize", "label": "Finalize artifacts"},
+)
+
 MESH_PIPELINE_CHECKLIST = (
-    {"id": "analyze", "label": "Analyze prompt & reference"},
-    {"id": "generate", "label": "Write Three.js factory"},
+    {"id": "analyze", "label": "Analyze image & admission"},
+    {"id": "spec", "label": "Sculpt spec / strict-quality"},
+    {"id": "generate", "label": "Forge pass (factory)"},
     {"id": "export", "label": "Export GLB"},
-    {"id": "review", "label": "Review mesh vs brief"},
+    {"id": "snapshot", "label": "Playwright factory views"},
+    {"id": "review", "label": "Vision review vs reference"},
     {"id": "finalize", "label": "Finalize viewport model"},
 )
 
 _STAGE_ALIASES = {
+    "hardware": "hardware",
     "analyze": "analyze",
     "plan": "analyze",
     "build": "step",
     "brief": "brief",
+    "spec": "spec",
     "ai_source": "ai_source",
+    "authoring": "ai_source",
+    "repair": "ai_source",
     "generate": "generate",
     "export": "export",
     "step": "step",
@@ -966,6 +1220,174 @@ _STAGE_ALIASES = {
     "done": "finalize",
 }
 
+_TURN_RE = re.compile(r"\bturn\s+(\d+)\s*/\s*(\d+)", re.I)
+_PHASE_COUNTER = {
+    "hardware": "Hardware",
+    "analyze": "Inspect",
+    "plan": "Inspect",
+    "brief": "Review",
+    "spec": "Spec",
+    "ai_source": "Authoring",
+    "authoring": "Authoring",
+    "repair": "Authoring",
+    "generate": "Authoring",
+    "step": "Building",
+    "build": "Building",
+    "export": "Export",
+    "inspect": "Inspecting",
+    "snapshot": "Snapshots",
+    "snapshot_review": "Visual QA",
+    "review": "Visual QA",
+    "finalize": "Finishing",
+    "done": "Finishing",
+}
+
+
+_JAKE_PIPELINE_HINTS = (
+    "scripts/step",
+    "scripts/inspect",
+    "scripts/snapshot",
+    "cadgen",
+    "text-to-cad",
+    "gen_step",
+    "@step",
+)
+
+
+def _normalize_pipeline_id(value: str) -> str:
+    token = str(value or "").strip().lower()
+    if token in {"jake", "text-to-cad", "text_to_cad", "text to cad", "v2", "cad"}:
+        return "jake"
+    if token in {"vibecad", "vibe", "vibecade"}:
+        return "vibecad"
+    if token in {"multi_agent_cad", "mac", "macad"}:
+        return "multi_agent_cad"
+    if token in {"img2threejs", "mesh", "threejs"}:
+        return "img2threejs"
+    return token[:64] if token else ""
+
+
+def _harness_from_mode(mode: str | None) -> str:
+    m = str(mode or "").strip().lower().replace("-", "_")
+    if m in {"mesh", "mesh_beta", "img2threejs", "threejs", "fusion"}:
+        return "mesh"
+    if m in {"vibecad", "vibe", "vibecade"}:
+        return "vibecad"
+    if m in {"mac", "macad", "multi_agent_cad", "multiagentcad"}:
+        return "mac"
+    if m == "architect":
+        return "architect"
+    if m in {"v2", "jake", "cad", "2", "2_0"}:
+        return "jake"
+    return ""
+
+
+def _infer_pipeline(progress: dict[str, Any], prev: dict[str, Any]) -> str:
+    incoming = str(progress.get("pipeline") or "").strip().lower()
+    existing = str((prev or {}).get("pipeline") or "").strip().lower()
+    blob = f"{progress.get('label') or ''} {(prev or {}).get('label') or ''}".lower()
+    jake_signal = any(hint in blob for hint in _JAKE_PIPELINE_HINTS) and "vibecad" not in blob
+    mesh_signal = blob.startswith("mesh") or "img2threejs" in blob
+    vibe_signal = "vibecad" in blob
+    # Live step labels beat a sticky Codex default of "vibecad".
+    if jake_signal:
+        return "jake"
+    if mesh_signal:
+        return "img2threejs"
+    if incoming:
+        return _normalize_pipeline_id(incoming) or incoming[:64]
+    if existing:
+        return _normalize_pipeline_id(existing) or existing[:64]
+    if vibe_signal:
+        return "vibecad"
+    return ""
+
+
+def _checklist_peak_idx(items: list[Any] | None) -> int:
+    peak = -1
+    for i, item in enumerate(items or []):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "").lower() in {"done", "active"}:
+            peak = i
+    return peak
+
+
+def _freeze_checklist(
+    prev_items: list[Any] | None,
+    incoming: list[Any] | None,
+    *,
+    current_label: str | None = None,
+) -> list[dict[str, Any]]:
+    """Keep the farthest pipeline step; later sub-stages attach as detail instead of rewinding."""
+    incoming_rows = [dict(item) for item in (incoming or []) if isinstance(item, dict)]
+    if not incoming_rows:
+        return [dict(item) for item in (prev_items or []) if isinstance(item, dict)]
+    ids = [str(item.get("id") or "") for item in incoming_rows]
+    aligned_peak = _checklist_peak_idx(incoming_rows)
+    for item in prev_items or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "").lower() not in {"done", "active"}:
+            continue
+        pid = str(item.get("id") or "")
+        if pid and pid in ids:
+            aligned_peak = max(aligned_peak, ids.index(pid))
+    if aligned_peak < 0:
+        return incoming_rows
+    out: list[dict[str, Any]] = []
+    for i, item in enumerate(incoming_rows):
+        entry = dict(item)
+        if i < aligned_peak:
+            entry["status"] = "done"
+            entry.pop("detail", None)
+        elif i == aligned_peak:
+            entry["status"] = "active"
+            if current_label:
+                entry["detail"] = str(current_label)[:240]
+        else:
+            entry["status"] = "pending"
+            entry.pop("detail", None)
+        out.append(entry)
+    return out
+
+
+def _progress_counter(label: str | None, stage: str | None, checklist: list[Any] | None) -> str:
+    """HUD meter counter — agent turns when available, otherwise the current phase name."""
+    text = str(label or "")
+    match = _TURN_RE.search(text)
+    if match:
+        return f"Turn {int(match.group(1))}/{int(match.group(2))}"
+    lowered = text.lower()
+    if "mcmaster" in lowered:
+        return "Hardware"
+    if "design review" in lowered or "independent design review" in lowered:
+        return "Review"
+    for item in checklist or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "").lower() != "active":
+            continue
+        iid = str(item.get("id") or "").lower()
+        if iid in _PHASE_COUNTER:
+            return _PHASE_COUNTER[iid]
+        name = str(item.get("label") or "").strip()
+        if name:
+            return name[:24]
+    stage_key = str(stage or "").strip().lower()
+    if stage_key in _PHASE_COUNTER:
+        return _PHASE_COUNTER[stage_key]
+    return "Working"
+
+
+def authoring_loop_pct(turn: int, max_turns: int, *, lo: int = 28, hi: int = 74) -> int:
+    """Spread a long agent loop across the authoring band instead of slamming 70% at turn 12."""
+    n = max(int(max_turns or 1), 1)
+    t = min(max(int(turn), 0), n - 1)
+    if n <= 1:
+        return int(hi)
+    return int(lo) + int(round((t / (n - 1)) * (int(hi) - int(lo))))
+
 
 def _checklist_for_stage(
     stage: str | None,
@@ -973,18 +1395,35 @@ def _checklist_for_stage(
     current_label: str | None = None,
     pipeline: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Jake-style pipeline checklist derived from the active progress stage."""
+    """Pipeline checklist derived from the active progress stage."""
     label = str(current_label or "")
     pipe = str(pipeline or "").strip().lower()
-    use_mesh = pipe in {"img2threejs", "mesh", "threejs"} or label.lower().startswith("mesh")
-    checklist = MESH_PIPELINE_CHECKLIST if use_mesh else PIPELINE_CHECKLIST
-    normalized = _STAGE_ALIASES.get(str(stage or "").strip().lower(), "")
+    lowered = label.lower()
+    use_mesh = pipe in {"img2threejs", "mesh", "threejs"} or lowered.startswith("mesh")
+    use_vibecad = (not use_mesh) and (
+        pipe in {"vibecad", "vibe", "vibecade"} or lowered.startswith("vibecad") or "vibecad" in lowered
+    )
+    checklist = (
+        MESH_PIPELINE_CHECKLIST
+        if use_mesh
+        else VIBECAD_PIPELINE_CHECKLIST
+        if use_vibecad
+        else PIPELINE_CHECKLIST
+    )
+    raw_stage = str(stage or "").strip().lower()
+    normalized = _STAGE_ALIASES.get(raw_stage, "")
     if use_mesh and normalized in {"ai_source", "brief"}:
+        normalized = "spec" if raw_stage == "brief" else "generate"
+    if use_mesh and raw_stage in {"authoring", "repair", "generate"}:
         normalized = "generate"
-    if use_mesh and normalized in {"step", "inspect", "snapshot"}:
+    if use_mesh and normalized in {"step", "inspect"}:
         normalized = "export"
     if use_mesh and normalized == "snapshot_review":
         normalized = "review"
+    if use_vibecad and normalized == "generate":
+        normalized = "ai_source"
+    if use_vibecad and (normalized == "export" or raw_stage == "export"):
+        normalized = "step"
     ids = [item["id"] for item in checklist]
     active_idx = ids.index(normalized) if normalized in ids else -1
     out: list[dict[str, Any]] = []
@@ -1014,26 +1453,66 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
         next_progress["stage"] = stage
     if pct is not None:
         try:
-            next_progress["pct"] = max(0, min(100, int(pct)))
+            incoming_pct = max(0, min(100, int(pct)))
+            try:
+                prev_pct = int(next_progress.get("pct"))
+            except (TypeError, ValueError):
+                prev_pct = None
+            next_progress["pct"] = incoming_pct if prev_pct is None else max(prev_pct, incoming_pct)
         except (TypeError, ValueError):
             pass
+    try:
+        next_progress["pct_peak"] = int(next_progress.get("pct") or 0)
+    except (TypeError, ValueError):
+        next_progress["pct_peak"] = 0
     if label is not None:
         next_progress["label"] = str(label)[:240]
     if detail is not None:
-        next_progress["thinking"] = str(detail)[:500]
+        next_progress["thinking"] = str(detail)[:4000]
     elif label is not None:
-        next_progress["thinking"] = str(label)[:500]
-    if progress.get("pipeline"):
-        next_progress["pipeline"] = str(progress.get("pipeline"))[:64]
+        next_progress["thinking"] = str(label)[:4000]
+    chunk = progress.get("thinking_append")
+    if chunk:
+        log = [item for item in (next_progress.get("thinking_log") or []) if isinstance(item, dict)]
+        text = str(chunk).strip()[:2000]
+        last = str((log[-1] or {}).get("text") or "") if log else ""
+        if text and text != last:
+            if last and text.startswith(last):
+                log[-1] = {"ts": _now_iso(), "text": text}
+            elif last and last.startswith(text) and len(text) < len(last):
+                pass
+            else:
+                log.append({"ts": _now_iso(), "text": text})
+        next_progress["thinking_log"] = log[-80:]
+    if isinstance(progress.get("thinking_log"), list) and progress.get("thinking_log"):
+        merged = [item for item in (next_progress.get("thinking_log") or []) if isinstance(item, dict)]
+        for item in progress["thinking_log"]:
+            if isinstance(item, dict) and item.get("text"):
+                merged.append({"ts": item.get("ts") or _now_iso(), "text": str(item.get("text"))[:2000]})
+        next_progress["thinking_log"] = merged[-80:]
+    inferred = _infer_pipeline(progress, next_progress)
+    if inferred:
+        next_progress["pipeline"] = inferred
 
+    incoming_checklist = None
     if isinstance(progress.get("checklist"), list) and progress.get("checklist"):
-        next_progress["checklist"] = progress["checklist"][:16]
+        incoming_checklist = progress["checklist"][:16]
     else:
-        next_progress["checklist"] = _checklist_for_stage(
+        incoming_checklist = _checklist_for_stage(
             next_progress.get("stage"),
             current_label=next_progress.get("label"),
             pipeline=next_progress.get("pipeline"),
         )
+    next_progress["checklist"] = _freeze_checklist(
+        prev.get("checklist") if isinstance(prev, dict) else None,
+        incoming_checklist,
+        current_label=next_progress.get("label"),
+    )
+    next_progress["counter"] = _progress_counter(
+        next_progress.get("label"),
+        next_progress.get("stage"),
+        next_progress.get("checklist"),
+    )
 
     activity = list(next_progress.get("activity") or [])
     incoming = progress.get("activity")
@@ -1056,9 +1535,38 @@ def _merge_progress(prev: dict[str, Any] | None, progress: dict[str, Any]) -> di
                 "stage": next_progress.get("stage"),
             })
     next_progress["activity"] = activity[-40:]
-    for key in ("improved_prompt", "prompt_preview"):
-        if progress.get(key):
+    for key in (
+        "improved_prompt",
+        "prompt_preview",
+        "harness",
+        "wand",
+        "wand_version",
+        "skill",
+        "skill_version",
+        "engine",
+        "cost_usd",
+        "usage",
+        "ai_calls",
+        "model",
+    ):
+        if progress.get(key) is not None and progress.get(key) != "":
             next_progress[key] = progress.get(key)
+    if isinstance(progress.get("mcmaster_parts"), list):
+        next_progress["mcmaster_parts"] = [
+            item for item in progress["mcmaster_parts"][:40] if isinstance(item, dict)
+        ]
+        next_progress["mcmaster_count"] = len(next_progress["mcmaster_parts"])
+    elif progress.get("mcmaster_count") is not None:
+        try:
+            next_progress["mcmaster_count"] = int(progress["mcmaster_count"])
+        except (TypeError, ValueError):
+            pass
+    try:
+        from backend.services.live_preview import copy_preview_keys
+
+        copy_preview_keys(progress, next_progress)
+    except Exception:
+        pass
     return next_progress
 
 
@@ -1069,6 +1577,26 @@ def job_all_ai_traces(job: dict[str, Any] | None) -> list[dict[str, Any]]:
     settled = [t for t in (job.get("settled_ai_traces") or []) if isinstance(t, dict)]
     live = [t for t in (job.get("ai_traces") or []) if isinstance(t, dict)]
     return settled + live
+
+
+def _attach_live_meter(job: dict[str, Any]) -> None:
+    """Keep harness + running AI cost on progress so McMaster ticks cannot drop the HUD."""
+    if not isinstance(job, dict):
+        return
+    progress = job.get("progress") if isinstance(job.get("progress"), dict) else {}
+    progress = dict(progress)
+    harness = job.get("harness") or _harness_from_mode(job.get("mode"))
+    if harness:
+        progress["harness"] = harness
+    if job.get("cost_usd") is not None:
+        progress["cost_usd"] = job.get("cost_usd")
+    if job.get("usage"):
+        progress["usage"] = job.get("usage")
+    if job.get("ai_calls") is not None:
+        progress["ai_calls"] = job.get("ai_calls")
+    if job.get("model"):
+        progress["model"] = job.get("model")
+    job["progress"] = progress
 
 
 def record_ai_traces(
@@ -1098,6 +1626,7 @@ def record_ai_traces(
             if usage_meta.get(key) is not None:
                 job[key] = usage_meta[key]
         job["updated_at"] = _now_iso()
+        _attach_live_meter(job)
 
     return _update_job(project_path, trace_id=trace_id, mutator=mutate)
 
@@ -1123,6 +1652,7 @@ def update_progress(
         if trace_id:
             job["trace_id"] = str(trace_id)
             job["id"] = str(trace_id)
+        _attach_live_meter(job)
 
     return _update_job(project_path, trace_id=trace_id, mutator=mutate)
 
@@ -1135,8 +1665,9 @@ def request_cancel(
 ) -> dict[str, Any]:
     """Cancel one job (``trace_id``) or every running job when omitted.
 
-    BackgroundTasks run in-process, so we cannot kill the uvicorn worker itself.
-    AI calls poll the cancel flag; skill tools honor cancel_check.
+    Cancel is persisted to disk so a detached generation process (not sharing
+    uvicorn memory) still sees it. Detached worker PIDs are SIGTERM'd; we never
+    signal the HTTP process itself.
     """
     project_id = project_path.name
     tid = str(trace_id).strip() if trace_id else ""
@@ -1145,8 +1676,10 @@ def request_cancel(
     if not tid:
         # Cancel all — project-wide flag + kill every skill subprocess.
         _CANCELED_PROJECTS.add(project_id)
+        write_cancel_flag(project_path, None)
         for running_tid in list(_RUNNING_TRACES.get(project_id) or set()):
             _CANCELED_TRACES.add(str(running_tid))
+            write_cancel_flag(project_path, str(running_tid))
         _untrack_running(project_id)
         try:
             from backend.services import skill_runner
@@ -1156,11 +1689,12 @@ def request_cancel(
             logger.warning("Failed to kill skill tools on cancel for %s: %s", project_id, exc)
     else:
         _CANCELED_TRACES.add(tid)
+        write_cancel_flag(project_path, tid)
         _untrack_running(project_id, tid)
         # Do not set project-wide cancel — sibling jobs must keep running.
-        # Skill kill is skipped so other jobs' scripts/step are not interrupted;
-        # the canceled job's cancel_check stops its own tools within ~0.5s.
+        # Detached worker SIGTERM stops that job's tools; siblings keep their PIDs.
 
+    worker_pids: list[int] = []
     with _file_lock(project_path):
         path = _path(project_path)
         raw = None
@@ -1177,6 +1711,14 @@ def request_cancel(
             job_tid = str(job.get("trace_id") or job.get("id") or "")
             if tid and job_tid != tid:
                 continue
+            try:
+                wpid = int(job.get("worker_pid") or 0)
+            except (TypeError, ValueError):
+                wpid = 0
+            if wpid > 0 and wpid != os.getpid():
+                worker_pids.append(wpid)
+            if job_tid:
+                write_cancel_flag(project_path, job_tid)
             job["status"] = "canceled"
             job["error"] = reason
             job["finished_at"] = _now_iso()
@@ -1184,6 +1726,8 @@ def request_cancel(
             job["killed_subprocesses"] = killed if not tid else 0
             canceled_ids.append(job_tid)
         out = _write_unlocked(project_path, _compose_document(jobs)) if project_path.is_dir() else _compose_document(jobs)
+    for wpid in worker_pids:
+        terminate_worker_pid(wpid, reason=reason)
     _emit(project_path, out)
     summary = public_summary(project_path) if project_path.is_dir() else out
     summary = dict(summary)
@@ -1202,7 +1746,19 @@ def cancel_project(project_path: Path) -> dict[str, Any]:
 def is_canceled(project_path: Path, trace_id: str | None = None) -> bool:
     if project_path.name in _CANCELED_PROJECTS:
         return True
+    try:
+        from backend.services.project_lifecycle import is_project_deleted
+
+        if is_project_deleted(project_path.name):
+            return True
+    except Exception:
+        pass
     if trace_id and str(trace_id) in _CANCELED_TRACES:
+        return True
+    # Detached workers do not share uvicorn's in-memory sets — honor disk flags.
+    if _cancel_flag_set(project_path, str(trace_id) if trace_id else None):
+        return True
+    if trace_id and _job_status_on_disk(project_path, str(trace_id)) == "canceled":
         return True
     return False
 
@@ -1210,9 +1766,110 @@ def is_canceled(project_path: Path, trace_id: str | None = None) -> bool:
 def _public_job(job: dict[str, Any], *, project_id: str) -> dict[str, Any]:
     out = {k: job.get(k) for k in _JOB_PUBLIC_KEYS}
     if job.get("status") == "complete" and job.get("filename"):
-        out.setdefault("url", f"/api/projects/{project_id}/files/{job['filename']}")
+        out.setdefault("url", _project_file_url(project_id, job["filename"]))
     # Drop Nones for cleaner payloads.
     return {k: v for k, v in out.items() if v is not None}
+
+
+_LIST_SUMMARY_KEYS = (
+    "status",
+    "kind",
+    "trace_id",
+    "progress",
+    "filename",
+    "label",
+    "by_user_id",
+    "by_user_name",
+    "by_avatar_url",
+    "mode",
+    "harness",
+    "model",
+    "provider",
+    "usage",
+    "cost_usd",
+    "ai_calls",
+    "started_at",
+)
+
+_LIST_RUNNING_JOB_KEYS = (
+    "id",
+    "status",
+    "kind",
+    "trace_id",
+    "progress",
+    "label",
+    "by_user_name",
+    "by_avatar_url",
+    "mode",
+    "harness",
+    "model",
+    "provider",
+    "usage",
+    "cost_usd",
+    "ai_calls",
+    "started_at",
+)
+
+
+def list_public_summary(project_path: Path) -> dict[str, Any]:
+    """Sidebar list: lock-free generation peek, no prompts/jobs/stale-writes.
+
+    ``public_summary`` takes an exclusive flock and can rewrite generation.json.
+    Listing ~100+ projects while a CAD job is writing that file made Explorer
+    sit on Loading. Cards only need status/progress/who.
+    """
+    path = _path(project_path)
+    if not path.is_file():
+        return {"status": "idle", "running_count": 0}
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw) if raw.strip() else None
+    except (json.JSONDecodeError, OSError, UnicodeError):
+        return {"status": "idle", "running_count": 0}
+    if not isinstance(data, dict):
+        return {"status": "idle", "running_count": 0}
+    jobs = _jobs_from_data(data)
+    running = [j for j in jobs if j.get("status") == "running"]
+    primary = _primary_job(jobs) or data
+    out: dict[str, Any] = {}
+    for key in _LIST_SUMMARY_KEYS:
+        value = primary.get(key) if primary.get(key) is not None else data.get(key)
+        if value is not None:
+            out[key] = value
+    if data.get("progress") and not out.get("progress"):
+        out["progress"] = data.get("progress")
+    running_jobs = []
+    for job in running:
+        slim = {k: job.get(k) for k in _LIST_RUNNING_JOB_KEYS if job.get(k) is not None}
+        if slim:
+            running_jobs.append(slim)
+    out["running_count"] = len(running)
+    if running_jobs:
+        out["running_jobs"] = running_jobs
+        out["status"] = "running"
+        lead = running[0]
+        for key in (
+            "kind",
+            "trace_id",
+            "label",
+            "mode",
+            "harness",
+            "progress",
+            "by_user_name",
+            "by_user_id",
+            "by_avatar_url",
+            "usage",
+            "cost_usd",
+            "ai_calls",
+            "model",
+            "provider",
+            "started_at",
+        ):
+            if lead.get(key) is not None:
+                out[key] = lead.get(key)
+    else:
+        out.setdefault("status", data.get("status") or "idle")
+    return out
 
 
 def public_summary(project_path: Path) -> dict[str, Any]:
@@ -1224,25 +1881,51 @@ def public_summary(project_path: Path) -> dict[str, Any]:
     primary = _primary_job(_jobs_from_data(data)) or {}
     out = {k: data.get(k) for k in (
         "status", "kind", "trace_id", "started_at", "updated_at", "finished_at",
-        "prompt", "label", "message", "filename", "url", "error",
+        "prompt", "label", "message", "filename", "editor_name", "url", "error",
         "timeline_index", "prompt_id", "by_user_id", "by_user_name", "by_avatar_url", "mode",
-        "benign_interrupt", "model", "provider", "speed",
-        "usage", "cost_usd", "ai_calls",
+        "harness", "detached", "benign_interrupt", "model", "provider", "speed",
+        "usage", "cost_usd", "ai_calls", "blocker", "client",
     )}
     if data.get("progress"):
         out["progress"] = data.get("progress")
     if data.get("status") == "complete" and data.get("filename"):
         pid = project_path.name
-        out.setdefault("url", f"/api/projects/{pid}/files/{data['filename']}")
+        out.setdefault("url", _project_file_url(pid, data["filename"]))
     out["jobs"] = jobs
     out["running_count"] = len(running_jobs)
     out["running_jobs"] = running_jobs
-    # Helpful when primary is finished but siblings still run.
-    if running_jobs and out.get("status") != "running":
+    lead = running_jobs[0] if running_jobs else None
+    if lead:
+        out["status"] = "running"
+        for key in (
+            "kind",
+            "trace_id",
+            "prompt",
+            "label",
+            "mode",
+            "harness",
+            "detached",
+            "progress",
+            "by_user_name",
+            "by_user_id",
+            "by_avatar_url",
+            "client",
+            "usage",
+            "cost_usd",
+            "ai_calls",
+            "model",
+            "provider",
+            "started_at",
+        ):
+            if lead.get(key) is None:
+                continue
+            if out.get(key) is None or key in ("progress", "harness", "cost_usd", "usage", "detached"):
+                out[key] = lead.get(key)
+    elif running_jobs and out.get("status") != "running":
         out["status"] = "running"
         if primary.get("status") != "running" and running_jobs:
             lead = running_jobs[0]
-            for key in ("kind", "trace_id", "prompt", "label", "mode", "progress", "by_user_name", "by_user_id", "by_avatar_url"):
+            for key in ("kind", "trace_id", "prompt", "label", "mode", "harness", "progress", "by_user_name", "by_user_id", "by_avatar_url", "client"):
                 if lead.get(key) is not None:
                     out[key] = lead.get(key)
     return out

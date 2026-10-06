@@ -1,0 +1,59 @@
+{
+  "receipt_id": "RCPT-20260918-001200-workshop-mvp",
+  "log_id": "pending-cursor-turn",
+  "at": "2026-09-18T05:12:00.000Z",
+  "author": "cursor-engineer",
+  "scope": "sandbox-only",
+  "pr": {
+    "number": 10,
+    "url": "https://github.com/wprojects/Render-Studio/pull/10",
+    "ready": true,
+    "title": "Workshop / VR / Editor / God Mode / Projects (+ desktop walk)"
+  },
+  "summary": "Collab IDE top, look-down desks, wiring, feature board, tech wall, warehouse public room, character teach/self-learn. Sandbox only until promote map.",
+  "files_touched": [
+    "frontend/sandbox/index.html",
+    "frontend/sandbox/boot.js",
+    "frontend/sandbox/collaborate-id.js",
+    "frontend/sandbox/lookdown-map.js",
+    "frontend/sandbox/sandbox-wiring.js",
+    "frontend/sandbox/sandbox-feature-board.js",
+    "frontend/sandbox/sandbox-tech-wall.js",
+    "frontend/sandbox/update-receipt.js",
+    "frontend/xr/xr-hot-path.js",
+    "backend/services/xr_public_room_service.py"
+  ],
+  "feature_board": {
+    "viewport": true,
+    "sandbox-writes": false,
+    "dimos": true
+  },
+  "golden_before": "Sam: record golden before merge if not already saved",
+  "tests": [
+    {
+      "cmd": "node --test frontend/sandbox/*.test.js",
+      "pass": 113,
+      "fail": 0
+    }
+  ],
+  "locks_ok": {
+    "sam-y-engage-v2": true,
+    "one_webgl_viewport": true,
+    "dimos_8443_untouched": true,
+    "mcp_jail_sandbox": true
+  },
+  "promote_map": [
+    {
+      "sandbox": "studio-viewport-replica.js",
+      "production": "workshop host only — not app.js boot"
+    },
+    {
+      "sandbox": "boot.js",
+      "production": "never copy wholesale"
+    }
+  ],
+  "merge_order_note": "Merge #11 PR guard first, then #9 Docs, then this PR #10",
+  "bot_verdict": "pending",
+  "bot_checks": [],
+  "token": "rcpt1"
+}

@@ -1,0 +1,466 @@
+/* Modern remember-choice controls + boot logo gear percent */
+
+/* ── Remember this setting (all popup dialogs) ───────────────────────────── */
+
+.welcome-dismiss,
+.new-project-workspace-remember,
+.app-remember-choice,
+label.welcome-dismiss,
+label.new-project-workspace-remember {
+  --remember-accent: #58a6ff;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px 0 0;
+  padding: 11px 14px 11px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(140, 190, 255, 0.22);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.08), transparent 46%),
+    linear-gradient(180deg, rgba(28, 36, 52, 0.92), rgba(12, 16, 26, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 10px 24px rgba(0, 0, 0, 0.28);
+  color: #d7e3f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease,
+    background 0.18s ease;
+}
+
+.welcome-modal .welcome-dismiss {
+  margin: 4px 28px 22px;
+}
+
+.welcome-dismiss:hover,
+.new-project-workspace-remember:hover,
+.app-remember-choice:hover {
+  border-color: rgba(150, 205, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 14px 28px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(88, 166, 255, 0.12);
+}
+
+.welcome-dismiss input[type="checkbox"],
+.new-project-workspace-remember input[type="checkbox"],
+.app-remember-choice input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.welcome-dismiss > span,
+.new-project-workspace-remember > span,
+.app-remember-choice > span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.welcome-dismiss > span::before,
+.new-project-workspace-remember > span::before,
+.app-remember-choice > span::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(160, 200, 255, 0.35);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14), transparent 55%),
+    linear-gradient(180deg, #1a2436, #0d1420);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.welcome-dismiss:has(input:checked),
+.new-project-workspace-remember:has(input:checked),
+.app-remember-choice:has(input:checked) {
+  border-color: rgba(126, 200, 255, 0.48);
+  background:
+    linear-gradient(165deg, rgba(120, 190, 255, 0.14), transparent 48%),
+    linear-gradient(180deg, rgba(34, 56, 84, 0.95), rgba(14, 24, 40, 0.98));
+}
+
+.welcome-dismiss:has(input:checked) > span::before,
+.new-project-workspace-remember:has(input:checked) > span::before,
+.app-remember-choice:has(input:checked) > span::before {
+  border-color: rgba(180, 220, 255, 0.7);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.28), transparent 50%),
+    linear-gradient(180deg, #5aa8f0, #2f6fbe);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 10px rgba(88, 166, 255, 0.28);
+}
+
+.welcome-dismiss:has(input:checked) > span::after,
+.new-project-workspace-remember:has(input:checked) > span::after,
+.app-remember-choice:has(input:checked) > span::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 5px;
+  height: 9px;
+  margin-top: -6px;
+  border: solid #071018;
+  border-width: 0 2px 2px 0;
+  transform: rotate(40deg);
+}
+
+/* ── Boot logo: gear with percent inside, top-right by Render3D ───────────── */
+
+.studio-boot-logo {
+  position: fixed;
+  right: 22px;
+  top: 20px;
+  z-index: 5100;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e6edf3;
+}
+
+.studio-boot-logo > .studio-boot-brand-mark,
+.studio-boot-logo > img.studio-boot-brand-mark {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 50%;
+  filter:
+    drop-shadow(0 0 10px rgba(88, 166, 255, 0.65))
+    drop-shadow(0 0 8px rgba(249, 115, 22, 0.45));
+  animation: studio-logo-charge 1.6s ease-in-out infinite;
+}
+
+/* Brushed chrome wordmark — steel body, traveling specular, no white bloom. */
+.brand h1.brand-title-metal,
+.studio-boot-logo-word,
+.studio-boot-chrome-word {
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: transparent;
+  background-image:
+    linear-gradient(
+      105deg,
+      transparent 18%,
+      rgba(232, 238, 244, 0.72) 40%,
+      rgba(120, 136, 152, 0.16) 48%,
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      #6e7781 0%,
+      #cfd6de 16%,
+      #4a525c 34%,
+      #aeb6c0 50%,
+      #2a3038 66%,
+      #bcc4cc 82%,
+      #5c656f 100%
+    );
+  background-size: 220% 100%, 100% 100%;
+  background-position: 120% 50%, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 0 rgba(0, 0, 0, 0.82))
+    drop-shadow(0 -0.6px 0 rgba(198, 206, 214, 0.28));
+  animation: text-chrome-sheen 5.2s ease-in-out infinite;
+}
+
+.studio-boot-title {
+  color: #c5d0dc;
+}
+
+/* Chrome letters + clipped energy: light filament/circuit, never a dark mid-glyph band. */
+.studio-boot-title-metal {
+  font-size: inherit;
+  font-weight: 850;
+  letter-spacing: inherit;
+  color: transparent;
+  background-image:
+    linear-gradient(
+      102deg,
+      transparent 28%,
+      rgba(186, 230, 253, 0.12) 42%,
+      rgba(248, 250, 252, 0.78) 49%,
+      rgba(56, 189, 248, 0.32) 52%,
+      transparent 64%
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 13px,
+      rgba(148, 163, 184, 0.16) 13px 14px
+    ),
+    linear-gradient(
+      180deg,
+      #8b949e 0%,
+      #e4eaf0 14%,
+      #9aa3ad 30%,
+      #cfd6de 46%,
+      #88929c 60%,
+      #d5dde4 78%,
+      #6e7781 100%
+    );
+  background-size: 240% 100%, 18px 100%, 100% 100%;
+  background-position: 125% 0, 0 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 1px 0 rgba(0, 0, 0, 0.82))
+    drop-shadow(0 -0.6px 0 rgba(198, 206, 214, 0.28));
+  animation: studio-boot-title-energy 4.8s ease-in-out infinite;
+}
+
+@keyframes studio-boot-title-energy {
+  0%, 100% { background-position: 130% 0, 0 0, 0 0; }
+  50% { background-position: -40% 0, 9px 0, 0 0; }
+}
+
+@keyframes text-chrome-sheen {
+  0%, 100% { background-position: 130% 50%, 0 0; }
+  50% { background-position: -30% 50%, 0 0; }
+}
+
+/* Real spinning metal gear; percent stays upright in the hub */
+.studio-boot-logo-gear {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  filter:
+    drop-shadow(0 0 12px rgba(34, 211, 238, 0.55))
+    drop-shadow(0 0 18px rgba(56, 189, 248, 0.28));
+}
+
+.studio-boot-logo-gear-spin {
+  position: absolute;
+  inset: 0;
+  width: 72px;
+  height: 72px;
+  animation: studio-gear-spin 1.6s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+.studio-boot-logo-gear-img {
+  position: absolute;
+  inset: 0;
+  width: 72px !important;
+  height: 72px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  /* Knock out the PNG's solid black square on the dark boot screen */
+  mix-blend-mode: screen;
+  filter:
+    drop-shadow(0 0 8px rgba(34, 211, 238, 0.35))
+    contrast(1.08)
+    brightness(1.05);
+  animation: none !important;
+}
+
+.studio-boot-logo-gear-electric {
+  position: absolute;
+  inset: 0;
+  width: 72px;
+  height: 72px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.studio-boot-elec-path {
+  stroke-dasharray: 10 28;
+  animation: studio-elec-flow 0.85s linear infinite;
+  opacity: 0.92;
+}
+
+.studio-boot-elec-path--b { animation-delay: -0.14s; }
+.studio-boot-elec-path--c { animation-delay: -0.28s; }
+.studio-boot-elec-path--d { animation-delay: -0.42s; }
+.studio-boot-elec-path--e { animation-delay: -0.56s; }
+.studio-boot-elec-path--f { animation-delay: -0.7s; }
+
+.studio-boot-elec-node {
+  animation: studio-elec-node 0.7s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.studio-boot-elec-node:nth-child(odd) { animation-delay: -0.25s; }
+.studio-boot-elec-node:nth-child(3n) { animation-delay: -0.45s; }
+
+@keyframes studio-elec-flow {
+  to { stroke-dashoffset: -38; }
+}
+
+@keyframes studio-elec-node {
+  0%, 100% {
+    opacity: 0.35;
+    filter: drop-shadow(0 0 1px rgba(103, 232, 249, 0.4));
+  }
+  40% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(165, 243, 252, 0.95));
+  }
+  70% {
+    opacity: 0.55;
+  }
+}
+
+/* Hide legacy SVG gear — replaced by metal PNG (works even if index.html reverts) */
+.studio-boot-logo-gear-svg {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 72px !important;
+  height: 72px !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* CSS fallback when markup still has the old SVG (no .studio-boot-logo-gear-img) */
+.studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  border-radius: 0;
+  background: url("/assets/futuristic-gear-metal.png?v=20260715-metal-gear") center / contain no-repeat;
+  mix-blend-mode: screen;
+  transform-origin: 50% 50%;
+  animation: studio-gear-spin 1.6s linear infinite;
+  filter:
+    contrast(1.08)
+    brightness(1.05)
+    drop-shadow(0 0 8px rgba(34, 211, 238, 0.4));
+}
+
+/* Electricity arcs/nodes riding with the spin */
+.studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::after {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: 12%;
+  z-index: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  transform-origin: 50% 50%;
+  background:
+    radial-gradient(circle at 28% 30%, #ecfeff 0 1.6px, transparent 2.4px),
+    radial-gradient(circle at 70% 28%, #67e8f9 0 1.3px, transparent 2.1px),
+    radial-gradient(circle at 72% 68%, #a5f3fc 0 1.5px, transparent 2.3px),
+    radial-gradient(circle at 30% 70%, #67e8f9 0 1.3px, transparent 2.1px),
+    radial-gradient(circle at 50% 48%, rgba(34, 211, 238, 0.4) 0 10%, transparent 40%),
+    conic-gradient(
+      from 20deg,
+      transparent 0 8%,
+      rgba(103, 232, 249, 0.75) 10%,
+      transparent 16%,
+      transparent 38%,
+      rgba(165, 243, 252, 0.65) 42%,
+      transparent 50%,
+      transparent 68%,
+      rgba(103, 232, 249, 0.7) 72%,
+      transparent 80%
+    );
+  animation:
+    studio-gear-spin 1.6s linear infinite,
+    studio-elec-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes studio-elec-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    filter: drop-shadow(0 0 2px rgba(103, 232, 249, 0.35));
+  }
+  45% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(165, 243, 252, 0.95));
+  }
+  70% {
+    opacity: 0.55;
+  }
+}
+
+/* When enriched HTML is present, skip the CSS fallback layers */
+.studio-boot-logo-gear:has(.studio-boot-logo-gear-img)::before,
+.studio-boot-logo-gear:has(.studio-boot-logo-gear-img)::after {
+  content: none !important;
+  display: none !important;
+}
+
+.studio-boot-logo-percent {
+  display: none !important;
+}
+
+/* Hide legacy separate gear/spinner next to logo if present */
+.studio-boot-logo > .studio-boot-gear-loader,
+.studio-boot-logo > .studio-boot-spinner {
+  display: none !important;
+}
+
+@keyframes studio-gear-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes studio-logo-charge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-boot-logo-gear-spin,
+  .studio-boot-logo > .studio-boot-brand-mark,
+  .studio-boot-logo > img:first-of-type,
+  .studio-boot-logo-word,
+  .brand h1.brand-title-metal,
+  .studio-boot-title-metal,
+  .studio-boot-elec-path,
+  .studio-boot-elec-node,
+  .studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::before,
+  .studio-boot-logo-gear:not(:has(.studio-boot-logo-gear-img))::after {
+    animation: none !important;
+  }
+
+  .welcome-dismiss:hover,
+  .new-project-workspace-remember:hover,
+  .app-remember-choice:hover {
+    transform: none;
+  }
+}

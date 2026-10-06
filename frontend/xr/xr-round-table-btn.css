@@ -1,0 +1,133 @@
+/* Compose Sandbox/Repair: VR instance only. Desktop PC hides them. Token agentbar1. */
+#prompt-pane-compose .prompt-skills-row,
+#prompt-pane-compose .prompt-skills-trail {
+  overflow: visible !important;
+  flex-wrap: wrap;
+}
+
+/* Always hide Round Table in AI CAD Prompt compose */
+#prompt-pane-compose #btn-round-table,
+#prompt-pane-compose #btn-round-table-gen,
+#prompt-pane-compose [data-round-table-toggle] {
+  display: none !important;
+}
+
+/* Desktop PC: hide Sandbox + Repair in Studio prompt — use /sandbox/ page instead */
+body:not(.xr-presenting) #prompt-pane-compose #btn-sandbox,
+body:not(.xr-presenting) #prompt-pane-compose #btn-sandbox-gen,
+body:not(.xr-presenting) #prompt-pane-compose [data-sandbox-toggle],
+body:not(.xr-presenting) #prompt-pane-compose #btn-repair-table,
+body:not(.xr-presenting) #prompt-pane-compose #btn-repair-table-gen,
+body:not(.xr-presenting) #prompt-pane-compose [data-repair-table-toggle],
+body:not(.xr-presenting) .sb-repair-panel {
+  display: none !important;
+}
+
+/* VR presenting: show Sandbox + Repair in compose */
+body.xr-presenting #prompt-pane-compose #btn-sandbox,
+body.xr-presenting #prompt-pane-compose #btn-sandbox-gen,
+body.xr-presenting #prompt-pane-compose [data-sandbox-toggle],
+body.xr-presenting #prompt-pane-compose #btn-repair-table,
+body.xr-presenting #prompt-pane-compose #btn-repair-table-gen,
+body.xr-presenting #prompt-pane-compose [data-repair-table-toggle] {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  min-width: 100px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font: 800 13px/1.1 system-ui, sans-serif !important;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  flex: 0 0 auto !important;
+  white-space: nowrap;
+}
+body.xr-presenting #prompt-pane-compose #btn-sandbox,
+body.xr-presenting #prompt-pane-compose #btn-sandbox-gen,
+body.xr-presenting #prompt-pane-compose [data-sandbox-toggle] {
+  border: 2px solid #0e7490 !important;
+  background: #67e8f9 !important;
+  color: #083344 !important;
+}
+body.xr-presenting #prompt-pane-compose #btn-sandbox[aria-pressed="true"],
+body.xr-presenting #prompt-pane-compose #btn-sandbox-gen[aria-pressed="true"] {
+  background: #22d3ee !important;
+  box-shadow: 0 0 0 2px #164e63 inset;
+}
+body.xr-presenting #prompt-pane-compose #btn-repair-table,
+body.xr-presenting #prompt-pane-compose #btn-repair-table-gen {
+  border: 2px solid #9a3412 !important;
+  background: #fdba74 !important;
+  color: #431407 !important;
+  margin-left: 6px;
+}
+body.xr-presenting #prompt-pane-compose #btn-repair-table[aria-pressed="true"],
+body.xr-presenting #prompt-pane-compose #btn-repair-table-gen[aria-pressed="true"] {
+  background: #fb923c !important;
+}
+
+/* Round Table outside compose (Render Agent / mobile) */
+#btn-round-table-agent,
+#btn-round-table-mobile {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 2px solid #052e16 !important;
+  border-radius: 10px;
+  background: #facc15 !important;
+  color: #052e16 !important;
+  font: 800 13px/1.1 system-ui, sans-serif !important;
+  cursor: pointer;
+}
+#btn-round-table-agent[aria-pressed="true"],
+#btn-round-table-mobile[aria-pressed="true"] {
+  background: #22c55e !important;
+}
+
+.sb-repair-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 12000;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  border: 1px solid #7c2d12;
+  border-radius: 12px;
+  background: #1c1410;
+  color: #ffedd5;
+  box-shadow: 0 18px 50px #0008;
+  padding: 0 0 12px;
+}
+body.xr-presenting .sb-repair-panel[hidden] { display: none !important; }
+.sb-repair-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 6px;
+}
+.sb-repair-head h3 { margin: 2px 0 0; font-size: 16px; }
+.sb-repair-copy { margin: 0; padding: 0 14px 8px; font-size: 12px; color: #fdba74; line-height: 1.4; }
+.sb-repair-label { display: block; padding: 0 14px 10px; font-size: 12px; font-weight: 650; }
+.sb-repair-label input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #9a3412;
+  background: #0c0a09;
+  color: #ffedd5;
+  font: inherit;
+}
+.sb-repair-grid { display: grid; gap: 10px; padding: 0 14px; }
+.sb-repair-grid h4 { margin: 0 0 6px; font-size: 12px; color: #fed7aa; letter-spacing: .06em; text-transform: uppercase; }
+.sb-repair-grid ul { margin: 0; padding-left: 16px; font-size: 11px; line-height: 1.45; color: #fde68a; }
+.sb-repair-grid code { color: #bbf7d0; }

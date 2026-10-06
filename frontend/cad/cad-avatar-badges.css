@@ -1,0 +1,103 @@
+/* CAD logos overlay the profile photo — decorative only. Clicks always hit #btn-auth. */
+
+.auth-widget {
+  isolation: isolate;
+}
+
+.toolbar-account-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-avatar-cluster {
+  position: relative;
+  z-index: 6;
+  isolation: isolate;
+  flex-shrink: 0;
+}
+
+#btn-auth {
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+#onshape-badge,
+#fusion-badge,
+#solidworks-badge,
+#cad-avatar-multi,
+#collab-status,
+.cad-avatar-overlay,
+.cad-avatar-overlay img,
+.onshape-badge img,
+.fusion-badge img,
+.solidworks-badge img {
+  pointer-events: none !important;
+}
+
+#onshape-badge,
+#fusion-badge,
+#solidworks-badge,
+.cad-avatar-overlay {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  border-radius: 999px;
+  border: 2px solid #161b22;
+  display: grid !important;
+  place-items: center;
+  background: #0d1117;
+  overflow: hidden;
+}
+
+#onshape-badge.hidden,
+#fusion-badge.hidden,
+#solidworks-badge.hidden {
+  display: none !important;
+}
+
+#onshape-badge img,
+#fusion-badge img,
+#solidworks-badge img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+#fusion-badge {
+  box-shadow: 0 0 12px rgba(255, 111, 0, 0.45);
+}
+
+#fusion-badge img {
+  width: 18px;
+  height: 18px;
+}
+
+#solidworks-badge img {
+  border-radius: 3px;
+}
+
+.cad-avatar-overlay--offset {
+  right: 12px;
+}
+
+#cad-toolbar-chips,
+.cad-app-chips--toolbar {
+  display: none !important;
+}
+
+#cad-avatar-multi {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  left: auto;
+  z-index: 2;
+  cursor: default;
+}

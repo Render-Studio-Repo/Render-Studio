@@ -1,20 +1,19 @@
 # SDF design ledger
 
-Create or update this ledger before writing SDF XML. The ledger can live in the response, a project note, or comments in the generator source. The goal is to externalize spatial and simulator assumptions before they become hard-to-audit XML.
+Create or update this ledger before writing SDF XML. The ledger's canonical home is a comment block at the top of the `.sdf` file itself, optionally expanded in an adjacent note for large worlds. The goal is to externalize spatial and simulator assumptions before they become hard-to-audit XML.
 
 ## Document
 
 | Field | Value |
 |---|---|
-| Output path | |
-| Source file | |
+| SDF path | |
 | SDF version | `1.12` unless constrained |
 | Document kind | model / world / model-in-world |
 | Target consumer | Gazebo / other simulator / visualization-only / model package |
 | Units | meters, kilograms, seconds, radians unless documented otherwise |
 | Coordinate convention | REP-103-like / simulator-specific / documented exception |
 | World support needed | yes/no; reason |
-| Optional external checks | `gz sdf --check`, simulator load, CAD Viewer, other |
+| External checks | `gz sdf --check` mode (`auto`/`required`/`never`), simulator load, CAD Viewer, other |
 
 ## Model or world scope
 
@@ -80,7 +79,7 @@ Do not invent plugin filenames, topics, frame names, namespaces, controller para
 
 | URI kind | Allowed? | Resolution expectation | Notes |
 |---|---|---|---|
-| Relative local path | | Relative to generated `.sdf` location | |
+| Relative local path | | Relative to the `.sdf` file location | |
 | `file://` | | Absolute local file | |
 | `model://` | | Simulator model path | |
 | `package://` | | Simulator/ROS package environment | |
@@ -104,8 +103,7 @@ If a value cannot be derived or safely assumed, generate a minimal placeholder o
 ## Compact response template
 
 ```text
-SDF source: path/to/source.py
-Generated target: path/to/output.sdf
+SDF file: path/to/model.sdf
 Target consumer: Gazebo Harmonic, SDF 1.12
 Bundled validation: passed with 2 warnings
 External checks: gz sdf --check skipped, gz not installed

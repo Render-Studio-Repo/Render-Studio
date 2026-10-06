@@ -1,8 +1,8 @@
-"""Supabase Auth for passwords (GoTrue bcrypt) — source of truth when configured.
+"""Supabase Auth for passwords (GoTrue bcrypt) — used when configured.
 
-Local SQLite keeps app profile / teams / projects. Passwords are verified via
-Supabase Auth; we do not store plaintext passwords, and after a successful
-Supabase sync we clear the local password_hash so hashes aren't duplicated.
+Local SQLite keeps app profile / teams / projects and a cold backup of hashes.
+Do not clear sqlite password_hash in this pass — Sam deletes those after a
+proven live login.
 """
 
 from __future__ import annotations
@@ -17,7 +17,67 @@ logger = logging.getLogger("render3d.supabase_auth")
 
 
 def enabled() -> bool:
-    return supabase_client.configured()
+    return supabase_client.configured() or supabase_client.password_grant_configured()
+
+
+def _user_to_dict(user: Any) -> dict[str, Any]:
+    if user is None:
+        return {}
+    if isinstance(user, dict):
+        meta = user.get("user_metadata") or user.get("app_metadata") or {}
+        return {
+            "id": str(user.get("id") or ""),
+            "email": str(user.get("email") or ""),
+            "user_metadata": dict(meta) if isinstance(meta, dict) else {},
+        }
+    meta = getattr(user, "user_metadata", None) or getattr(user, "app_metadata", None) or {}
+    return {
+        "id": str(getattr(user, "id", "") or ""),
+        "email": str(getattr(user, "email", "") or ""),
+        "user_metadata": dict(meta) if isinstance(meta, dict) else {},
+    }
+
+
+def _classify_auth_error(exc: BaseException) -> str:
+    msg = str(exc or "").lower()
+    status = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    try:
+        status = int(status) if status is not None else 0
+    except (TypeError, ValueError):
+        status = 0
+    if status in {400, 401} or "invalid login" in msg or "invalid_grant" in msg or "invalid credentials" in msg:
+        return "invalid"
+    if "email not confirmed" in msg:
+        return "unconfirmed"
+    return "unreachable"
+
+
+def sign_in(email: str, password: str) -> dict[str, Any]:
+    """GoTrue password grant. Uses publishable/anon first, then service role."""
+    if not enabled():
+        return {"ok": False, "error": "not_configured", "user": None}
+    payload = {"email": (email or "").strip().lower(), "password": password}
+    last_error = "not_configured"
+    tried = 0
+    for client in supabase_client.iter_auth_clients():
+        if client is None:
+            continue
+        tried += 1
+        try:
+            res = client.auth.sign_in_with_password(payload)
+            user = getattr(res, "user", None) or (res.get("user") if isinstance(res, dict) else None)
+            session = getattr(res, "session", None) or (res.get("session") if isinstance(res, dict) else None)
+            if session or user:
+                return {"ok": True, "error": "", "user": _user_to_dict(user)}
+            last_error = "invalid"
+        except Exception as exc:
+            kind = _classify_auth_error(exc)
+            last_error = kind
+            if kind in {"invalid", "unconfirmed"}:
+                return {"ok": False, "error": kind, "user": None}
+    if tried == 0:
+        last_error = "not_configured"
+    return {"ok": False, "error": last_error, "user": None}
 
 
 def _admin():
@@ -113,7 +173,7 @@ def create_auth_user(
         user = getattr(res, "user", None) or (res.get("user") if isinstance(res, dict) else None)
         sid = str(getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else "") or "")
         if sid:
-            set_local_supabase_user_id(app_user_id, sid, clear_local_hash=True)
+            set_local_supabase_user_id(app_user_id, sid, clear_local_hash=False)
             upsert_profile(
                 user_id=app_user_id,
                 email=email,
@@ -151,7 +211,7 @@ def import_auth_user_with_hash(
         user = getattr(res, "user", None) or (res.get("user") if isinstance(res, dict) else None)
         sid = str(getattr(user, "id", None) or (user.get("id") if isinstance(user, dict) else "") or "")
         if sid:
-            set_local_supabase_user_id(app_user_id, sid, clear_local_hash=True)
+            set_local_supabase_user_id(app_user_id, sid, clear_local_hash=False)
             upsert_profile(
                 user_id=app_user_id,
                 email=email,
@@ -166,17 +226,7 @@ def import_auth_user_with_hash(
 
 def verify_password(email: str, password: str) -> bool:
     """Verify credentials against Supabase Auth. False if unavailable or wrong."""
-    if not enabled():
-        return False
-    try:
-        # Prefer admin-generated session via password grant through public auth API.
-        res = _admin().auth.sign_in_with_password(
-            {"email": email.strip().lower(), "password": password}
-        )
-        session = getattr(res, "session", None) or (res.get("session") if isinstance(res, dict) else None)
-        return bool(session)
-    except Exception:
-        return False
+    return bool(sign_in(email, password).get("ok"))
 
 
 def migrate_local_user_password(
@@ -197,7 +247,7 @@ def migrate_local_user_password(
                 existing,
                 {"password": password},
             )
-            set_local_supabase_user_id(app_user_id, existing, clear_local_hash=True)
+            set_local_supabase_user_id(app_user_id, existing, clear_local_hash=False)
             return True
         except Exception:
             logger.warning("Supabase update password failed for %s", email, exc_info=True)

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenArm Cameras — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260923-camera-wall1" />
+  <link rel="stylesheet" href="/site/robot-camera-wall.css?v=20260923-camera-wall1" />
+</head>
+<body class="camera-wall-page">
+  <main class="camera-wall-shell">
+    <header class="camera-wall-head">
+      <div><p class="info-eyebrow">Robotics · live view</p><h1>OpenArm cameras</h1><p>Devices on this private LAN can view proxied frames without signing in. The Raspberry Pi address is never sent to the browser.</p></div>
+      <div class="camera-wall-actions"><a class="btn secondary" href="/">Back to Studio</a><button class="btn primary" type="button" data-camera-refresh>Reconnect</button></div>
+    </header>
+    <p class="camera-wall-summary" data-camera-summary>Connecting to the camera gateway…</p>
+    <section class="camera-signin" data-camera-signin hidden>
+      <div><h2>Sign in on this Mac address</h2><p>Your Render login on another hostname cannot be read by <code>192.168.1.83</code>. Sign in once here to authorize the camera feeds.</p></div>
+      <form data-camera-login><label>Email<input type="email" autocomplete="username" required /></label><label>Password<input type="password" autocomplete="current-password" required /></label><button class="btn primary" type="submit">Sign in and connect</button></form>
+      <p class="camera-login-error" data-camera-login-error></p>
+    </section>
+    <section class="camera-wall-grid" aria-label="OpenArm camera feeds">
+      <article class="camera-feed" data-camera="left"><div class="camera-feed-head"><strong>Left wrist</strong><span>Checking</span></div><div class="camera-frame"><img alt="Left wrist camera" /><p>Waiting for left wrist camera…</p></div></article>
+      <article class="camera-feed" data-camera="right"><div class="camera-feed-head"><strong>Right wrist</strong><span>Checking</span></div><div class="camera-frame"><img alt="Right wrist camera" /><p>Waiting for right wrist camera…</p></div></article>
+      <article class="camera-feed camera-feed--wide" data-camera="zed"><div class="camera-feed-head"><strong>ZED stereo / top</strong><span>Checking</span></div><div class="camera-frame"><img alt="ZED stereo top camera" /><p>Waiting for ZED camera…</p></div></article>
+    </section>
+    <section class="camera-wall-help"><h2>Connection</h2><p>Feeds refresh at a bounded rate to keep teleop and CAD responsive. If a card is offline, follow <a href="/docs/openarm-pi-mujoco-wiring.md">the OpenArm camera instructions</a>.</p></section>
+  </main>
+  <script type="module" src="/site/robot-camera-wall.js?v=20260927-lan-token-fix1"></script>
+</body>
+</html>

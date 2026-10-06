@@ -1,0 +1,108 @@
+{
+  "token": "remix1",
+  "remix_id": "remix_15e49941d99b",
+  "source_project_id": "46250178",
+  "source_name": "PROMPT - Quest Controller Calibration Nest",
+  "label": "PROMPT - Quest Controller Calibration Nest",
+  "created_at": "2026-09-17T14:44:41.942Z",
+  "restore_pointers": [
+    {
+      "path": "90576A119.glb",
+      "url": "/api/projects/46250178/files/90576A119.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/90576A119.glb"
+    },
+    {
+      "path": "90576A119.step",
+      "url": "/api/projects/46250178/files/90576A119.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/90576A119.step"
+    },
+    {
+      "path": "91292A126.glb",
+      "url": "/api/projects/46250178/files/91292A126.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/91292A126.glb"
+    },
+    {
+      "path": "91292A126.step",
+      "url": "/api/projects/46250178/files/91292A126.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/91292A126.step"
+    },
+    {
+      "path": "91292A144.glb",
+      "url": "/api/projects/46250178/files/91292A144.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/91292A144.glb"
+    },
+    {
+      "path": "91292A144.step",
+      "url": "/api/projects/46250178/files/91292A144.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/91292A144.step"
+    },
+    {
+      "path": "93475A250.glb",
+      "url": "/api/projects/46250178/files/93475A250.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/93475A250.glb"
+    },
+    {
+      "path": "93475A250.step",
+      "url": "/api/projects/46250178/files/93475A250.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/93475A250.step"
+    },
+    {
+      "path": "94180A361.glb",
+      "url": "/api/projects/46250178/files/94180A361.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/94180A361.glb"
+    },
+    {
+      "path": "94180A361.step",
+      "url": "/api/projects/46250178/files/94180A361.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/94180A361.step"
+    },
+    {
+      "path": "vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb",
+      "url": "/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb"
+    },
+    {
+      "path": "vibecad/PROMPT_Quest_Controller_Calibration_Nest.step",
+      "url": "/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step"
+    },
+    {
+      "path": "vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb",
+      "url": "/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb",
+      "kind": "glb",
+      "restore": "GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb"
+    },
+    {
+      "path": "vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step",
+      "url": "/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step",
+      "kind": "step",
+      "restore": "GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step"
+    },
+    {
+      "path": "xr_creations.json",
+      "url": "/api/projects/46250178/files/xr_creations.json",
+      "kind": "json",
+      "restore": "GET /api/projects/46250178/files/xr_creations.json"
+    },
+    {
+      "path": "xr_creations_2.json",
+      "url": "/api/projects/46250178/files/xr_creations_2.json",
+      "kind": "json",
+      "restore": "GET /api/projects/46250178/files/xr_creations_2.json"
+    }
+  ],
+  "open_arm": "2.0",
+  "map_token": "map1"
+}

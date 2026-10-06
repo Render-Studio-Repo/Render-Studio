@@ -25,6 +25,12 @@ Use when the user:
 
 Pair with the **CAD** skill for actual STEP/STL generation. Pair with **step-parts** when named off-the-shelf components appear in the schematic.
 
+When several images arrive together, classify each one before extraction:
+
+- **Canvas / layout sketch** (`canvas-sketch.png`, whiteboard, line drawing): explains the prompt. Arrows, gaps, hanging-off, beside, and offset are spatial instructions — not a photo of the finished part.
+- **Mate-target photo**: extrusion, rail, frame, or hardware to connect to. Do not treat it as the new part, and do not sit the new motor/bracket on top of it unless the prompt and sketch say on-top.
+- **Product photo / technical drawing of the thing to make**: reproduce that object's silhouette, views, and callouts.
+
 Do not use for render-only artwork, non-engineering photos, or tasks that need no structured extraction.
 
 ## Accepted inputs
@@ -32,7 +38,8 @@ Do not use for render-only artwork, non-engineering photos, or tasks that need n
 - Engineering blueprints and manufacturing schematics
 - Patent drawings and product concept sheets
 - Assembly diagrams and exploded views
-- Hand sketches and whiteboard photos
+- Hand sketches, whiteboard photos, and Render Studio canvas sketches (`canvas-sketch.png`) used as layout explanations
+- Photos of mate targets (extrusion, rail, frame, hardware) that the new part hangs off or clamps to
 - CAD screenshots and PDF drawing exports (as images)
 - Technical illustrations with dimension lines, zone maps, and callout text
 - Infographic-style reasoning sheets that combine iso views, tables, and component lists
@@ -67,6 +74,7 @@ High-quality extraction means:
 - **Dimensioned values beat proportions**; undimensioned geometry is estimated and marked as assumed
 - **Cross-view consistency** — when multiple panels or views appear, reconcile conflicts explicitly
 - **Manufacturing intent** — wall thickness, hole standards, clearances, and assembly order are inferred when visible
+- **Relationship graph captures offset** — hanging off, beside, cantilever, and shaft-clear-of-rail must appear as mates, not as “part sitting on the photo”
 - **Actionable handoff** — Stage 7 output is detailed enough that CAD can model without re-interpreting the image
 
 When text is illegible or scale is unknown, ask one focused clarification question. Otherwise proceed with explicit assumptions.

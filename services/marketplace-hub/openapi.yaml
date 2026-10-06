@@ -1,0 +1,102 @@
+openapi: 3.0.3
+info:
+  title: Render Marketplace Hub API
+  version: "1.0.0"
+  description: |
+    Connects Render Studio instances into one public marketplace.
+
+    You do **not** need a listings folder or a git repo of products.
+    Each instance stores listings in its own SQLite database and
+    publishes/pulls JSON via this API.
+
+    Hosting options:
+      1. Use the CAD instance itself (`https://render3d.app/api/marketplace/hub/v1`) — already implemented.
+      2. Extract `services/marketplace-hub/` into a separate repo
+         **render-marketplace-hub** and host it (suggested URL
+         `https://marketplace.render3d.app`).
+
+    Instance env:
+      MARKETPLACE_HUB_URL=https://render3d.app
+      MARKETPLACE_HUB_TOKEN=<shared secret>
+      PUBLIC_BASE_URL=https://your-instance.example
+paths:
+  /health:
+    get:
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+  /api/marketplace/hub/v1/listings:
+    get:
+      summary: Pull ranked listings from the hub
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: kind
+          schema: { type: string, enum: [model, knowledge, agent] }
+        - in: header
+          name: Authorization
+          schema: { type: string }
+        - in: header
+          name: X-Render-Instance-Id
+          schema: { type: string }
+      responses:
+        "200":
+          description: Listing array
+    post:
+      summary: Publish or update one listing from an instance
+      parameters:
+        - in: header
+          name: Authorization
+          schema: { type: string }
+        - in: header
+          name: X-Render-Instance-Id
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listing]
+              properties:
+                listing:
+                  $ref: "#/components/schemas/HubListing"
+      responses:
+        "200":
+          description: Upserted
+  /api/marketplace/hub/v1/instances:
+    post:
+      summary: Register an instance identity
+      responses:
+        "200":
+          description: Instance id + token
+components:
+  schemas:
+    HubListing:
+      type: object
+      required: [id, slug, name, kind, price_cents, currency, access_mode]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        tagline: { type: string }
+        description: { type: string }
+        kind: { type: string, enum: [model, knowledge, agent] }
+        category: { type: string }
+        license: { type: string }
+        access_mode: { type: string, enum: [free, paid, view_only] }
+        price_cents: { type: integer }
+        currency: { type: string }
+        thumbnail_url: { type: string }
+        fulfillment: { type: string, enum: [digital, shippable, both] }
+        refunds_allowed: { type: boolean }
+        refund_window_days: { type: integer }
+        view_count: { type: integer }
+        sales_count: { type: integer }
+        rating_avg: { type: number }
+        ranking_score: { type: number }
+        instance_id: { type: string }
+        origin_url: { type: string }

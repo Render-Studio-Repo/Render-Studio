@@ -1,6 +1,7 @@
 ---
 name: gcode
-description: Generate, inspect, dry-run, and statically validate plain FDM `.gcode` from 3D mesh files by orchestrating real slicer CLIs. Use when Codex needs to slice `.stl`, `.obj`, unsliced `.3mf`, `.ply`, `.glb`, or `.gltf` into printer-profiled G-code, discover local slicer backends, inspect whether a mesh is slice-ready, or validate generated G-code before any printer-specific handoff.
+description: Slice 3D models into printer-ready G-code with OrcaSlicer, the open-source slicer with built-in profiles for most FDM printers (Prusa, Bambu Lab, Creality, Voron and more). Use when the user wants an `.stl`, `.3mf` or `.obj` model sliced for their printer, as a sliced `.gcode.3mf` or plain `.gcode`, headless with OrcaSlicer's command line or by opening the model in OrcaSlicer. Never contacts a printer.
+license: MIT
 ---
 
 # G-code
@@ -9,144 +10,99 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth; the
 repository link is only for provenance and release review.
 
-Use this skill for plain `.gcode` generation from mesh files. It is printer-agnostic and never uploads, starts, or packages print jobs.
+Slice with OrcaSlicer, headless (below) or by opening the model in the
+OrcaSlicer app for the user. The agent never contacts a printer: for a Bambu
+Lab printer, hand the result to `$bambu-labs`; for any other printer, give the
+user the `.gcode`.
 
-## Workflow
+## Install OrcaSlicer
 
-1. Confirm the input is a supported mesh: `.stl`, `.obj`, unsliced `.3mf`, `.ply`, `.glb`, or `.gltf`.
-2. Require an explicit printer/profile wrapper JSON. Do not invent real-printer profiles.
-3. Discover slicer backends when the backend is unknown:
+- macOS: `brew install --cask orcaslicer`. The command line is
+  `/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer`.
+- Windows and Linux: install a release from
+  https://github.com/OrcaSlicer/OrcaSlicer/releases. The command is
+  `orca-slicer`; on Linux, run it from the AppImage or Flatpak.
 
-```bash
-python scripts/gcode_tool.py discover
-```
+Below, `<orca>` is that command.
 
-4. Inspect the input:
+## Slice headless
 
-```bash
-python scripts/gcode_tool.py inspect --input path/to/model.stl --json
-```
+OrcaSlicer's command line (https://www.orcaslicer.com/wiki/cli/cli_mode) needs
+complete presets: it doesn't fill in a preset's parent settings, and it slices
+only with a process whose compatible printers name the printer.
+`scripts/orca_presets.py` (Python 3, no dependencies) writes them from
+OrcaSlicer's presets, searching the user's own first, then OrcaSlicer's
+built-in profiles.
 
-5. Dry-run the slicer command before executing:
+1. Find the user's printer, process and filament presets. Prefer the presets
+   the user prints with; never invent one, since a wrong bed size or
+   temperature can damage the printer.
 
-```bash
-python scripts/gcode_tool.py slice \
-  --input path/to/model.stl \
-  --output /tmp/model.gcode \
-  --profile path/to/profile.json \
-  --backend auto \
-  --dry-run
-```
+   ```bash
+   python scripts/orca_presets.py --list machine --match "MK4S"
+   python scripts/orca_presets.py --list process --match "@MK4S 0.4"
+   python scripts/orca_presets.py --list filament --match "PLA @MK4S"
+   ```
 
-6. Execute only after the dry-run command and profile are appropriate:
+2. Write the complete presets:
 
-```bash
-python scripts/gcode_tool.py slice \
-  --input path/to/model.stl \
-  --output /tmp/model.gcode \
-  --profile path/to/profile.json \
-  --backend auto \
-  --execute
-```
+   ```bash
+   python scripts/orca_presets.py --printer "Prusa MK4S 0.4 nozzle" \
+     --process "0.20mm SPEED @MK4S 0.4" --filament "Prusa Generic PLA @MK4S" \
+     --out presets
+   ```
 
-7. Validate the generated G-code:
+3. Slice. Give `--outputdir` an absolute path:
 
-```bash
-python scripts/gcode_tool.py validate \
-  --gcode /tmp/model.gcode \
-  --profile path/to/profile.json \
-  --json
-```
+   ```bash
+   <orca> model.stl \
+     --load-settings "presets/process.json;presets/printer.json" \
+     --load-filaments presets/filament-1.json \
+     --arrange 1 --slice 0 \
+     --outputdir /absolute/path/to/out --export-3mf model.gcode.3mf
+   ```
 
-## CAD Viewer Handoff
+   This writes `plate_1.gcode`, the plain G-code, and `model.gcode.3mf`, the
+   sliced 3MF, into that folder. The command line reads `.stl`,
+   `.3mf`, `.obj` and `.amf`; export STEP to STL or 3MF with `$cad` first.
+   Override one setting with `--<setting>=<value>`, using the setting's key
+   with hyphens for underscores, such as `--layer-height=0.16`.
 
-After completing G-code work that creates or modifies a plain `.gcode`, you must ALWAYS hand the explicit file path to `$cad-viewer` when that skill is installed. `$cad-viewer` must start CAD Viewer if it is not already running and return link(s) to the relevant created or updated file(s); the preview is diagnostic only and does not replace this skill's static validation. If `$cad-viewer` is unavailable or startup fails, report that instead of silently omitting the handoff.
+## Open in OrcaSlicer
 
-## Profile Contract
+When the user would rather pick presets and slice themselves, or no preset can
+be found, open the model in the app: `open -a OrcaSlicer model.stl` on macOS,
+`Start-Process model.stl` on Windows when OrcaSlicer opens that file type, or
+`orca-slicer model.stl` on Linux. The app also reads STEP.
 
-Every slice requires a wrapper profile JSON with an absolute native slicer profile path:
+## Check before printing
 
-```json
-{
-  "backend": "orcaslicer",
-  "native_config": "/absolute/path/to/native-slicer-profile",
-  "machine": {
-    "name": "Example Printer",
-    "bed_size_mm": [180, 180],
-    "z_height_mm": 180,
-    "motion_bounds_mm": {
-      "x": [0, 180],
-      "y": [0, 180],
-      "z": [0, 180]
-    }
-  },
-  "filament": {
-    "type": "PLA",
-    "nozzle_temp_c": 220,
-    "bed_temp_c": 65
-  }
-}
-```
+- `<orca> model.stl --info` prints the model's size; it has to fit the bed.
+- Check the slice's settings, which OrcaSlicer writes at the end of the G-code:
 
-The wrapper supplies validation bounds and backend selection. `machine.motion_bounds_mm` is optional; omit it for the default `0..bed_size` and `0..z_height` bounds, or set it from a native printer profile when start/end G-code intentionally uses safe wipe/purge positions outside the printable area. The native slicer profile remains the source of detailed process, printer, and filament behavior.
+  ```bash
+  grep -E '^; (printer_model|nozzle_diameter|filament_type|nozzle_temperature|hot_plate_temp|bed_temperature) =|printing time' out/plate_1.gcode
+  ```
 
-For OrcaSlicer, use `native_settings` and `native_filaments` when the real profile is split across machine, process, and filament JSON files. Keep `native_config` as an absolute path to the primary native profile for compatibility:
+  Confirm they match the user's printer and material before anyone prints it.
 
-```json
-{
-  "backend": "orcaslicer",
-  "native_config": "/absolute/path/to/machine-or-process.json",
-  "native_settings": [
-    "/absolute/path/to/machine.json",
-    "/absolute/path/to/process.json"
-  ],
-  "native_filaments": [
-    "/absolute/path/to/filament.json"
-  ],
-  "machine": {
-    "name": "Example Printer",
-    "bed_size_mm": [180, 180],
-    "z_height_mm": 180
-  },
-  "filament": {
-    "type": "PLA",
-    "nozzle_temp_c": 220,
-    "bed_temp_c": 65
-  }
-}
-```
+## Hand off
 
-## Backends And Inputs
-
-Preferred slicer backend order is `orcaslicer`, `prusa-slicer`, then `curaengine`. Prefer installing OrcaSlicer when no preferred backend is available; on macOS use `brew install --cask orcaslicer` and then rerun `discover`. The helper checks both `PATH` and the usual `/Applications/OrcaSlicer.app` cask location. Bambu Studio may be reported by discovery as available but is not preferred because its CLI export path has shown macOS instability.
-
-Pass `.stl`, `.obj`, and unsliced `.3mf` directly to the slicer. Convert `.ply`, `.glb`, and `.gltf` to temporary STL at execution time with optional `trimesh`; if `trimesh` is unavailable, ask the user to install it or provide `.stl`, `.obj`, or unsliced `.3mf`.
-
-Reject `.step`, `.stp`, `.dxf`, `.svg`, `.urdf`, and `.sdf` in v1. Use the existing CAD/render workflows to convert those to a supported mesh format before using this skill.
-
-Read `references/slicer-backends.md` when backend behavior, profile expectations, or source links matter.
-
-## Validation
-
-Always validate generated G-code before handing it to printer-specific workflows. The validator checks for non-empty content, temperature commands, movement commands, extrusion moves, XYZ bounds, and unknown command warnings.
-
-Read `references/gcode-validation.md` when interpreting validation output or deciding whether a warning is acceptable.
-
-## Bambu Boundary
-
-This skill generates plain `.gcode` only. It does not create Bambu `.gcode.3mf` archives and does not contact printers. For Bambu upload/start workflows, hand off the validated plain `.gcode` to `$bambu-labs`. Let `$bambu-labs` choose the printer-specific LAN handoff, such as an A1 Mini template project or an explicitly enabled bambox project package.
+- A Bambu Lab printer: `$bambu-labs`, with the `.gcode.3mf`.
+- Any other printer: the user prints the `.gcode` from their printer's app, its
+  web interface (PrusaLink, OctoPrint, Mainsail, Fluidd) or an SD card.
 
 <!-- render3d-studio -->
 
 ## Render Studio
 
-On the Render Studio server this skill lives at `backend/skills/gcode/`.
+This skill is installed under the CAD 3.12 env (`.venv-mac`). Run tools from the **project directory**.
 
-- **Python tools:** `backend/skills/gcode/scripts/` (run from the **project directory**, not the skill folder)
-- **References:** `backend/skills/gcode/references/`
-- **CAD 2.0 / Fusion / Architect modes:** follow this skill exactly — author complete build123d Python with `gen_step()`, then run `scripts/step`, `scripts/inspect`, and `scripts/snapshot` like upstream text-to-cad. Do **not** emit Render Studio JSON Feature Programs in those modes.
-- **Standard mode only:** when the product asks for a Feature Program, emit Render Studio JSON Feature Programs instead of Python.
+- **Jake text-to-cad 0.7.15:** author a cadgen model (`from cadgen import step` + `@step`, built with `python <model>.py`). Use the upstream `cadgen` commands documented by each synced skill. Render's `python scripts/inspect` and `python scripts/snapshot` shims remain available for the product validation loop.
+- **Render compatibility shims:** `python scripts/step`, `scripts/inspect`, and `scripts/snapshot` support existing Render projects while new Jake models follow the synced upstream contract. Render's robot bridge may read legacy `gen_urdf()` / `gen_srdf()` projects, but new URDF and SRDF work follows the synced direct-XML source-of-truth rules.
+- **Do not** emit Render3D JSON Feature Programs in CAD 2.0 / Fusion / Architect / Jake modes.
+- **Standard mode only:** when the product asks for a Feature Program, emit Render3D JSON Feature Programs instead of Python.
 - **Handoffs:** ignore `$cad-viewer` / cross-skill CLI handoffs unless that skill is also enabled in Skills Library; Render Studio's own viewer loads the generated STEP/GLB.
-- **Sync:** `scripts/sync-skills-from-text-to-cad.sh` then `scripts/patch-skills-for-render3d.sh`
+- **Sync:** `SKILLS_REF=v0.7.15 scripts/sync-skills-from-text-to-cad.sh`
 
-See `backend/skills/RENDER3D.md` for full integration notes.
+The installed source tag is recorded in `backend/skills/.source_tag`.

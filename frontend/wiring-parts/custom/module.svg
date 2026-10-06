@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" fill="none">
+  <rect x="6" y="8" width="108" height="64" rx="4" fill="#245c3a" stroke="#1b4332" stroke-width="1.6"/>
+  <rect x="36" y="24" width="48" height="32" rx="2" fill="#111418"/>
+  <g fill="#d4a017">
+    <circle cx="18" cy="18" r="2.2"/><circle cx="30" cy="18" r="2.2"/><circle cx="42" cy="18" r="2.2"/>
+    <circle cx="54" cy="18" r="2.2"/><circle cx="66" cy="18" r="2.2"/><circle cx="78" cy="18" r="2.2"/>
+    <circle cx="90" cy="18" r="2.2"/><circle cx="102" cy="18" r="2.2"/>
+    <circle cx="18" cy="62" r="2.2"/><circle cx="30" cy="62" r="2.2"/><circle cx="42" cy="62" r="2.2"/>
+    <circle cx="54" cy="62" r="2.2"/><circle cx="66" cy="62" r="2.2"/><circle cx="78" cy="62" r="2.2"/>
+    <circle cx="90" cy="62" r="2.2"/><circle cx="102" cy="62" r="2.2"/>
+  </g>
+  <text x="60" y="44" text-anchor="middle" fill="#d8f3dc" font-size="9" font-weight="800" font-family="ui-sans-serif,system-ui">MOD</text>
+</svg>

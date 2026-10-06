@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenArm Raspberry Pi wrist camera publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=steve
+Group=steve
+SupplementaryGroups=video
+WorkingDirectory=/home/steve/Render-Studio
+Environment=OPENARM_LEFT_CAMERA=/dev/v4l/by-path/platform-xhci-hcd.1-usb-0:2.1:1.0-video-index0
+Environment=OPENARM_RIGHT_CAMERA=/dev/v4l/by-path/platform-xhci-hcd.1-usb-0:2.2:1.0-video-index0
+ExecStart="/home/steve/Documents/Render Studio/DimOS/.venv/bin/python" /home/steve/Render-Studio/scripts/pi_camera_server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

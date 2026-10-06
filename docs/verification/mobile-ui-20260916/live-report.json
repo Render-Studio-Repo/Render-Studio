@@ -1,0 +1,9 @@
+{
+  "studioStatus": 200,
+  "canvases": 7,
+  "mobileLayoutLoaded": 1,
+  "pageErrors": [
+    "Not authenticated [trace #b60a9b79]"
+  ],
+  "docsStatus": 200
+}

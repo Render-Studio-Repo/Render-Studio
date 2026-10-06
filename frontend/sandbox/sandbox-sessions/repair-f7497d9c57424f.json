@@ -1,0 +1,385 @@
+{
+  "kind": "repair_loop_report",
+  "token": "repair1",
+  "run_id": "f7497d9c57424f",
+  "open_arm": "2.0",
+  "symptom": "Debugger VR — VR controls issue analysis",
+  "at": "2026-09-17T15:32:25.153Z",
+  "checks": {
+    "viewport.boot": "ok",
+    "webgl.context": "ok",
+    "vr.controllers.trigger": "unknown",
+    "sandbox.map": "unknown",
+    "sandbox.mcp_write": "ok",
+    "openarm.agent_feed": "ok",
+    "openarm.mujoco_web": "ok",
+    "openarm.rig_2_0": "ok",
+    "openarm.ik_converged": "ok",
+    "viewport.models": "ok",
+    "openarm.teleop_lab": "ok",
+    "openarm.mujoco_scenes": "ok",
+    "openarm.train_episode": "ok",
+    "openarm.train_gate": "unknown"
+  },
+  "facts": [
+    {
+      "id": "obs-boot",
+      "kind": "client",
+      "feature": "viewport.boot",
+      "status": "ok"
+    },
+    {
+      "id": "obs-webgl",
+      "kind": "client",
+      "feature": "webgl.context",
+      "status": "ok"
+    },
+    {
+      "id": "obs-xr",
+      "kind": "client-input",
+      "feature": "vr.controllers.trigger",
+      "status": "unknown",
+      "evidence": {
+        "session": false,
+        "trigger": "unknown",
+        "hands": [],
+        "lastAction": "",
+        "at": null,
+        "view": "home",
+        "selectedAgent": "astra",
+        "model": "gpt-6-astra (selected)"
+      }
+    },
+    {
+      "id": "obs-sandbox",
+      "kind": "client",
+      "feature": "sandbox.map",
+      "status": "unknown",
+      "sandboxOn": false
+    },
+    {
+      "id": "obs-mcp",
+      "kind": "server",
+      "feature": "sandbox.mcp_write",
+      "status": "ok"
+    },
+    {
+      "id": "obs-feed",
+      "kind": "server",
+      "feature": "openarm.agent_feed",
+      "status": "ok"
+    },
+    {
+      "id": "obs-openarm.mujoco_web",
+      "kind": "mujoco",
+      "feature": "openarm.mujoco_web",
+      "status": "ok"
+    },
+    {
+      "id": "obs-openarm.rig_2_0",
+      "kind": "mujoco",
+      "feature": "openarm.rig_2_0",
+      "status": "ok"
+    },
+    {
+      "id": "obs-openarm.ik_converged",
+      "kind": "mujoco",
+      "feature": "openarm.ik_converged",
+      "status": "ok"
+    },
+    {
+      "id": "obs-viewport.boot",
+      "kind": "mujoco",
+      "feature": "viewport.boot",
+      "status": "ok"
+    },
+    {
+      "id": "obs-viewport.models",
+      "kind": "mujoco",
+      "feature": "viewport.models",
+      "status": "ok"
+    },
+    {
+      "id": "obs-rig",
+      "kind": "server",
+      "feature": "openarm.rig_2_0",
+      "status": "ok"
+    },
+    {
+      "id": "obs-mujoco",
+      "kind": "server",
+      "feature": "openarm.mujoco_web",
+      "status": "ok"
+    },
+    {
+      "id": "obs-lab",
+      "kind": "server",
+      "feature": "openarm.teleop_lab",
+      "status": "ok"
+    },
+    {
+      "id": "obs-scenes",
+      "kind": "server",
+      "feature": "openarm.mujoco_scenes",
+      "status": "ok"
+    },
+    {
+      "id": "obs-train-ep",
+      "kind": "server",
+      "feature": "openarm.train_episode",
+      "status": "ok"
+    },
+    {
+      "id": "obs-train-gate",
+      "kind": "server",
+      "feature": "openarm.train_gate",
+      "status": "unknown",
+      "action": "run_5_more_heldout_trials"
+    }
+  ],
+  "hypotheses": [
+    {
+      "hypothesis_id": "mcp-write-blocked",
+      "claim": "Sandbox MCP write path is failing so agents never see packets",
+      "predicts": {
+        "sandbox.mcp_write": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "POST /mcp/sandbox action=write probe file as agent=sam"
+    },
+    {
+      "hypothesis_id": "teleop-lab-unreachable",
+      "claim": "OpenArm MuJoCo web lab HTML is not served (SPA swallow or 404)",
+      "predicts": {
+        "openarm.mujoco_web": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "GET /sandbox/openarm-mujoco/index.html and /v2/scenes.json"
+    },
+    {
+      "hypothesis_id": "mujoco-scenes-missing",
+      "claim": "v2 MJCF scenes failed to load (mesh/XML 404)",
+      "predicts": {
+        "openarm.mujoco_scenes": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "GET /sandbox/openarm-mujoco/v2/openarm_bimanual.xml"
+    },
+    {
+      "hypothesis_id": "ik-not-converged",
+      "claim": "MuJoCo pose IK error is high — end effectors not tracking targets",
+      "predicts": {
+        "openarm.ik_converged": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "Open MuJoCo lab, wait for settle, re-read openarm-mujoco/runs/latest.json"
+    },
+    {
+      "hypothesis_id": "no-demo-packet",
+      "claim": "No MuJoCo analysis packet yet — agent feed empty",
+      "predicts": {
+        "openarm.agent_feed": "unknown"
+      },
+      "status": "eliminated",
+      "next_test": "Load /sandbox/openarm-mujoco/?embed=1 until analysis bridge writes runs/latest.json"
+    },
+    {
+      "hypothesis_id": "rig-not-2-0",
+      "claim": "Rig contract / joint names are not OpenArm 2.0",
+      "predicts": {
+        "openarm.rig_2_0": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "Confirm openarm_*_joint1..7 in MuJoCo analysis joints[]"
+    },
+    {
+      "hypothesis_id": "train-data-missing",
+      "claim": "No synced training episode yet — policy cannot improve from empty demos",
+      "predicts": {
+        "openarm.train_episode": "unknown"
+      },
+      "status": "eliminated",
+      "next_test": "Train demo → mark Success/Fail; read openarm-mujoco/episodes/latest.json"
+    },
+    {
+      "hypothesis_id": "holdout-gate-not-ready",
+      "claim": "Holdout Wilson gate has not cleared promote — do not ship policy to live arm",
+      "predicts": {
+        "openarm.train_gate": "unknown"
+      },
+      "status": "supported",
+      "next_test": "Run policy tries + intervene corrections until manifest promote_gate is candidate_ready"
+    },
+    {
+      "hypothesis_id": "webgl-or-xr-missing",
+      "claim": "Browser lacks WebGL so MuJoCo Three renderer can't run",
+      "predicts": {
+        "webgl.context": "broken"
+      },
+      "status": "eliminated",
+      "next_test": "Desktop Chrome/Edge with WebGL2; check console for @mujoco/mujoco WASM errors"
+    }
+  ],
+  "adjudication": {
+    "gate": "actionable",
+    "primary": {
+      "hypothesis_id": "holdout-gate-not-ready",
+      "claim": "Holdout Wilson gate has not cleared promote — do not ship policy to live arm",
+      "predicts": {
+        "openarm.train_gate": "unknown"
+      },
+      "status": "supported",
+      "next_test": "Run policy tries + intervene corrections until manifest promote_gate is candidate_ready"
+    },
+    "mandatory_broken": [],
+    "recommendation": "Next: Run policy tries + intervene corrections until manifest promote_gate is candidate_ready"
+  },
+  "votes": [
+    {
+      "role": "intake",
+      "label": "Intake",
+      "skill": "skills/repair-intake.md",
+      "vote": "support",
+      "weight": 1,
+      "evidence": []
+    },
+    {
+      "role": "investigator",
+      "label": "Investigator",
+      "skill": "skills/repair-investigator.md",
+      "vote": "support",
+      "weight": 1,
+      "evidence": [
+        "holdout-gate-not-ready"
+      ]
+    },
+    {
+      "role": "skeptic",
+      "label": "Skeptic",
+      "skill": "skills/repair-skeptic.md",
+      "vote": "support",
+      "weight": 1,
+      "evidence": [
+        "mcp-write-blocked",
+        "teleop-lab-unreachable",
+        "mujoco-scenes-missing",
+        "ik-not-converged",
+        "no-demo-packet",
+        "rig-not-2-0",
+        "train-data-missing",
+        "webgl-or-xr-missing"
+      ]
+    },
+    {
+      "role": "test-runner",
+      "label": "Test runner",
+      "skill": "skills/repair-test-runner.md",
+      "vote": "support",
+      "weight": 2,
+      "evidence": []
+    },
+    {
+      "role": "adjudicator",
+      "label": "Adjudicator",
+      "skill": "skills/repair-adjudicator.md",
+      "vote": "support",
+      "weight": 1,
+      "evidence": []
+    }
+  ],
+  "layout": {
+    "token": "repair1",
+    "openArm": "2.0",
+    "table": {
+      "radius": 0.72,
+      "height": 0.78,
+      "shape": "pentagon_repair",
+      "seats": 5
+    },
+    "seats": [
+      {
+        "agent_id": "intake",
+        "label": "Intake",
+        "skill": "skills/repair-intake.md",
+        "x": 6.123233995736766e-17,
+        "y": 0.02,
+        "z": -1,
+        "yaw": 1.5707963267948966
+      },
+      {
+        "agent_id": "investigator",
+        "label": "Investigator",
+        "skill": "skills/repair-investigator.md",
+        "x": 0.9510565162951535,
+        "y": 0.02,
+        "z": -0.3090169943749474,
+        "yaw": 2.827433388230814
+      },
+      {
+        "agent_id": "skeptic",
+        "label": "Skeptic",
+        "skill": "skills/repair-skeptic.md",
+        "x": 0.5877852522924731,
+        "y": 0.02,
+        "z": 0.8090169943749475,
+        "yaw": 4.084070449666731
+      },
+      {
+        "agent_id": "test-runner",
+        "label": "Test runner",
+        "skill": "skills/repair-test-runner.md",
+        "x": -0.587785252292473,
+        "y": 0.02,
+        "z": 0.8090169943749475,
+        "yaw": 5.340707511102648
+      },
+      {
+        "agent_id": "adjudicator",
+        "label": "Adjudicator",
+        "skill": "skills/repair-adjudicator.md",
+        "x": -0.9510565162951536,
+        "y": 0.02,
+        "z": -0.3090169943749473,
+        "yaw": 6.5973445725385655
+      }
+    ]
+  },
+  "agents": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "skill": "skills/repair-intake.md",
+      "ask": "What exactly can Sam not do? Capture symptom, last ok, environment.",
+      "weight": 1
+    },
+    {
+      "id": "investigator",
+      "label": "Investigator",
+      "skill": "skills/repair-investigator.md",
+      "ask": "Two competing causes with discriminating tests. No single-cause lock-in.",
+      "weight": 1
+    },
+    {
+      "id": "skeptic",
+      "label": "Skeptic",
+      "skill": "skills/repair-skeptic.md",
+      "ask": "Find contradictions and collateral risk before any patch.",
+      "weight": 1
+    },
+    {
+      "id": "test-runner",
+      "label": "Test runner",
+      "skill": "skills/repair-test-runner.md",
+      "ask": "Run sandbox checks only. Emit observed results, not prose grades.",
+      "weight": 2
+    },
+    {
+      "id": "adjudicator",
+      "label": "Adjudicator",
+      "skill": "skills/repair-adjudicator.md",
+      "ask": "Gate before score. Confirm only with before/after + mandatory features.",
+      "weight": 1
+    }
+  ],
+  "note": "Simulation / sandbox diagnosis only. Does not command OpenArm hardware."
+}

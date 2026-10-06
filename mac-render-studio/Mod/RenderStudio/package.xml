@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>RenderStudio</name>
+  <description>Render Studio workbench on FreeCAD — Create tools, project import, AI bridge.</description>
+  <version>0.1.0</version>
+  <date>2026-08-02</date>
+  <maintainer email="sam@render3d.app">Render3D</maintainer>
+  <license>LGPL-2.1-or-later</license>
+  <url type="repository">https://github.com/10-X-eng</url>
+  <icon>Resources/icons/PartDesignWorkbench.svg</icon>
+  <content>
+    <workbench>
+      <classname>RenderStudioWorkbench</classname>
+      <subdirectory>./</subdirectory>
+    </workbench>
+  </content>
+</package>

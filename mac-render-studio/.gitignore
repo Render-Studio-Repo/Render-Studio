@@ -1,0 +1,6 @@
+# Mac Render Studio — local build / runtime artifacts
+mac-render-studio/dist/
+mac-render-studio/logs/
+mac-render-studio/runtime/*.app
+mac-render-studio/app/*.icns
+mac-render-studio/app/*.iconset/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import struct
 import time
@@ -293,6 +294,16 @@ def _native_y_up_matrix_from_transform(transform: tuple[float, ...]) -> list[flo
     ]
 
 
+def _finite_mesh_coord(value: float, fallback: float = 0.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if not math.isfinite(numeric) or abs(numeric) > 1e9:
+        return fallback
+    return numeric
+
+
 def _native_y_up_mesh_payload(payload: ShapeGlbMeshPayload) -> ShapeGlbMeshPayload:
     if not payload.positions:
         return payload
@@ -305,6 +316,7 @@ def _native_y_up_mesh_payload(payload: ShapeGlbMeshPayload) -> ShapeGlbMeshPaylo
             payload.positions[index + 1],
             payload.positions[index + 2],
         )
+        x, y, z = _finite_mesh_coord(x), _finite_mesh_coord(y), _finite_mesh_coord(z)
         positions.extend((x, y, z))
         min_values[0] = min(min_values[0], x)
         min_values[1] = min(min_values[1], y)
@@ -312,6 +324,12 @@ def _native_y_up_mesh_payload(payload: ShapeGlbMeshPayload) -> ShapeGlbMeshPaylo
         max_values[0] = max(max_values[0], x)
         max_values[1] = max(max_values[1], y)
         max_values[2] = max(max_values[2], z)
+
+    if not all(math.isfinite(value) for value in min_values + max_values):
+        for i in range(3):
+            if not math.isfinite(min_values[i]) or not math.isfinite(max_values[i]):
+                min_values[i] = 0.0
+                max_values[i] = 0.0
 
     normals = array("f")
     for index in range(0, len(payload.normals), 3):
@@ -491,9 +509,13 @@ class _GlbBuilder:
             "type": accessor_type,
         }
         if minimum is not None:
-            accessor["min"] = minimum
+            accessor["min"] = [
+                0.0 if not math.isfinite(float(v)) else float(v) for v in minimum
+            ]
         if maximum is not None:
-            accessor["max"] = maximum
+            accessor["max"] = [
+                0.0 if not math.isfinite(float(v)) else float(v) for v in maximum
+            ]
         accessors = self.json["accessors"]
         assert isinstance(accessors, list)
         accessors.append(accessor)
@@ -685,7 +707,7 @@ class _GlbBuilder:
         buffer = buffers[0]
         assert isinstance(buffer, dict)
         buffer["byteLength"] = len(self.binary)
-        json_chunk = json.dumps(self.json, separators=(",", ":")).encode("utf-8")
+        json_chunk = json.dumps(self.json, separators=(",", ":"), allow_nan=False).encode("utf-8")
         json_chunk += b" " * ((4 - (len(json_chunk) % 4)) % 4)
         binary_chunk = bytes(self.binary)
         binary_chunk += b"\0" * ((4 - (len(binary_chunk) % 4)) % 4)

@@ -18,6 +18,7 @@ import ast
 import base64
 import json
 import builtins
+import time
 from pathlib import Path
 from typing import Any
 
@@ -114,8 +115,26 @@ _BLOCKED_OS_ATTRS = frozenset({
 
 
 def _validate_generated_source(source: str) -> None:
-    if "def gen_step" not in source:
-        raise ValueError("Generated source must define gen_step().")
+    from backend.services.cad_authoring_agent import (
+        source_has_cad_model,
+        source_is_input_blocked_refusal,
+    )
+
+    stripped = str(source or "").lstrip()
+    if source_is_input_blocked_refusal(source):
+        raise ValueError(
+            "INPUT_BLOCKED / preflight-only source is not allowed. Author complete "
+            "named solids with documented assumed dimensions and real McMaster PNs. "
+            "Export STEP/GLB so the viewport can live-draw. Put unresolved measurements "
+            "in comments, never as a hard fail."
+        )
+    if stripped.startswith('{"type":"thread.started"') or stripped.startswith('{"type":"error"'):
+        raise ValueError(
+            "Codex returned a CLI error stream instead of Python CAD source. "
+            "If you picked GPT-6 Astra, update Codex CLI (`codex update`) and retry."
+        )
+    if not source_has_cad_model(source):
+        raise ValueError("Generated source must define gen_step() or a cadgen @step model.")
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
@@ -976,6 +995,312 @@ def _gen_step_local_undefined_names(source: str) -> list[str]:
     return sorted(name for name in referenced if name not in defined and name not in skip)
 
 
+def _cad_module_functions(tree: ast.AST) -> dict[str, ast.FunctionDef]:
+    return {
+        node.name: node
+        for node in getattr(tree, "body", [])
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _calls_in_function(func: ast.FunctionDef) -> set[str]:
+    local_defined = _function_assigned_names(func)
+    called: set[str] = set()
+    for node in ast.walk(func):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id not in local_defined:
+                called.add(node.func.id)
+    return called
+
+
+def _reachable_cad_functions(
+    tree: ast.AST,
+    roots: tuple[str, ...] = ("gen_step", "gen_exploded"),
+) -> list[ast.FunctionDef]:
+    """Top-level helpers reachable from gen_step / gen_exploded (nested stubs included)."""
+    funcs = _cad_module_functions(tree)
+    seen: set[str] = set()
+    out: list[ast.FunctionDef] = []
+    stack = [name for name in roots if name in funcs]
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        fn = funcs.get(name)
+        if fn is None:
+            continue
+        out.append(fn)
+        for callee in _calls_in_function(fn):
+            if callee in funcs and callee not in seen:
+                stack.append(callee)
+    return out
+
+
+def _name_used_as_call(source: str, name: str) -> bool:
+    if not name:
+        return False
+    return bool(re.search(rf"\b{re.escape(name)}\s*\(", source or ""))
+
+
+def _gen_step_undefined_helper_names(source: str) -> list[str]:
+    """Undefined lowercase calls reachable from gen_step(), including nested helpers.
+
+    A stub like ``def chassis_base(): return {"base": base()}`` used to pass the
+    gate because gen_step() only called defined ``chassis_base()``. scripts/step
+    then NameError'd on ``base``.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    reachable = _reachable_cad_functions(tree)
+    if not reachable:
+        return []
+    defined = _defined_module_names(source)
+    called: set[str] = set()
+    for fn in reachable:
+        called |= _calls_in_function(fn)
+    return sorted(
+        name
+        for name in called
+        if name not in defined
+        and name not in _BUILTIN_NAMES
+        and name not in _BUILD123D_LOWERCASE_EXPORTS
+        and bool(name)
+        and name[0].islower()
+    )
+
+
+def _module_top_level_def_snippets(source: str) -> dict[str, str]:
+    """Map top-level function/class/assignment names to their source snippets."""
+    try:
+        tree = ast.parse(source or "")
+    except SyntaxError:
+        return {}
+    lines = (source or "").splitlines(keepends=True)
+    out: dict[str, str] = {}
+    for node in tree.body:
+        names: list[str] = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names = [node.name]
+        elif isinstance(node, ast.Assign):
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = [node.target.id]
+        if not names:
+            continue
+        start = max(0, int(getattr(node, "lineno", 1)) - 1)
+        end = int(getattr(node, "end_lineno", None) or getattr(node, "lineno", start + 1))
+        snippet = "".join(lines[start:end]).rstrip() + "\n"
+        for name in names:
+            out[name] = snippet
+    return out
+
+
+def _splice_missing_helpers_from_prior(new_source: str, prior_source: str | None) -> str:
+    """If a rewrite dropped make_* helpers that the previous file defined, put them back.
+
+    The fallback file-rewrite loop often emits only gen_step()/gen_exploded() that *call*
+    helpers, while the prior tool-agent file still has the full def make_hopper_upper() etc.
+    """
+    if not new_source or not prior_source or prior_source == new_source:
+        return new_source
+    extra: list[str] = []
+    try:
+        extra = _gen_step_local_undefined_names(new_source) or []
+    except Exception:
+        extra = []
+    missing = list(
+        dict.fromkeys(
+            (_gen_step_undefined_helper_names(new_source) or [])
+            + extra
+        )
+    )
+    if not missing:
+        return new_source
+    prior_defs = _module_top_level_def_snippets(prior_source)
+    chunks: list[str] = []
+    seen: set[str] = set()
+    for name in missing:
+        snippet = prior_defs.get(name)
+        if not snippet or name in seen:
+            continue
+        seen.add(name)
+        chunks.append(snippet)
+    if not chunks:
+        return new_source
+    insert = "\n" + "".join(chunks) + "\n"
+    marker = "\ndef gen_step("
+    idx = new_source.find(marker)
+    if idx < 0:
+        idx = new_source.find("def gen_step(")
+        if idx >= 0:
+            return new_source[:idx] + insert.lstrip("\n") + new_source[idx:]
+        return insert.lstrip("\n") + new_source
+    return new_source[: idx + 1] + insert.lstrip("\n") + new_source[idx + 1 :]
+
+
+def _source_has_complete_gen_step(source: str | None) -> bool:
+    text = str(source or "")
+    from backend.services.cad_authoring_agent import (
+        source_has_cad_model,
+        source_is_input_blocked_refusal,
+    )
+
+    if source_is_input_blocked_refusal(text):
+        return False
+    if not source_has_cad_model(text):
+        return False
+    try:
+        ast.parse(text)
+    except SyntaxError:
+        return False
+    if "def gen_step" in text:
+        return not _gen_step_undefined_helper_names(text)
+    return True
+
+
+_CAD_GENERATOR_SKIP_NAMES = frozenset({
+    "sitecustomize.py",
+    "usercustomize.py",
+    "a.py",
+    "test.py",
+    "tmp.py",
+})
+
+
+def _looks_like_toy_cad_source(source: str | None) -> bool:
+    text = str(source or "")
+    from backend.services.cad_authoring_agent import source_is_input_blocked_refusal
+
+    if source_is_input_blocked_refusal(text):
+        return True
+    if len(text) < 250:
+        return True
+    if len(text) < 500 and re.search(r"Box\(\s*1\s*,\s*1\s*,\s*1\s*\)", text):
+        return True
+    return False
+
+
+def _is_cad_generator_filename(name: str) -> bool:
+    n = Path(str(name or "")).name
+    if not n.lower().endswith(".py"):
+        return False
+    if n.lower() in _CAD_GENERATOR_SKIP_NAMES:
+        return False
+    if n.lower().endswith(".rejected.py") or n.lower().endswith(".vibecad.py") or n.lower().endswith(".freecad.py"):
+        return False
+    if n.startswith("."):
+        return False
+    return True
+
+
+def _stems_related(left: str, right: str) -> bool:
+    sa = re.sub(r"[^a-z0-9]+", "_", Path(left or "").stem.lower()).strip("_")
+    sb = re.sub(r"[^a-z0-9]+", "_", Path(right or "").stem.lower()).strip("_")
+    if not sa or not sb:
+        return False
+    if sa == sb or sa in sb or sb in sa:
+        return True
+    ta, tb = [t for t in sa.split("_") if t], [t for t in sb.split("_") if t]
+    return len(set(ta[:5]) & set(tb[:5])) >= 2
+
+
+def _cad_source_rank(name: str, source: str, *, preferred_name: str | None = None) -> tuple[int, int, int, int]:
+    """Higher is better: complete helpers, preferred/related name, not a toy, length."""
+    from backend.services.cad_authoring_agent import source_has_cad_model
+
+    if _looks_like_toy_cad_source(source) or not source_has_cad_model(source or ""):
+        return (0, 0, 0, 0)
+    complete = 2 if _source_has_complete_gen_step(source) else 1
+    preferred = 1 if preferred_name and Path(name).name == Path(preferred_name).name else 0
+    related = 1 if (not preferred_name) or preferred or _stems_related(name, preferred_name) else 0
+    if preferred_name and not related and not preferred:
+        return (0, 0, 0, 0)
+    return (complete, preferred, related, len(source or ""))
+
+
+def _iter_project_cad_sources(project_path: Path) -> list[tuple[str, str]]:
+    from backend.services.engine_layout import project_rel
+
+    out: list[tuple[str, str]] = []
+    try:
+        paths = list(Path(project_path).glob("*.py"))
+        jake = Path(project_path) / "jake"
+        if jake.is_dir():
+            paths.extend(jake.glob("*.py"))
+    except Exception:
+        return out
+    for path in paths:
+        if not _is_cad_generator_filename(path.name):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if text.strip():
+            out.append((project_rel(project_path, path), text))
+    return out
+
+
+def _best_leftover_cad_source(
+    project_path: Path,
+    *,
+    preferred_name: str | None = None,
+    extra_source: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Pick the best leftover cadgen `@step` / gen_step() file (never VibeCAD)."""
+    from backend.services.cad_authoring_agent import source_has_cad_model
+
+    candidates: list[tuple[str, str]] = []
+    if extra_source and source_has_cad_model(extra_source):
+        candidates.append((preferred_name or "", extra_source))
+    candidates.extend(_iter_project_cad_sources(project_path))
+    best_name: str | None = None
+    best_source: str | None = None
+    best_rank = (0, 0, 0, 0)
+    seen: set[tuple[str, int]] = set()
+    for name, text in candidates:
+        key = (name, len(text))
+        if key in seen:
+            continue
+        seen.add(key)
+        rank = _cad_source_rank(name, text, preferred_name=preferred_name)
+        if rank > best_rank:
+            best_rank = rank
+            best_name = name or preferred_name
+            best_source = text
+    if best_rank[0] <= 0:
+        return None, None
+    return best_name, best_source
+
+
+def _splice_helpers_from_project(
+    source: str,
+    project_path: Path,
+    extra_donors: list[str | None] | None = None,
+) -> str:
+    """Restore make_* helpers from any leftover generator in the project, not just the last rewrite."""
+    if not source:
+        return source
+    donors: list[str] = []
+    for donor in extra_donors or []:
+        if donor and donor != source:
+            donors.append(donor)
+    for _name, text in _iter_project_cad_sources(project_path):
+        if text and text != source:
+            donors.append(text)
+    updated = source
+    for donor in donors:
+        spliced = _splice_missing_helpers_from_prior(updated, donor)
+        if spliced != updated:
+            updated = spliced
+        if _source_has_complete_gen_step(updated):
+            break
+    return updated
+
+
 def _source_generation_repair_note(error: str) -> str:
     if "DXF/VXF semantic modeling failed" in error:
         return (
@@ -1004,8 +1329,26 @@ def _source_generation_repair_note(error: str) -> str:
     if not symbol_names:
         return f"Source generation failed: {error}"
 
+    helper_names = [
+        name
+        for name in symbol_names
+        if name not in _DXF_CONFIG_NAMES
+        and (
+            name.startswith(("build_", "make_", "create_", "gen_", "add_"))
+            or "_" in name
+            or name in {
+                "build_children", "build_parts", "assemble", "make_assembly", "create_parts",
+                "base", "ribs", "fuse",
+            }
+        )
+    ]
     examples = "\n".join(
-        f"- define `{name}` at module scope before `gen_step()` (constant/import/helper)"
+        (
+            f"- define a complete `def {name}():` above `gen_step()` that returns real build123d shapes "
+            f"(Compound/Solid/list of labeled parts). No stubs, no `pass`, no empty lists."
+            if name in helper_names or name.startswith(("build_", "make_", "create_", "gen_", "add_"))
+            else f"- define `{name}` at module scope before `gen_step()` (constant/import/helper)"
+        )
         for name in symbol_names
     )
     return (
@@ -1013,8 +1356,8 @@ def _source_generation_repair_note(error: str) -> str:
         "that were never defined in the same file.\n"
         f"Missing names: {', '.join(symbol_names)}\n"
         "Fix this by editing the existing source into ONE complete Python file. Either define the missing helpers above "
-        "gen_step() or inline their full geometry logic inside gen_step(). Also define all missing module constants/imports. "
-        "Do not restart from an unrelated model.\n"
+        "gen_step() or inline their full geometry logic inside gen_step(). Also define all missing module constants/imports "
+        "(for example model_label / exploded_offsets). Do not restart from an unrelated model.\n"
         f"{examples}\n"
         "If this is a DXF/VXF workflow, prefer zero custom helper calls in gen_step(): inline the modeling blocks "
         "directly so names like make_*/add_*/build_* cannot be left undefined.\n"
@@ -1060,33 +1403,14 @@ def _promote_disconnected_bodies(
     base: str,
     max_bodies: int = 64,
 ) -> list[str]:
-    """Expose disconnected text-to-cad bodies as separate browser components."""
-    glb_path = project_path / glb_name
-    if not glb_path.is_file():
-        return []
-    try:
-        mesh = cad_service.load_mesh(glb_path)
-        bodies = cad_service.split_mesh_bodies(mesh)
-    except Exception:
-        return []
-    if len(bodies) <= 1 or len(bodies) > max_bodies:
-        return []
+    """Do not explode one tessellated solid into N sibling browser GLBs.
 
-    outputs: list[str] = []
-    for idx, body in enumerate(bodies, start=1):
-        name = f"{base}_part{idx:02d}.glb"
-        out = project_path / name
-        n = 2
-        while out.exists():
-            name = f"{base}_part{idx:02d}_{n}.glb"
-            out = project_path / name
-            n += 1
-        try:
-            cad_service.export_mesh(body, out)
-            outputs.append(name)
-        except Exception as exc:
-            logger.debug("could not promote text-to-cad body %s from %s: %s", idx, glb_name, exc)
-    return outputs
+    Disconnected triangle islands are common on screws/augers and used to be
+    written as ``{base}_part01.glb`` clones. Bodies stay selectable from the
+    assembled viewer mesh instead of extra catalog files.
+    """
+    del project_path, glb_name, base, max_bodies
+    return []
 
 
 def _part_artifact_slug(label: str | None, fallback: str) -> str:
@@ -1095,12 +1419,32 @@ def _part_artifact_slug(label: str | None, fallback: str) -> str:
     return slug[:80] or fallback
 
 
+_SOLID_TYPE_NAMES = {"Solid", "Part", "Body"}
+_TOPO_LEAF_TYPE_NAMES = {"Face", "Edge", "Vertex", "Wire", "Shell", "FaceList"}
+_GENERIC_PROMOTED_PART_RE = re.compile(
+    r"^(?:body|part|solid|compound|shape|object|mesh|result)(?:[_\-\s]*\d+)?$",
+    re.I,
+)
+
+
+def _is_generic_promoted_part_label(label: str | None) -> bool:
+    slug = _part_artifact_slug(label, "")
+    return bool(slug) and bool(_GENERIC_PROMOTED_PART_RE.fullmatch(slug))
+
+
 def _iter_build123d_leaf_children(shape: Any, *, max_depth: int = 4) -> list[Any]:
-    """Return labeled leaf children from a build123d Compound without flattening solids into faces."""
+    """Return labeled Compound children without flattening a Solid into Faces."""
     out: list[Any] = []
 
     def visit(node: Any, depth: int) -> None:
+        type_name = type(node).__name__
+        if type_name in _TOPO_LEAF_TYPE_NAMES:
+            return
         children = list(getattr(node, "children", []) or [])
+        if type_name in _SOLID_TYPE_NAMES:
+            if depth > 0:
+                out.append(node)
+            return
         if children and depth < max_depth:
             for child in children:
                 visit(child, depth + 1)
@@ -1233,9 +1577,20 @@ def _promote_build123d_children_from_source(
         filtered = [child for child in candidates if not detail_re.search(str(getattr(child, "label", "") or ""))]
         if filtered:
             candidates = filtered
+    named = [
+        child
+        for child in candidates
+        if not _is_generic_promoted_part_label(str(getattr(child, "label", "") or ""))
+    ]
+    # Generic Body_1 / Part_2 leaves are tessellation/compound clones of one solid.
+    if not named:
+        return []
+    candidates = named
     for idx, child in enumerate(candidates[:max_parts], start=1):
         label = str(getattr(child, "label", "") or "").strip()
         slug = _part_artifact_slug(label, f"part_{idx:02d}")
+        if _is_generic_promoted_part_label(slug):
+            continue
         if slug in used_names:
             slug = f"{slug}_{idx:02d}"
         used_names.add(slug)
@@ -1890,31 +2245,15 @@ def _source_looks_like_multipart_assembly(source: str) -> bool:
 
 
 def _prompt_wants_electronics_or_wiring(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    needles = (
-        "motor", "servo", "esc", "lipo", "battery", "receiver", "wiring", "wire channel",
-        "electronics", "brushless", "propeller", "pushrod", "arduino", "pcb", "board mount",
-        "motor mount", "servo pocket", "cable", "harness",
-    )
-    return any(n in p for n in needles)
+    from backend.services.cad_harness import prompt_wants_electronics_or_wiring
+
+    return prompt_wants_electronics_or_wiring(prompt)
 
 
 def _electronics_authoring_rules(prompt: str, *, enabled: bool = True) -> str:
-    if not enabled:
-        return ""
-    if not _prompt_wants_electronics_or_wiring(prompt):
-        return ""
-    return (
-        "\nELECTRONICS / WIRING SOLIDS (required for this prompt):\n"
-        "- Do NOT stop at empty pockets, shelves, or clearance holes.\n"
-        "- Model visible labeled solids for the claimed electronics: motor, ESC, battery/LiPo, "
-        "receiver, and each servo (or documented purchasable STEP via $step-parts).\n"
-        "- Model wiring as labeled solids too: wire bundles/tubes along channels, lead exits, "
-        "and harness runs between motor/ESC/battery/servos — not only empty tunnels.\n"
-        "- Keep printable airframe parts separate from electronics envelopes; electronics may be "
-        "non-printed space-claim bodies with clear labels (e.g. `2212_motor`, `esc_30a`, "
-        "`lipo_3s`, `aileron_servo_left`, `motor_leads`).\n"
-    )
+    from backend.services.cad_harness import electronics_authoring_rules
+
+    return electronics_authoring_rules(prompt, enabled=enabled)
 
 
 def _assembly_dual_export_rules(prompt: str = "", *, model_electronics: bool = True) -> str:
@@ -1924,7 +2263,7 @@ def _assembly_dual_export_rules(prompt: str = "", *, model_electronics: bool = T
         "- Also define `gen_exploded()` that returns the same labeled children spaced apart for "
         "BOM/assembly review (e.g. offset along Y/Z so parts do not overlap).\n"
         "- Primary basename is the assembled model. `scripts/step` auto-exports "
-        "`{stem}_exploded.step/.glb/.stl/.3mf` when `gen_exploded()` exists.\n"
+        "`{stem}_exploded.step/.glb` when `gen_exploded()` exists. Do not write STL.\n"
         "- Do NOT make the primary generator filename end in `_exploded` unless the user only "
         "asked for an exploded view.\n"
         f"{_electronics_authoring_rules(prompt, enabled=model_electronics)}"
@@ -1983,6 +2322,7 @@ def _normalize_exploded_sidecar_preview(project_path: Path, stem: str) -> None:
                 continue
             try:
                 cad_service._match_glb_scale_to_step(step_path, preview)
+                cad_service._bake_gltf_metres_to_millimetres(preview)
             except Exception as exc:
                 logger.debug("Could not unit-match exploded preview %s: %s", preview.name, exc)
     except Exception as exc:
@@ -2114,12 +2454,13 @@ def _wire_jake_artifacts_to_product_shell(
     shell_glb = project_path / glb_name
     jake_glb = project_path / jake_hidden_glb_name(step_name)
     if step_path.is_file():
-        # Prefer the STEP-derived Jake/cadjs sidecar for viewport output. The
-        # shell GLB emitted by scripts/step can be Y-up while the sidecar keeps
-        # the STEP assembly in Render Studio's expected Z-up orientation.
-        if jake_glb.is_file():
+        # Synchronize from the newest preview. A hidden sidecar can survive an
+        # earlier run, so its naming convention alone cannot make it current.
+        shell_mtime = shell_glb.stat().st_mtime_ns if shell_glb.is_file() else -1
+        jake_mtime = jake_glb.stat().st_mtime_ns if jake_glb.is_file() else -1
+        if jake_mtime > shell_mtime:
             shell_glb.write_bytes(jake_glb.read_bytes())
-        elif shell_glb.is_file() and not jake_glb.is_file():
+        elif shell_glb.is_file():
             jake_glb.write_bytes(shell_glb.read_bytes())
         # Jake/cadpy GLBs are often metres (glTF). Render Studio viewport is mm —
         # bake the STEP unit match into both shell + sidecar so models aren't tiny.
@@ -2139,6 +2480,36 @@ def _wire_jake_artifacts_to_product_shell(
     if brief.is_file():
         wired["brief"] = brief.name
     return wired
+
+
+def _measure_or_rebuild_step_preview(
+    step_path: Path,
+    glb_path: Path,
+    inspect_summary: dict[str, Any],
+    *,
+    prompt: str = "",
+    seed: str = "",
+) -> dict[str, Any]:
+    """Measure the published preview, rebuilding it from STEP on frame mismatch."""
+    from dataclasses import asdict
+    from backend.services.cad_preview_parity import facts_from_inspect_summary, measure_preview_parity
+
+    facts = facts_from_inspect_summary(inspect_summary)
+    report = measure_preview_parity(glb_path, facts)
+    if report.ok:
+        return {**asdict(report), "rebuilt_from_step": False}
+    try:
+        cad_service.tessellate_step_to_glb(step_path, glb_path, force=True)
+        if prompt:
+            cad_service.apply_prompt_appearance_to_file(glb_path, prompt, seed=seed)
+        rebuilt = measure_preview_parity(glb_path, facts)
+    except Exception as exc:
+        logger.warning("Could not rebuild mismatched STEP preview %s: %s", glb_path.name, exc)
+        return {**asdict(report), "rebuilt_from_step": False}
+    if rebuilt.ok:
+        hidden = glb_path.with_name(jake_hidden_glb_name(step_path.name))
+        hidden.write_bytes(glb_path.read_bytes())
+    return {**asdict(rebuilt), "rebuilt_from_step": rebuilt.ok}
 
 
 def _looks_like_spiral_staircase(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
@@ -2179,9 +2550,39 @@ def _looks_like_planetary_gear_assembly(prompt: str, images: list[dict[str, Any]
     p = (prompt or "").lower()
     if images:
         return False
-    has_planetary = "planetary" in p or ("sun" in p and "planet" in p and "ring" in p)
-    has_gear = "gear" in p or "teeth" in p or "tooth" in p
+    has_planetary = (
+        "planetary" in p
+        or "plantry" in p
+        or "planetery" in p
+        or ("sun" in p and "planet" in p and "ring" in p)
+    )
+    has_gear = "gear" in p or "teeth" in p or "tooth" in p or "gearbox" in p
     return has_planetary and has_gear
+
+
+def _planetary_ratio_from_prompt(prompt: str) -> float | None:
+    """Parse 1:20 / 20:1 / ratio 20 as a fixed-ring reduction (sun in, carrier out)."""
+    p = prompt or ""
+    match = re.search(
+        r"(?:ratio|reduction)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*[:/\-to]+\s*(\d+(?:\.\d+)?)",
+        p,
+        re.I,
+    )
+    if not match:
+        match = re.search(r"\b(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\b", p)
+    if not match:
+        return None
+    try:
+        a = float(match.group(1))
+        b = float(match.group(2))
+    except ValueError:
+        return None
+    if a <= 0 or b <= 0:
+        return None
+    lo, hi = (a, b) if a <= b else (b, a)
+    if lo == 1.0:
+        return hi
+    return hi / lo
 
 
 def _prompt_implies_mechanism_motion(prompt: str, images: list[dict[str, Any]] | None = None) -> bool:
@@ -3370,6 +3771,7 @@ def _v2_snapshot_review_repair_note(
     system = """You are reviewing a text-to-cad snapshot like the upstream CAD skill.
 Return ONLY JSON: {"pass": boolean, "repair_note": string, "issues": [string]}.
 Pass only if the visible model appears to satisfy the user's prompt and CAD brief.
+The user prompt may be in any language — judge intent, not English wording.
 Fail when the model is a primitive placeholder, misses key functional interfaces, ignores explicit dimensions, lacks requested holes/slots/bosses/mounting features, or looks semantically unlike the requested object.
 For gears / planetary assemblies: FAIL if ring teeth look like long radial fins/slats, if planets do not sit between sun and ring, if teeth clearly do not mesh, or if carrier/pins are missing when requested. Internal ring teeth must be short inward teeth on a solid rim — not deep cuts to the center.
 For spiral stairs: FAIL if treads are not rising around a central column, or if balusters/handrail are floating debris unrelated to the stair.
@@ -3419,6 +3821,8 @@ def _footprint_score_at_z(vertices, z_val: float, tol: float) -> float:
     if int(mask.sum()) < 8:
         return 0.0
     xy = vertices[mask][:, :2]
+    if not np.isfinite(xy).all():
+        return 0.0
     span = xy.max(axis=0) - xy.min(axis=0)
     mn = float(min(span[0], span[1]))
     mx = float(max(span[0], span[1]))
@@ -3472,30 +3876,46 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
         import trimesh
 
         scene = trimesh.load(glb_path, force="scene")
+        cad_service.sanitize_scene_finite(scene)
         mesh = scene.dump(concatenate=True) if hasattr(scene, "dump") else scene
         if mesh is None:
             return
         if not hasattr(mesh, "vertices"):
             # Fall back to scene transform path
             mesh = trimesh.util.concatenate(tuple(scene.geometry.values()))
+        if isinstance(mesh, trimesh.Trimesh):
+            cad_service.sanitize_trimesh_finite(mesh)
+
+        bounds = getattr(mesh, "bounds", None)
+        if bounds is not None:
+            import numpy as np
+
+            if not np.isfinite(np.asarray(bounds, dtype=float)).all():
+                cad_service.export_scene(scene, glb_path)
+                return
 
         size = mesh.extents
         sx = float(size[0])
         sy = float(size[1])
         sz = float(size[2])
+        min_xy = min(sx, sy)
+        max_xy = max(sx, sy)
+        # Overflow-sanitized meshes can collapse one axis to 0 (STEP coves with Inf X).
+        # Don't treat that as Y-up or centering will poison the remaining axes.
+        if not all(math.isfinite(v) for v in (sx, sy, sz)) or min(sx, sy, sz) <= max(sx, sy, sz) * 1e-6:
+            already_z_up = True
         # Flat parts on the XY floor (RC planes, plates, gears): thin Z is already Z-up.
         # The previous "sz >= sy" check treated these as Y-up and tipped them sideways.
-        if sz < min(sx, sy) * 0.55:
+        elif sz < min_xy * 0.55 and min_xy / max(max_xy, 1e-9) > 0.45:
             already_z_up = True
         elif sz >= max(sx, sy) * 0.95:
             # Standing height already along Z.
             already_z_up = True
-        elif sy >= max(sx, sz) * 0.99 and sy > sz * 1.15:
-            # Classic Y-up standing model (tallest axis is Y, clearly taller than Z).
-            # Require sy > sz*1.15 so long flat parts (airplanes, wings) stay Z-up.
+        elif sy >= max(sx, sz) * 0.99 and sy > sx * 1.15 and sy > sz * 1.15:
+            # Classic Y-up standing model (tallest axis is Y, clearly taller than X and Z).
             already_z_up = False
         else:
-            already_z_up = sz >= sy * 1.05
+            already_z_up = True
 
         if not already_z_up:
             # Try both Y-up → Z-up directions; keep the one with base footprint at min Z.
@@ -3521,9 +3941,12 @@ def _convert_text_to_cad_glb_to_z_up(glb_path: Path) -> None:
             -(bounds[0, 1] + bounds[1, 1]) / 2.0,
             -bounds[0, 2],
         ]
+        if not np.isfinite(np.asarray(translation, dtype=float)).all():
+            cad_service.export_scene(scene, glb_path)
+            return
         mesh.apply_translation(translation)
         scene.apply_transform(trimesh.transformations.translation_matrix(translation))
-        scene.export(glb_path, file_type="glb")
+        cad_service.export_scene(scene, glb_path)
     except Exception as exc:
         logger.warning("Could not convert text-to-cad GLB to Z-up (%s): %s", glb_path.name, exc)
 
@@ -3547,9 +3970,55 @@ def _run_text_to_cad_v2(
     strict_upstream: bool = False,
 ) -> dict[str, Any]:
     """CAD 2.0/Fusion path: generate build123d source and run text-to-cad scripts/step."""
-    from backend.services import skill_runner
+    from backend.services.ai_service import bind_generation_progress
 
-    base = Path(previous_source_name).stem if previous_source_name else ""
+    with bind_generation_progress(progress_callback):
+        return _run_text_to_cad_v2_body(
+            prompt,
+            project_path,
+            context,
+            ai,
+            trace_id=trace_id,
+            max_repairs=max_repairs,
+            images=images,
+            previous_source=previous_source,
+            previous_source_name=previous_source_name,
+            cancel_check=cancel_check,
+            progress_callback=progress_callback,
+            usage_callback=usage_callback,
+            fusion_mode=fusion_mode,
+            architect_mode=architect_mode,
+            strict_upstream=strict_upstream,
+        )
+
+
+def _run_text_to_cad_v2_body(
+    prompt: str,
+    project_path: Path,
+    context: dict[str, Any],
+    ai: AIService,
+    *,
+    trace_id: str | None,
+    max_repairs: int,
+    images: list[dict[str, Any]] | None,
+    previous_source: str | None = None,
+    previous_source_name: str | None = None,
+    cancel_check=None,
+    progress_callback=None,
+    usage_callback=None,
+    fusion_mode: bool = False,
+    architect_mode: bool = False,
+    strict_upstream: bool = False,
+) -> dict[str, Any]:
+    """CAD 2.0/Fusion path: generate build123d source and run text-to-cad scripts/step."""
+    from backend.services import skill_runner
+    from backend.services.engine_layout import artifacts_for, model_stem as _layout_stem
+    from backend.services.cad_pass_gate import CadRunManifest, current_snapshot_ready
+
+    run_started_ns = time.time_ns()
+    skill_runner.ensure_project_cad_scripts(project_path)
+
+    base = _layout_stem(previous_source_name) if previous_source_name else ""
     if not base:
         from backend.services.project_store import file_stem_from_prompt
 
@@ -3565,12 +4034,26 @@ def _run_text_to_cad_v2(
             base = better
         elif base in {"create", "make", "build", "design"}:
             base = "text_to_cad_model"
-    source_name = f"{base}.py"
-    step_name = f"{base}.step"
-    glb_name = f"{base}.glb"
-    stl_name = f"{base}.stl"
-    three_mf_name = f"{base}.3mf"
-    source_path = project_path / source_name
+    target_mode = str((context or {}).get("target_mode") or "").strip().lower()
+    is_edit_early = bool(previous_source) or target_mode == "edit"
+    if is_edit_early:
+        keep = _layout_stem(previous_source_name or (context or {}).get("base_filename"))
+        if keep:
+            base = keep
+    arts = artifacts_for(
+        project_path,
+        "jake",
+        base,
+        previous_source_name=previous_source_name,
+        base_filename=(context or {}).get("base_filename"),
+    )
+    arts.directory.mkdir(parents=True, exist_ok=True)
+    source_name = arts.source_name
+    step_name = arts.step_name
+    glb_name = arts.glb_name
+    stl_name = arts.stl_name
+    three_mf_name = arts.three_mf_name
+    source_path = arts.source_path
     ai_traces: list[dict[str, Any]] = []
     repair_note: str | None = None
     last_error: str | None = None
@@ -3684,11 +4167,14 @@ def _run_text_to_cad_v2(
             "- Mechanical/airframe geometry only; pockets, channels, and clearance volumes are fine.\n"
         )
     if progress_callback:
-        brief_label = (
-            f"Writing {label_prefix} revise brief (Jake edit workflow)..."
-            if is_edit
-            else f"Writing {label_prefix} CAD brief with text-to-cad skill..."
-        )
+        if label_prefix == "2.0":
+            brief_label = "Text to Cad · revising model…" if is_edit else "Text to Cad · writing brief…"
+        else:
+            brief_label = (
+                f"Writing {label_prefix} revise brief..."
+                if is_edit
+                else f"Writing {label_prefix} CAD brief..."
+            )
         progress_callback({"stage": "brief", "pct": 10, "label": brief_label})
     edit_note = ""
     if previous_source:
@@ -3708,16 +4194,23 @@ def _run_text_to_cad_v2(
                 "and do not regenerate from an older unrelated assembly baseline.\n"
             )
     # Keep the selected stem when editing — never rename from an improved prompt.
-    if is_edit and previous_source_name:
-        keep_stem = Path(previous_source_name).stem
-        if keep_stem and keep_stem != base:
-            base = keep_stem
-            source_name = f"{base}.py"
-            step_name = f"{base}.step"
-            glb_name = f"{base}.glb"
-            stl_name = f"{base}.stl"
-            three_mf_name = f"{base}.3mf"
-            source_path = project_path / source_name
+    # Paths are already resolved via engine_layout.artifacts_for (jake/ vs legacy root).
+    cross = (context or {}).get("cross_engine_base") if isinstance(context, dict) else None
+    if isinstance(cross, dict) and cross.get("source_engine"):
+        edit_note += (
+            f"\nCROSS-HARNESS EDIT: the selected object was made with {cross.get('source_label')}. "
+            "Do not execute that harness's generator.\n"
+        )
+        if cross.get("step"):
+            edit_note += (
+                f"Import and inspect STEP `{cross['step']}` (`python scripts/inspect refs {cross['step']} "
+                "--facts --planes --positioning`), then author the requested CAD in this Jake generator.\n"
+            )
+        elif cross.get("glb"):
+            edit_note += (
+                f"Use viewport GLB `{cross['glb']}` as visual reference and author new B-rep. "
+                "Do not run Mesh/Three.js factories.\n"
+            )
     # Mirror upstream text-to-cad modeling behavior by default: keep the
     # generation prompt focused on the user request + edit lineage, while
     # preserving our upload/reference/inspect/selector tooling around it.
@@ -3739,11 +4232,43 @@ def _run_text_to_cad_v2(
             },
         )
     generation_prompt = prompt + edit_note if mirror_upstream_modeling else (prompt + edit_note + workflow_note)
+    if is_edit:
+        edit_refs = [
+            {key: ref[key] for key in ("id", "filename", "viewer_filename", "body_index", "geometry_context") if key in ref}
+            for ref in (context or {}).get("references", [])
+            if isinstance(ref, dict)
+        ]
+        generation_prompt += (
+            "\n\nSELECTED MODEL EDIT CONTEXT (preserve this model and unrelated parts):\n"
+            + json.dumps({"source": source_name, "base_filename": (context or {}).get("base_filename"), "references": edit_refs}, ensure_ascii=False)
+            + "\nOnly alter the requested region. Extend the existing model for additive requests; "
+            "do not export only the added feature as the complete replacement. "
+            "References without geometry_context have no verified file-space transform; "
+            "do not interpret their viewport coordinates as STEP coordinates.\n"
+        )
+        from backend.services.cad_edit_contract import CAD_EDIT_RULES
+        generation_prompt += "\n\n" + CAD_EDIT_RULES
     if mirror_upstream_modeling:
         trace_add("info", "[2.0/text-to-cad] Using upstream-mirrored modeling prompt mode.", trace_id=trace_id)
+
+    # Feed the existing McMaster parts list into the brief so edits can append/remove rows.
+    try:
+        existing_parts_list = cad_service.read_mcmaster_parts_list(project_path)
+    except Exception:
+        existing_parts_list = ""
+    brief_context = dict(context or {})
+    if existing_parts_list:
+        brief_context["mcmaster_parts_list"] = existing_parts_list[:20000]
+    try:
+        from backend.services.cad_harness import project_parts_inventory
+
+        brief_context["project_parts"] = project_parts_inventory(project_path)
+    except Exception:
+        pass
+
     cad_brief, brief_trace = ai.generate_cad_brief(
         generation_prompt,
-        context,
+        brief_context,
         trace_id=trace_id,
         images=images,
     )
@@ -3753,12 +4278,27 @@ def _run_text_to_cad_v2(
         raise DesignCanceled("Generation canceled.")
     (project_path / f"{base}.brief.md").write_text(cad_brief.rstrip() + "\n", encoding="utf-8")
 
-    # Default: per-user OpenAI/Claude tool agent (BYOK). Codex is opt-in only.
-    ctx = context or {}
-    use_codex_agent = bool(jake_identical) and bool(
-        ctx.get("codex_agent", False) or ctx.get("jake_codex_agent", False)
+    from backend.services.cad_harness import apply_mcmaster_from_brief
+
+    applied = apply_mcmaster_from_brief(
+        project_path,
+        cad_brief=cad_brief,
+        user_prompt=prompt,
+        context=brief_context,
+        is_edit=bool(is_edit),
+        progress_callback=progress_callback,
+        cancel_check=cancel_check,
+        trace_id=trace_id,
     )
-    use_tool_agent = bool(jake_identical) and bool(ctx.get("jake_tool_agent", True))
+    brief_context = applied.get("context") or brief_context
+    context = brief_context
+
+    # Codex is the tool-loop host for every model. Jake's cad skill is the tools.
+    ctx = context or {}
+    from backend.services.cad_host_runtime import jake_agent_flags
+    from backend.services.chatgpt_subscription_ai import codex_model_short_name
+
+    use_codex_agent, use_tool_agent = jake_agent_flags(ctx, ai, jake_identical=jake_identical)
     if (use_codex_agent or use_tool_agent) and not canonical_source:
         # Prefer a filesystem-safe stem (spaces break CLIs).
         safe_base = re.sub(r"[^a-zA-Z0-9_-]+", "_", base).strip("_") or "model"
@@ -3782,62 +4322,10 @@ def _run_text_to_cad_v2(
         agent_result = None
         agent_runtime = None
         agent_exc_message = None
+        recovered_agent_export = False
 
-        if use_codex_agent:
-            try:
-                from backend.services.codex_agent import (
-                    CodexUnavailable,
-                    run_codex_agent,
-                )
-
-                if progress_callback:
-                    progress_callback(
-                        {
-                            "stage": "authoring",
-                            "pct": 16,
-                            "label": "Starting Codex CAD agent…",
-                        }
-                    )
-                agent_result = run_codex_agent(
-                    project_path=project_path,
-                    prompt=generation_prompt,
-                    cad_brief=cad_brief,
-                    source_name=source_name,
-                    step_name=step_name,
-                    glb_name=glb_name,
-                    stl_name=stl_name,
-                    three_mf_name=three_mf_name,
-                    previous_source=previous_source,
-                    is_edit=is_edit,
-                    cancel_check=cancel_check,
-                    progress_callback=progress_callback,
-                    trace_id=trace_id,
-                )
-                agent_runtime = "codex"
-            except DesignCanceled:
-                raise
-            except CodexUnavailable as unavailable:
-                agent_exc_message = str(unavailable)
-                trace_add(
-                    "warning",
-                    f"[2.0/text-to-cad] Codex unavailable; will try fallback: {agent_exc_message[:400]}",
-                    trace_id=trace_id,
-                )
-            except Exception as agent_exc:
-                agent_exc_message = str(agent_exc)
-                if "canceled" in agent_exc_message.lower():
-                    raise DesignCanceled("Generation canceled.") from agent_exc
-                trace_add(
-                    "warning",
-                    f"[2.0/text-to-cad] Codex agent failed: {agent_exc_message[:500]}",
-                    trace_id=trace_id,
-                )
-
-        if agent_result is None and (
-            use_tool_agent or (use_codex_agent and agent_exc_message)
-        ):
-            # Soft fallback to in-process imitation only after Codex fails/unavailable,
-            # or when jake_tool_agent was explicitly requested.
+        # Codex is the host. The JSON tool agent is only jake_force_tool_agent.
+        if use_tool_agent:
             try:
                 from backend.services.jake_tool_agent import run_jake_tool_agent
 
@@ -3845,10 +4333,27 @@ def _run_text_to_cad_v2(
                     progress_callback(
                         {
                             "stage": "authoring",
-                            "pct": 18,
-                            "label": "Codex unavailable — falling back to in-process tool agent…",
+                            "pct": 16,
+                            "label": f"Text to Cad · {getattr(ai, 'model', 'selected model')}…",
                         }
                     )
+                tool_turns = (context or {}).get("max_turns")
+                try:
+                    if tool_turns is None:
+                        tool_turns = 200
+                    else:
+                        tool_turns = int(tool_turns)
+                        if tool_turns <= 0:
+                            tool_turns = 200
+                except (TypeError, ValueError):
+                    tool_turns = 200
+                budget_usd = (context or {}).get("budget_usd")
+                try:
+                    budget_usd = float(budget_usd) if budget_usd is not None else None
+                except (TypeError, ValueError):
+                    budget_usd = None
+                if budget_usd is not None and budget_usd <= 0:
+                    budget_usd = None
                 agent_result = run_jake_tool_agent(
                     ai=ai,
                     project_path=project_path,
@@ -3861,11 +4366,13 @@ def _run_text_to_cad_v2(
                     three_mf_name=three_mf_name,
                     previous_source=previous_source,
                     is_edit=is_edit,
-                    max_turns=max(28, (max_repairs + 1) * 3),
+                    max_turns=tool_turns,
+                    budget_usd=budget_usd,
                     cancel_check=cancel_check,
                     progress_callback=progress_callback,
                     usage_callback=usage_callback,
                     model_electronics=bool((context or {}).get("model_electronics", True)),
+                    use_mcmaster_parts=bool((context or {}).get("use_mcmaster_parts", True)),
                     trace_id=trace_id,
                 )
                 agent_runtime = "jake_tool_agent"
@@ -3878,16 +4385,118 @@ def _run_text_to_cad_v2(
                 if isinstance(partial, list) and partial:
                     ai_traces.extend(t for t in partial if isinstance(t, dict) and t not in ai_traces)
                     _sync_ai_traces()
-                agent_exc_message = (
-                    f"{agent_exc_message + ' | ' if agent_exc_message else ''}"
-                    f"tool agent: {tool_exc}"
+                agent_exc_message = str(tool_exc)
+                if "canceled" in agent_exc_message.lower():
+                    raise DesignCanceled("Generation canceled.") from tool_exc
+                trace_add(
+                    "warning",
+                    f"[2.0/text-to-cad] Tool agent failed: {agent_exc_message[:500]}",
+                    trace_id=trace_id,
                 )
                 agent_result = None
+
+        if agent_result is None and use_codex_agent:
+            try:
+                from backend.services.codex_agent import CodexUnavailable, CodexEditNotProduced, run_codex_agent
+            except Exception as import_exc:
+                CodexUnavailable = type("CodexUnavailable", (RuntimeError,), {})  # noqa: N806
+                run_codex_agent = None
+                extra = f"Codex agent unavailable to import: {import_exc}"
+                raise DesignBuildError(extra, ai_traces=ai_traces) from import_exc
+            else:
+                try:
+                    if progress_callback:
+                        label = f"Codex CLI · {codex_model_short_name(getattr(ai, 'model', None))}…"
+                        progress_callback(
+                            {
+                                "stage": "authoring",
+                                "pct": 18,
+                                "label": label,
+                            }
+                        )
+                    leftover = ""
+                    leftover_path = project_path / source_name
+                    if leftover_path.is_file():
+                        leftover = leftover_path.read_text(encoding="utf-8", errors="ignore").strip()
+                    from backend.services.chatgpt_codex_llm import trace_for_codex_usage
+
+                    def on_codex_usage(usage: dict[str, int]) -> None:
+                        model_id = str(getattr(ai, "model", None) or "").strip() or "chatgpt"
+                        trace = trace_for_codex_usage(model_id, usage, trace_id=trace_id)
+                        if ai_traces and isinstance(ai_traces[-1], dict) and ai_traces[-1].get("stage") == "codex_llm":
+                            ai_traces[-1] = trace
+                        else:
+                            ai_traces.append(trace)
+                        _sync_ai_traces()
+
+                    agent_result = run_codex_agent(
+                        project_path=project_path,
+                        prompt=generation_prompt,
+                        cad_brief=cad_brief,
+                        source_name=source_name,
+                        step_name=step_name,
+                        glb_name=glb_name,
+                        stl_name=stl_name,
+                        three_mf_name=three_mf_name,
+                        previous_source=leftover or previous_source,
+                        is_edit=bool(leftover or is_edit),
+                        cancel_check=cancel_check,
+                        progress_callback=progress_callback,
+                        usage_callback=on_codex_usage,
+                        trace_id=trace_id,
+                        model=str(getattr(ai, "model", None) or "").strip() or None,
+                        user_id=str(ctx.get("user_id") or "") or None,
+                        ai=ai,
+                    )
+                    agent_runtime = "codex"
+                    final_usage = agent_result.get("usage") if isinstance(agent_result, dict) else None
+                    if final_usage:
+                        on_codex_usage(final_usage)
+                except DesignCanceled:
+                    raise
+                except CodexEditNotProduced as unavailable:
+                    raise DesignBuildError(str(unavailable), ai_traces=ai_traces) from unavailable
+                except CodexUnavailable as unavailable:
+                    raise DesignBuildError(str(unavailable), ai_traces=ai_traces) from unavailable
+                except Exception as agent_exc:
+                    extra = str(agent_exc)
+                    if "canceled" in extra.lower():
+                        raise DesignCanceled("Generation canceled.") from agent_exc
+                    agent_exc_message = f"{agent_exc_message + ' | ' if agent_exc_message else ''}{extra}"
+                    trace_add(
+                        "warning",
+                        f"[2.0/text-to-cad] Codex supplement failed: {extra[:500]}",
+                        trace_id=trace_id,
+                    )
+
+        if agent_result is None:
+            try:
+                CadRunManifest.capture(
+                    project_path, source_name, step_name, glb_name,
+                    run_started_ns=run_started_ns,
+                )
+                if not _source_has_complete_gen_step(source_path.read_text(encoding="utf-8")):
+                    raise ValueError("Agent source is incomplete")
+            except (OSError, ValueError) as exc:
+                raise DesignBuildError(
+                    f"text-to-cad agent did not finish: {agent_exc_message or exc}",
+                    ai_traces=ai_traces,
+                ) from exc
+            agent_result = {"source": source_name, "step": step_name, "glb": glb_name}
+            recovered_agent_export = True
+            agent_runtime = "codex" if use_codex_agent else "jake_tool_agent"
 
         if agent_result is not None:
             source_name = agent_result["source"]
             step_name = agent_result["step"]
             glb_name = agent_result["glb"]
+            try:
+                CadRunManifest.capture(
+                    project_path, source_name, step_name, glb_name,
+                    run_started_ns=run_started_ns,
+                )
+            except (OSError, ValueError) as exc:
+                raise DesignBuildError(str(exc), ai_traces=ai_traces) from exc
             source_path = project_path / source_name
             base = Path(source_name).stem
             stl_name = f"{base}.stl"
@@ -3895,7 +4504,14 @@ def _run_text_to_cad_v2(
             source = source_path.read_text(encoding="utf-8", errors="ignore") if source_path.is_file() else ""
 
             _convert_text_to_cad_glb_to_z_up(project_path / glb_name)
-            cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
+            polished = cad_service.polish_generated_cad_glb(
+                project_path / glb_name,
+                prompt,
+                seed=base,
+                step_path=project_path / step_name,
+            )
+            if not polished:
+                cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
             wired_names = _wire_jake_artifacts_to_product_shell(
                 project_path,
                 base=base,
@@ -3914,7 +4530,20 @@ def _run_text_to_cad_v2(
                         logger.debug("Post Z-up unit match failed for %s: %s", glb_name, exc)
                 cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
 
-            # Best-effort inspect/snapshot metadata for the result payload.
+            from backend.services.cad_preview_optimizer import maybe_optimize_cad_preview
+
+            try:
+                preview_optimization = maybe_optimize_cad_preview(project_path / glb_name)
+                agent_result["preview_optimization"] = preview_optimization.to_dict()
+            except Exception as exc:
+                logger.warning("Keeping original Jake preview after optimization rejection: %s", exc)
+                agent_result["preview_optimization"] = {"applied": False, "reason": f"rejected: {exc}"}
+
+            candidate_manifest = CadRunManifest.capture(
+                project_path, source_name, step_name, glb_name,
+                run_started_ns=run_started_ns,
+            )
+            # Validation must describe the exact files that will be published.
             inspect_out = skill_runner.run_skill_tool(
                 "cad",
                 "inspect",
@@ -3923,139 +4552,204 @@ def _run_text_to_cad_v2(
                 timeout_sec=60.0,
                 cancel_check=cancel_check,
             )
-            snapshot_info = _run_v2_snapshot(
-                skill_runner,
-                project_path,
-                step_name,
-                base,
-                trace_id,
-                prompt=prompt,
-                source=source,
-                inspect_summary=_inspect_summary(inspect_out),
-            )
-            files = {
-                **wired_names,
-                "source": source_name,
-                "step": step_name,
-                "glb": glb_name,
-            }
-            files.update(_collect_exploded_sidecar_files(project_path, base))
-            promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
-            source_parts = _promote_build123d_children_from_source(
-                project_path,
-                source_name,
-                base=base,
-                max_parts=18 if architect_mode else 12,
-                major_only=architect_mode,
-                skip_if_more_than=24 if not architect_mode else None,
-            )
-            if source_parts:
-                promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
-            if promoted_parts:
-                files["parts"] = promoted_parts
-            if (project_path / stl_name).is_file():
-                files["stl"] = stl_name
-            if (project_path / three_mf_name).is_file():
-                files["3mf"] = three_mf_name
-            if snapshot_info and snapshot_info.get("file"):
-                files["snapshot"] = snapshot_info["file"]
-            from backend.services.project_store import apply_prompt_project_name, title_from_prompt
+            if inspect_out.get("canceled"):
+                raise DesignCanceled("Generation canceled.")
+            snapshot_info = None
+            visual_note = None
+            preview_parity = None
+            if not inspect_out.get("ok"):
+                visual_note = (
+                    "Inspect failed (mandatory STEP scene/topology gate):\n"
+                    + str(inspect_out.get("stderr") or inspect_out.get("stdout") or "scripts/inspect failed")[:4000]
+                )
+            else:
+                try:
+                    preview_parity = _measure_or_rebuild_step_preview(
+                        project_path / step_name,
+                        project_path / glb_name,
+                        _inspect_summary(inspect_out) or {},
+                        prompt=prompt,
+                        seed=base,
+                    )
+                except Exception as exc:
+                    preview_parity = {"ok": False, "issues": [str(exc)]}
+                if not preview_parity["ok"]:
+                    raise DesignBuildError(
+                        "STEP-to-GLB parity failed: " + "; ".join(preview_parity["issues"]),
+                        ai_traces=ai_traces,
+                    )
+                snapshot_started_ns = time.time_ns()
+                snapshot_info = _run_v2_snapshot(
+                    skill_runner,
+                    project_path,
+                    step_name,
+                    base,
+                    trace_id,
+                    prompt=prompt,
+                    source=source,
+                    inspect_summary=_inspect_summary(inspect_out),
+                )
+                if not current_snapshot_ready(project_path, snapshot_info, started_ns=snapshot_started_ns):
+                    raise DesignBuildError("scripts/snapshot failed to produce current PNGs", ai_traces=ai_traces)
+                try:
+                    note, review_trace = _v2_snapshot_review_repair_note(
+                        ai,
+                        prompt=prompt,
+                        cad_brief=cad_brief,
+                        source=source,
+                        inspect_out=inspect_out,
+                        snapshot_info=snapshot_info,
+                        project_path=project_path,
+                        trace_id=trace_id,
+                        fusion_mode=fusion_mode,
+                    )
+                except Exception as exc:
+                    raise DesignBuildError(
+                        f"Snapshot visual review crashed (mandatory gate): {exc}",
+                        ai_traces=ai_traces,
+                    ) from exc
+                if isinstance(review_trace, dict):
+                    ai_traces.append(review_trace)
+                    _sync_ai_traces()
+                if note:
+                    visual_note = note
+            cad_warnings: list[str] = []
+            if visual_note:
+                raise DesignBuildError(visual_note, ai_traces=ai_traces)
+            if not candidate_manifest.matches(project_path):
+                raise DesignBuildError("CAD artifacts changed during validation", ai_traces=ai_traces)
+            if recovered_agent_export:
+                cad_warnings.append(f"Recovered and validated current-run exports after agent error: {agent_exc_message}")
+            if agent_result is not None:
+                files = {
+                    **wired_names,
+                    "source": source_name,
+                    "step": step_name,
+                    "glb": glb_name,
+                }
+                files.update(_collect_exploded_sidecar_files(project_path, base))
+                promoted_parts = [] if architect_mode else _promote_disconnected_bodies(project_path, glb_name, base=base)
+                source_parts = _promote_build123d_children_from_source(
+                    project_path,
+                    source_name,
+                    base=base,
+                    max_parts=18 if architect_mode else 12,
+                    major_only=architect_mode,
+                    skip_if_more_than=24 if not architect_mode else None,
+                )
+                if source_parts:
+                    promoted_parts.extend(name for name in source_parts if name not in promoted_parts)
+                if promoted_parts:
+                    files["parts"] = promoted_parts
+                if (project_path / stl_name).is_file():
+                    files["stl"] = stl_name
+                if (project_path / three_mf_name).is_file():
+                    files["3mf"] = three_mf_name
+                if snapshot_info and snapshot_info.get("file"):
+                    files["snapshot"] = snapshot_info["file"]
+                from backend.services.project_store import apply_prompt_project_name, title_from_prompt
 
-            display_name = title_from_prompt(prompt)
-            apply_prompt_project_name(project_path, prompt, fallback=display_name)
-            runtime_label = "Codex CAD agent" if agent_runtime == "codex" else "CAD tool-using authoring agent"
-            trace_add(
-                "info",
-                f"[2.0/text-to-cad] {runtime_label} completed step/inspect/snapshot gates.",
-                trace_id=trace_id,
-            )
-            return {
-                "intent": "generative",
-                "message": (
-                    f"Built {display_name} with the {runtime_label} "
-                    f"({'Architect' if architect_mode else 'Fusion' if fusion_mode else '2.0'})."
-                ),
-                "design_plan": {
-                    "requirements_analysis": f"CAD {label_prefix} routed to {runtime_label}.",
-                    "cad_feature_plan": (
-                        "Codex / CAD skill edited gen_step() source, ran scripts/step, "
-                        "inspect, and mandatory snapshot in one continuous agent session."
-                        if agent_runtime == "codex"
-                        else (
-                            "Tool-using agent edited gen_step() source, ran scripts/step, "
-                            "inspect, and mandatory snapshot in one continuous session."
-                        )
+                display_name = title_from_prompt(prompt)
+                apply_prompt_project_name(project_path, prompt, fallback=display_name)
+                runtime_label = "Codex CAD agent" if agent_runtime == "codex" else "CAD tool-using authoring agent"
+                trace_add(
+                    "info",
+                    f"[2.0/text-to-cad] {runtime_label} completed step/inspect/snapshot gates.",
+                    trace_id=trace_id,
+                )
+                return {
+                    "intent": "generative",
+                    "message": (
+                        f"Built {display_name} with the {runtime_label} "
+                        f"({'Architect' if architect_mode else 'Fusion' if fusion_mode else '2.0'})."
                     ),
-                    "step_ready_brep_output": f"Validated STEP artifact: {step_name}",
-                    "text_to_cad_source": source_name,
-                },
-                "specs_used": [{"source": "text-to-cad", "script": source_name}],
-                "part_placements": [],
-                "result": {
-                    "program": {
-                        "name": display_name,
-                        "source": "text-to-cad",
-                        "source_file": source_name,
-                        "entrypoint": "gen_step",
+                    "design_plan": {
+                        "requirements_analysis": f"CAD {label_prefix} routed to {runtime_label}.",
+                        "cad_feature_plan": (
+                            "Codex / CAD skill edited gen_step() source, ran scripts/step, "
+                            "inspect, and mandatory snapshot in one continuous agent session."
+                            if agent_runtime == "codex"
+                            else (
+                                "Tool-using agent edited gen_step() source, ran scripts/step, "
+                                "inspect, and mandatory snapshot in one continuous session."
+                            )
+                        ),
+                        "step_ready_brep_output": f"Validated STEP artifact: {step_name}",
+                        "text_to_cad_source": source_name,
                     },
-                    "primary": glb_name,
-                    "basename": base,
-                    "files": files,
-                    "parts": [{"name": Path(name).stem, "filename": name} for name in promoted_parts],
-                    "sim": None,
-                    "dfm": None,
-                    "warnings": [],
-                    "text_to_cad": {
-                        "runtime": agent_runtime or "codex",
-                        "authoring_agent": True,
-                        "visual_gate": "fail_closed_multi_view",
-                        "naming": {
-                            "source": source_name,
-                            "step": step_name,
-                            "shell_glb": glb_name,
-                            "jake_glb": jake_hidden_glb_name(step_name),
-                            "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
-                            "display_name": display_name,
+                    "specs_used": [{"source": "text-to-cad", "script": source_name}],
+                    "part_placements": [],
+                    "result": {
+                        "program": {
+                            "name": display_name,
+                            "source": "text-to-cad",
+                            "source_file": source_name,
+                            "entrypoint": "gen_step",
                         },
-                        "agent_summary": agent_result.get("summary") or "",
-                        "inspect": {
-                            "stdout": (inspect_out.get("stdout") or "")[-4000:],
-                            "stderr": (inspect_out.get("stderr") or "")[-4000:],
+                        "primary": glb_name,
+                        "basename": base,
+                        "files": files,
+                        "parts": [{"name": Path(name).stem, "filename": name} for name in promoted_parts],
+                        "sim": None,
+                        "dfm": None,
+                        "warnings": cad_warnings,
+                        "text_to_cad": {
+                            "runtime": agent_runtime or "codex",
+                            "authoring_agent": True,
+                            "visual_gate": "inspect_snapshot_required",
+                            "artifact_manifest": candidate_manifest.diagnostics(),
+                            "preview_parity": preview_parity,
+                            "runtime_provenance": skill_runner.cad_runtime_provenance(),
+                            "provenance": {
+                                "host": agent_runtime,
+                                "provider": str(getattr(ai, "provider", "")),
+                                "requested_model": str(getattr(ai, "model", "")),
+                                "recovered_export": recovered_agent_export,
+                            },
+                            "naming": {
+                                "source": source_name,
+                                "step": step_name,
+                                "shell_glb": glb_name,
+                                "jake_glb": jake_hidden_glb_name(step_name),
+                                "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+                                "display_name": display_name,
+                            },
+                            "agent_summary": agent_result.get("summary") or "",
+                            "inspect": {
+                                "stdout": (inspect_out.get("stdout") or "")[-4000:],
+                                "stderr": (inspect_out.get("stderr") or "")[-4000:],
+                            },
+                            "snapshot": snapshot_info,
                         },
-                        "snapshot": snapshot_info,
                     },
-                },
-                "attempts": 1,
-                "ai_trace": ai_traces,
-                "dfm_warnings": [],
-                "v2_text_to_cad": True,
-                "jake_identical_runtime": True,
-                "codex_agent": agent_runtime == "codex",
-                "jake_codex_agent": agent_runtime == "codex",
-                "jake_tool_agent": agent_runtime == "jake_tool_agent",
-                "fusion_text_to_cad": fusion_mode,
-                "architect_text_to_cad": architect_mode,
-            }
+                    "attempts": 1,
+                    "ai_trace": ai_traces,
+                    "dfm_warnings": [],
+                    "v2_text_to_cad": True,
+                    "jake_identical_runtime": True,
+                    "codex_agent": agent_runtime == "codex",
+                    "jake_codex_agent": agent_runtime == "codex",
+                    "jake_tool_agent": agent_runtime == "jake_tool_agent",
+                    "fusion_text_to_cad": fusion_mode,
+                    "architect_text_to_cad": architect_mode,
+                }
 
-        last_error = agent_exc_message or "Jake agent did not finish"
-        repair_note = (
-            "Codex / tool authoring agent did not finish. "
-            "Falling back to file-rewrite repair loop.\n"
-            f"{last_error}"
-        )
-        trace_add(
-            "warning",
-            f"[2.0/text-to-cad] agent failed; fallback loop: {last_error[:500]}",
-            trace_id=trace_id,
-        )
-        current_source = (
-            source_path.read_text(encoding="utf-8", errors="ignore")
-            if source_path.is_file()
-            else previous_source
+    from backend.services.cad_pass_gate import jake_allows_host_source_rewrite
+
+    agent_attempted = bool((use_codex_agent or use_tool_agent) and not canonical_source)
+    if not jake_allows_host_source_rewrite(
+        jake_identical=jake_identical,
+        canonical_source=bool(canonical_source),
+        agent_attempted=agent_attempted,
+    ):
+        raise DesignBuildError(
+            f"text-to-cad agent did not finish (no host rewrite): {last_error or 'no STEP/GLB'}",
+            ai_traces=ai_traces,
         )
 
-    # Canonical templates are one-shot; free-form AI source uses Jake's repair loop.
+    # Canonical templates / non-Jake path only. Never rewrite after a Jake agent session.
     total_attempts = 1 if canonical_source else (max_repairs + 1)
+    last_good: dict[str, Any] | None = None
     for attempt in range(total_attempts):
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -4069,16 +4763,44 @@ def _run_text_to_cad_v2(
                 "label": f"{action} build123d source with {label_prefix} CAD skill (attempt {attempt + 1}/{total_attempts})...",
             })
         try:
+            prior_source = current_source
+            recovered_name, recovered_source = _best_leftover_cad_source(
+                project_path,
+                preferred_name=source_name,
+                extra_source=current_source,
+            )
+            leftover_complete = bool(recovered_source and _source_has_complete_gen_step(recovered_source))
+            reuse_leftover = (
+                not canonical_source
+                and leftover_complete
+                and (
+                    attempt == 0
+                    or not _source_has_complete_gen_step(current_source)
+                )
+            )
             if canonical_source:
                 source = canonical_source
                 trace_add("info", "[2.0/text-to-cad] Using canonical benchmark-style source.", trace_id=trace_id)
+            elif reuse_leftover and recovered_source:
+                source = recovered_source
+                if recovered_name and _is_cad_generator_filename(recovered_name) and recovered_name != source_name:
+                    source_name = recovered_name
+                    base = Path(source_name).stem
+                    step_name, glb_name = f"{base}.step", f"{base}.glb"
+                    stl_name, three_mf_name = f"{base}.stl", f"{base}.3mf"
+                    source_path = project_path / source_name
+                trace_add(
+                    "info",
+                    f"[2.0/text-to-cad] Reusing complete leftover {source_name}; skip stub rewrite.",
+                    trace_id=trace_id,
+                )
             else:
                 source, ai_trace = ai.generate_cad_python_source(
                     generation_prompt,
                     context,
                     trace_id=trace_id,
                     repair_note=repair_note,
-                    previous_source=current_source,
+                    previous_source=recovered_source or current_source,
                     images=images,
                     cad_brief=cad_brief,
                     # Jake-identical authoring: never bias the system prompt with Fusion extras.
@@ -4086,6 +4808,18 @@ def _run_text_to_cad_v2(
                 )
                 ai_traces.append(ai_trace)
                 _sync_ai_traces()
+            source = _splice_helpers_from_project(
+                source,
+                project_path,
+                extra_donors=[prior_source, recovered_source, current_source],
+            )
+            if _gen_step_undefined_helper_names(source) and leftover_complete and recovered_source:
+                source = recovered_source
+                trace_add(
+                    "warning",
+                    "[2.0/text-to-cad] Discarded stub rewrite that dropped make_* helpers; kept leftover generator.",
+                    trace_id=trace_id,
+                )
             # Preserve the exact source that failed validation so the next
             # repair pass can edit it, matching the upstream text-to-cad
             # source -> step -> repair loop.
@@ -4122,6 +4856,17 @@ def _run_text_to_cad_v2(
                 if healed != source:
                     source = healed
                     remaining = _gen_step_local_undefined_names(source)
+            # Always refuse incomplete helper stubs before scripts/step — burning
+            # NameError attempts on `build_children()` / similar never produces STEP.
+            undefined_helpers = _gen_step_undefined_helper_names(source)
+            if undefined_helpers:
+                raise ValueError(
+                    "Generated source is incomplete; gen_step() references undefined names: "
+                    + ", ".join(undefined_helpers[:12])
+                    + ("..." if len(undefined_helpers) > 12 else "")
+                    + ". Define each helper (including those called from chassis/feature functions) "
+                    "or inline the geometry in gen_step()."
+                )
             if remaining and not jake_identical:
                 raise ValueError(
                     "Generated source is incomplete; gen_step() references undefined names: "
@@ -4129,7 +4874,7 @@ def _run_text_to_cad_v2(
                     + ("..." if len(remaining) > 12 else "")
                 )
             if remaining and jake_identical:
-                # Jake agent: write source and let scripts/step surface NameError for repair.
+                # Constants-only leftovers: write source and let scripts/step + inject heal.
                 trace_add(
                     "warning",
                     "[authoring-agent] Undefined symbols left for scripts/step (no constant/helper injection).",
@@ -4154,7 +4899,10 @@ def _run_text_to_cad_v2(
                 raise DesignCanceled("Generation canceled.") from exc
             if "Generation canceled" in last_error:
                 raise DesignCanceled("Generation canceled.") from exc
-            if current_source:
+            low = last_error.lower()
+            if "needs codex cli 0.153" in low or "requires a newer version of codex" in low:
+                raise RuntimeError(last_error) from exc
+            if current_source and not str(current_source).lstrip().startswith("{"):
                 try:
                     rejected_path = project_path / f"{base}.rejected.py"
                     rejected_path.write_text(str(current_source).rstrip() + "\n", encoding="utf-8")
@@ -4186,16 +4934,14 @@ def _run_text_to_cad_v2(
             repair_note = f"Source finalize failed before scripts/step:\n{last_error}"
             trace_add("error", f"[2.0/text-to-cad] pre-step finalize failed: {exc}", trace_id=trace_id)
             continue
+        # Jake/VibeCAD write STEP + GLB. Auto 3MF was uncompressed XML (400MB+ on
+        # chassis) and is available on demand via Export → Bambu 3MF.
         step_args = [
             source_name,
             "-o",
             step_name,
             "--glb",
             glb_name,
-            "--stl",
-            stl_name,
-            "--3mf",
-            three_mf_name,
             "--force",
         ]
         step_out = skill_runner.run_skill_tool(
@@ -4274,15 +5020,46 @@ def _run_text_to_cad_v2(
                     )
                     if name_err_match:
                         missing_name = name_err_match.group(1)
-                        if jake_identical:
-                            # Jake kernel/authoring: never invent float constants — LLM must repair.
-                            repair_note = (
-                                f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
-                                "Fix: define it at module scope BEFORE gen_step() with the real dimension/list from the CAD brief, "
-                                "or inline the logic inside gen_step(). "
-                                "Never leave symbols undefined and never assign a bare float to a *_positions / list constant.\n"
-                                f"Full error:\n{detail}"
+                        src_for_call = current_source or source or ""
+                        try:
+                            if source_path.is_file():
+                                src_for_call = source_path.read_text(encoding="utf-8", errors="ignore") or src_for_call
+                        except Exception:
+                            pass
+                        used_as_call = _name_used_as_call(src_for_call, missing_name) or _name_used_as_call(
+                            detail, missing_name
+                        )
+                        helper_like = bool(
+                            missing_name
+                            and missing_name[0].islower()
+                            and missing_name not in _BUILD123D_LOWERCASE_EXPORTS
+                            and (
+                                used_as_call
+                                or missing_name.startswith(("build_", "make_", "create_", "gen_", "add_"))
+                                or "_" in missing_name
                             )
+                        )
+                        if jake_identical or helper_like:
+                            # Jake kernel/authoring: never invent float constants — LLM must repair.
+                            # Helper NameErrors (build_children, make_*) also need a full function body.
+                            if helper_like:
+                                repair_note = (
+                                    f"NameError: '{missing_name}' is called in gen_step() but was never defined. "
+                                    f"Fix: add a complete `def {missing_name}():` ABOVE gen_step() that builds and returns "
+                                    "the real labeled build123d solids/parts used by the assembly. "
+                                    "Also define model_label / exploded_offsets if referenced. "
+                                    "Do NOT leave a stub (`pass`, empty list, or NotImplemented). "
+                                    "Prefer inlining geometry inside gen_step() if a helper is unnecessary.\n"
+                                    f"Full error:\n{detail}"
+                                )
+                            else:
+                                repair_note = (
+                                    f"NameError: '{missing_name}' is referenced in gen_step() but was never defined in this file. "
+                                    "Fix: define it at module scope BEFORE gen_step() with the real dimension/list from the CAD brief, "
+                                    "or inline the logic inside gen_step(). "
+                                    "Never leave symbols undefined and never assign a bare float to a *_positions / list constant.\n"
+                                    f"Full error:\n{detail}"
+                                )
                         else:
                             # Deterministic heal (Render Studio compatibility path only).
                             try:
@@ -4428,10 +5205,30 @@ def _run_text_to_cad_v2(
         if (project_path / glb_name).is_file():
             cad_service.apply_prompt_appearance_to_file(project_path / glb_name, prompt, seed=base)
 
+        from backend.services.live_preview import emit_live_preview
+
+        emit_live_preview(
+            progress_callback,
+            project_path / glb_name,
+            label="CAD · drawing in viewport…",
+            stage="step",
+            pct=70,
+        )
+
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
         if progress_callback:
             progress_callback({"stage": "inspect", "pct": 78, "label": "Inspecting STEP with CAD skill..."})
+        try:
+            from backend.services.cad_harness import finalize_harness_run
+
+            finalize_harness_run(project_path, published_step=step_name, is_edit=is_edit)
+        except Exception:
+            pass
+        candidate_manifest = CadRunManifest.capture(
+            project_path, source_name, step_name, glb_name,
+            run_started_ns=run_started_ns,
+        )
         inspect_out = skill_runner.run_skill_tool(
             "cad",
             "inspect",
@@ -4456,9 +5253,32 @@ def _run_text_to_cad_v2(
             trace_add("warning", f"[authoring-agent] inspect failed: {detail[:500]}", trace_id=trace_id)
             continue
 
+        try:
+            preview_parity = _measure_or_rebuild_step_preview(
+                project_path / step_name,
+                project_path / glb_name,
+                _inspect_summary(inspect_out) or {},
+                prompt=prompt,
+                seed=base,
+            )
+        except Exception as exc:
+            preview_parity = {"ok": False, "issues": [str(exc)]}
+        if not preview_parity["ok"]:
+            last_error = "STEP-to-GLB parity failed: " + "; ".join(preview_parity["issues"])
+            from backend.services.cad_authoring_agent import format_agent_repair_note
+
+            repair_note = format_agent_repair_note(
+                stage="preview-parity",
+                detail=last_error,
+                attempt=attempt,
+                max_attempts=total_attempts,
+            )
+            trace_add("warning", f"[authoring-agent] preview parity failed: {last_error[:500]}", trace_id=trace_id)
+            continue
+
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
-        # Jake: inspect facts/planes/positioning baseline, then fail on clear
+        # Jake: inspect exact scene bounds/topology, then fail on clear
         # envelope contradictions. No Render Studio faceCount heuristics on Jake path.
         quality_note = _v2_quality_repair_note(
             prompt,
@@ -4508,6 +5328,7 @@ def _run_text_to_cad_v2(
 
         if progress_callback:
             progress_callback({"stage": "snapshot", "pct": 90, "label": f"Rendering {label_prefix} CAD multi-view snapshot packet..."})
+        snapshot_started_ns = time.time_ns()
         snapshot_info = _run_v2_snapshot(
             skill_runner,
             project_path,
@@ -4519,7 +5340,7 @@ def _run_text_to_cad_v2(
             inspect_summary=_inspect_summary(inspect_out),
         )
         # Jake: snapshot validation is mandatory. Fail closed if render fails.
-        if not snapshot_info or not (snapshot_info.get("files") or snapshot_info.get("file")):
+        if not current_snapshot_ready(project_path, snapshot_info, started_ns=snapshot_started_ns):
             detail = (snapshot_info or {}).get("stderr") or (snapshot_info or {}).get("stdout") or "scripts/snapshot produced no PNG"
             last_error = f"scripts/snapshot failed (mandatory visual gate):\n{detail}"
             from backend.services.cad_authoring_agent import format_agent_repair_note
@@ -4566,6 +5387,25 @@ def _run_text_to_cad_v2(
             )
             trace_add("warning", f"[authoring-agent] visual gate failed: {snapshot_note[:500]}", trace_id=trace_id)
             continue
+
+        if not candidate_manifest.matches(project_path):
+            raise DesignBuildError("CAD artifacts changed during validation", ai_traces=ai_traces)
+        last_good = {
+            "source": source,
+            "source_name": source_name,
+            "step_name": step_name,
+            "glb_name": glb_name,
+            "stl_name": stl_name,
+            "three_mf_name": three_mf_name,
+            "base": base,
+            "inspect_out": inspect_out,
+            "step_out": step_out,
+            "wired_names": wired_names,
+            "attempt": attempt,
+            "snapshot_info": snapshot_info,
+            "manifest": candidate_manifest,
+            "preview_parity": preview_parity,
+        }
 
         if cancel_check and cancel_check():
             raise DesignCanceled("Generation canceled.")
@@ -4651,6 +5491,14 @@ def _run_text_to_cad_v2(
                     "runtime": "jake_authoring_agent" if jake_identical else "render3d",
                     "authoring_agent": bool(jake_identical),
                     "visual_gate": "fail_closed_multi_view",
+                    "artifact_manifest": candidate_manifest.diagnostics(),
+                    "preview_parity": preview_parity,
+                    "runtime_provenance": skill_runner.cad_runtime_provenance(),
+                    "provenance": {
+                        "host": "http_source_loop",
+                        "provider": str(getattr(ai, "provider", "")),
+                        "requested_model": str(getattr(ai, "model", "")),
+                    },
                     "naming": {
                         "source": source_name,
                         "step": step_name,
@@ -4671,6 +5519,115 @@ def _run_text_to_cad_v2(
                 },
             },
             "attempts": attempt + 1,
+            "ai_trace": ai_traces,
+            "dfm_warnings": [],
+            "v2_text_to_cad": True,
+            "jake_identical_runtime": jake_identical,
+            "fusion_text_to_cad": fusion_mode,
+            "architect_text_to_cad": architect_mode,
+        }
+
+    from backend.services.cad_pass_gate import can_ship_exhausted_cad, exhausted_cad_note
+
+    if last_good and last_good["manifest"].matches(project_path) and can_ship_exhausted_cad(
+        step_ok=(project_path / last_good["step_name"]).is_file(),
+        glb_ok=(project_path / last_good["glb_name"]).is_file(),
+        source_ok=bool(last_good.get("source")),
+    ):
+        source = str(last_good["source"])
+        source_name = last_good["source_name"]
+        step_name = last_good["step_name"]
+        glb_name = last_good["glb_name"]
+        stl_name = last_good["stl_name"]
+        three_mf_name = last_good["three_mf_name"]
+        base = last_good["base"]
+        inspect_out = last_good["inspect_out"]
+        step_out = last_good.get("step_out") or {}
+        snapshot_info = last_good.get("snapshot_info")
+        preview_parity = last_good["preview_parity"]
+        candidate_manifest = last_good["manifest"]
+        wired_names = dict(last_good.get("wired_names") or {})
+        attempt = int(last_good.get("attempt") or 0)
+        warning = exhausted_cad_note(str(last_error or ""), total_attempts)
+        trace_add("warning", f"[2.0/text-to-cad] {warning[:500]}", trace_id=trace_id)
+        files = {
+            **wired_names,
+            "source": source_name,
+            "step": step_name,
+            "glb": glb_name,
+        }
+        files.update(_collect_exploded_sidecar_files(project_path, base))
+        if (project_path / stl_name).is_file():
+            files["stl"] = stl_name
+        if (project_path / three_mf_name).is_file():
+            files["3mf"] = three_mf_name
+        if snapshot_info and snapshot_info.get("file"):
+            files["snapshot"] = snapshot_info["file"]
+        from backend.services.project_store import apply_prompt_project_name, title_from_prompt
+
+        display_name = title_from_prompt(prompt)
+        apply_prompt_project_name(project_path, prompt, fallback=display_name)
+        return {
+            "intent": "generative",
+            "message": (
+                f"Built {display_name} with the "
+                f"{'Architect modular ' if architect_mode else 'Fusion-style ' if fusion_mode else ''}"
+                "text-to-cad build123d workflow."
+            ),
+            "design_plan": {
+                "requirements_analysis": f"CAD {label_prefix} routed to text-to-cad source generation.",
+                "cad_feature_plan": "Generated build123d Python, ran scripts/step, inspect, and snapshot; kept last successful export after later repair failed.",
+                "step_ready_brep_output": f"Validated STEP artifact: {step_name}",
+                "text_to_cad_source": source_name,
+            },
+            "specs_used": [{"source": "text-to-cad", "script": source_name}],
+            "part_placements": [],
+            "result": {
+                "program": {
+                    "name": display_name,
+                    "source": "text-to-cad",
+                    "source_file": source_name,
+                    "entrypoint": "gen_step",
+                },
+                "primary": glb_name,
+                "basename": base,
+                "files": files,
+                "parts": [],
+                "sim": None,
+                "dfm": None,
+                "warnings": [warning],
+                "text_to_cad": {
+                    "runtime": "jake_authoring_agent" if jake_identical else "render3d",
+                    "authoring_agent": bool(jake_identical),
+                    "visual_gate": "keep_last_export",
+                    "artifact_manifest": candidate_manifest.diagnostics(),
+                    "preview_parity": preview_parity,
+                    "runtime_provenance": skill_runner.cad_runtime_provenance(),
+                    "provenance": {
+                        "host": "http_source_loop",
+                        "provider": str(getattr(ai, "provider", "")),
+                        "requested_model": str(getattr(ai, "model", "")),
+                    },
+                    "naming": {
+                        "source": source_name,
+                        "step": step_name,
+                        "shell_glb": glb_name,
+                        "jake_glb": jake_hidden_glb_name(step_name),
+                        "cad_ref": str(Path(step_name).with_suffix("").as_posix()),
+                        "display_name": display_name,
+                    },
+                    "step": {
+                        "stdout": (step_out.get("stdout") or "")[-4000:],
+                        "stderr": (step_out.get("stderr") or "")[-4000:],
+                    },
+                    "inspect": {
+                        "stdout": (inspect_out.get("stdout") or "")[-4000:],
+                        "stderr": (inspect_out.get("stderr") or "")[-4000:],
+                    },
+                    "snapshot": snapshot_info,
+                },
+            },
+            "attempts": total_attempts,
             "ai_trace": ai_traces,
             "dfm_warnings": [],
             "v2_text_to_cad": True,
@@ -4728,6 +5685,17 @@ def _program_from_generator(directive: dict[str, Any]) -> FeatureProgram:
             if k in directive and directive[k] is not None
         }
         return gear_train_program([int(t) for t in teeth], **kwargs)
+    if kind in ("planetary", "planetary_gear", "planetary_reduction"):
+        from backend.engineering.gears import planetary_reduction_program
+
+        kwargs = {
+            k: directive[k]
+            for k in ("ratio", "module", "thickness", "planet_count", "pressure_angle", "material")
+            if k in directive and directive[k] is not None
+        }
+        if "ratio" not in kwargs:
+            kwargs["ratio"] = 20.0
+        return planetary_reduction_program(**_filter_options(planetary_reduction_program, kwargs))
     if kind in ("benchy_boat", "toy_boat", "boaty"):
         from backend.engineering.toy_boats import benchy_boat_program
 
@@ -5160,11 +6128,13 @@ def _looks_like_cooking_appliance(prompt: str, images: list[dict[str, Any]] | No
 
 
 def _max_repairs_for_speed(speed: str | None, *, jake_identical: bool = False) -> int:
-    """Return extra repair attempts beyond the first try (Jake agent turns − 1)."""
-    # Codex agents iterate until visual+CLI gates pass; mirror that with a
-    # generous capped budget so step/inspect/snapshot/revise repairs can finish.
+    """Return extra repair attempts beyond the first try (Jake text-to-cad parity).
+
+    Upstream Jake runs a continuous tool-agent session (default 28 turns) for in-session
+    repairs. The outer file-rewrite loop is fallback-only — keep it at 6, not 12+.
+    """
     if jake_identical:
-        return 12
+        return 6
     if (speed or "").strip().lower() in {"quality", "pro", "slow"}:
         return 8
     return 6
@@ -5215,6 +6185,49 @@ def _run_cad_inspect_gate(result: dict[str, Any], project_path: Path, trace_id: 
         return None
 
 
+def _prefetch_mcmaster_catalog_steps(
+    project_path: Path,
+    *,
+    rows: list[dict[str, Any]] | None = None,
+    progress_callback=None,
+    cancel_check=None,
+    trace_id: str | None = None,
+) -> None:
+    """Download listed McMaster STEPs onto the server for every harness.
+
+    No-op (no Playwright) when every listed PN already has a ``.glb`` or ``.step``.
+    """
+    try:
+        from backend.services.mcmaster_fetch_service import (
+            fetch_listed_parts_for_project,
+            missing_listed_catalog_pns,
+            push_mcmaster_progress,
+            reconcile_mcmaster_on_disk,
+        )
+
+        reconcile_mcmaster_on_disk(project_path)
+        if not missing_listed_catalog_pns(project_path, rows=rows):
+            if progress_callback:
+                push_mcmaster_progress(
+                    progress_callback,
+                    project_path,
+                    stage="hardware",
+                    pct=14,
+                    label="McMaster · catalog STEPs already on server…",
+                )
+            return
+        fetch_listed_parts_for_project(
+            project_path,
+            rows=rows,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            fetch_attempts=1,
+        )
+    except Exception as exc:
+        logger.warning("McMaster server STEP prefetch failed: %s", exc)
+        trace_add("warning", f"[McMaster] Server STEP prefetch failed: {exc}", trace_id=trace_id)
+
+
 def run_design(
     prompt: str,
     project_path: Path,
@@ -5241,11 +6254,12 @@ def run_design(
     - Mirrors upstream text-to-cad: generate source → scripts/step → inspect →
       snapshot → repair incomplete/failed source (Jake's repair loop).
     """
-    normalized_mode = (mode or "standard").lower()
+    normalized_mode = (mode or "standard").lower().replace("-", "_")
     is_fusion = normalized_mode == "fusion"
     is_architect = normalized_mode == "architect"
-    is_mesh = normalized_mode == "mesh"
+    is_mesh = normalized_mode in {"mesh", "mesh_beta", "mesh-beta"}
     is_vibecad = normalized_mode in {"vibecad", "vibe", "vibecade"}
+    is_mac = normalized_mode in {"mac", "macad", "multi_agent_cad", "multiagentcad", "multi_agent", "multiagent"}
     is_v2 = normalized_mode in {"v2", "fusion", "architect"}
     # Jake-style means mirrored prompts + CAD skill CLIs + repair loop.
     # It does NOT mean zero repairs — upstream agents iterate on source errors.
@@ -5253,30 +6267,88 @@ def run_design(
     repair_note: str | None = None
     last_error: str | None = None
     ai_traces: list[dict[str, Any]] = []
-    if max_repairs is None:
-        max_repairs = _max_repairs_for_speed(speed, jake_identical=is_v2 or is_mesh or is_vibecad)
-        if is_v2:
-            # Jake authoring agent needs enough turns for step/inspect/snapshot/revise.
-            max_repairs = max(max_repairs, 12)
-        if is_mesh:
-            # Match Mode 2.0 repair budget so Mesh can write → export → review → revise.
-            max_repairs = max(max_repairs, 12)
-        if is_vibecad:
-            max_repairs = max(max_repairs, 8)
+    from backend.services.spoken_prompt import collapse_repeated_spoken_prompt
 
-    if is_vibecad:
+    prompt = collapse_repeated_spoken_prompt(prompt) or (prompt or "")
+    if max_repairs is None:
+        if is_vibecad:
+            max_repairs = 8
+        elif is_mac:
+            max_repairs = 4
+        elif is_mesh:
+            # Mesh review loop is separate from Jake text-to-cad.
+            max_repairs = 12
+        elif is_v2 or is_fusion or is_architect:
+            max_repairs = _max_repairs_for_speed(speed, jake_identical=True)
+        else:
+            max_repairs = _max_repairs_for_speed(speed, jake_identical=False)
+    try:
+        session_turns = (context or {}).get("max_turns")
+        if session_turns is not None and (is_vibecad or is_mac):
+            session_turns = int(session_turns)
+            if session_turns > 0:
+                # ∞ / $ empty is 200 agent turns. The VibeCAD one-shot is a full
+                # Codex exec per try — do not treat that cap as 200 authoring retries.
+                max_repairs = min(session_turns, 12) if is_vibecad else session_turns
+    except (TypeError, ValueError):
+        pass
+
+    from backend.services.cad_harness import catalog_hardware_allowed
+
+    # VibeCAD/MAC already fetch via prepare_harness_hardware. A second sequential
+    # McMaster pass (substitutes, missing PNs) added ~6 minutes without matching desktop VibeCAD.
+    if not is_mesh and not is_vibecad and not is_mac and catalog_hardware_allowed(
+        prompt, context=context
+    ):
+        _prefetch_mcmaster_catalog_steps(
+            project_path,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            trace_id=trace_id,
+        )
+
+    hardware_traces: list[dict[str, Any]] = []
+    if is_mac or is_vibecad:
+        from backend.services.cad_harness import merge_hardware_ai_traces, prepare_harness_hardware
+
+        if cancel_check and cancel_check():
+            raise DesignCanceled("Generation canceled.")
+        try:
+            prepared = prepare_harness_hardware(
+                prompt,
+                project_path,
+                context or {},
+                ai,
+                images=images,
+                previous_source=previous_source,
+                previous_source_name=previous_source_name,
+                cancel_check=cancel_check,
+                progress_callback=progress_callback,
+                usage_callback=usage_callback,
+                trace_id=trace_id,
+            )
+            context = prepared.get("context") or context
+            hardware_traces = list(prepared.get("ai_traces") or [])
+            if usage_callback and hardware_traces:
+                usage_callback(list(hardware_traces))
+        except RuntimeError as exc:
+            if "canceled" in str(exc).lower() or "cancelled" in str(exc).lower():
+                raise DesignCanceled(str(exc) or "Generation canceled.") from exc
+            raise
+
+    if is_mac:
         trace_add(
             "info",
-            f"[VibeCAD] build123d worker pipeline active, max_repairs={max_repairs}",
+            f"[MAC] Multi-Agent-CAD pipeline active, max_repairs={max_repairs}",
             trace_id=trace_id,
             data={"max_repairs": max_repairs},
         )
         if progress_callback:
-            progress_callback({"stage": "analyze", "pct": 6, "label": "VibeCAD · starting build123d…"})
-        from backend.services.vibecad_service import run_vibecad
+            progress_callback({"stage": "analyze", "pct": 6, "label": "MAC · starting multi-agent CAD…"})
+        from backend.services.mac_service import run_mac
 
         try:
-            return run_vibecad(
+            mac_result = run_mac(
                 prompt,
                 project_path,
                 context or {},
@@ -5290,15 +6362,75 @@ def run_design(
                 usage_callback=usage_callback,
                 max_repairs=max_repairs,
             )
+            return merge_hardware_ai_traces(mac_result, hardware_traces)
+        except RuntimeError as exc:
+            if "canceled" in str(exc).lower() or "cancelled" in str(exc).lower():
+                raise DesignCanceled(str(exc) or "Generation canceled.") from exc
+            raise
+
+    if is_vibecad:
+        skills_set = {s.strip().lower() for s in (skills or []) if str(s).strip()}
+        skills_set.discard("cad")
+        skills_set.discard("cad-viewer")
+        skills_set.add("vibecad")
+        skills = list(skills_set)
+        from backend.services.cli_subscription_ai import ai_uses_cli_host, cli_host_label
+
+        vibe_codex = ai_uses_cli_host(ai)
+        vibe_model = cli_host_label(ai) if vibe_codex else ""
+        trace_add(
+            "info",
+            f"[VibeCAD] build123d worker pipeline active, max_repairs={max_repairs}"
+            + (f", {vibe_model}" if vibe_codex else ""),
+            trace_id=trace_id,
+            data={
+                "max_repairs": max_repairs,
+                "skills": skills,
+                "codex": vibe_codex,
+                "model": getattr(ai, "model", None),
+            },
+        )
+        if progress_callback:
+            start_label = (
+                f"VibeCAD · {vibe_model}…"
+                if vibe_codex
+                else "VibeCAD · starting build123d…"
+            )
+            progress_callback({"stage": "analyze", "pct": 16, "label": start_label, "pipeline": "vibecad"})
+        from backend.services.vibecad_service import run_vibecad
+
+        try:
+            vibe_result = run_vibecad(
+                prompt,
+                project_path,
+                context or {},
+                ai,
+                trace_id=trace_id,
+                images=images,
+                previous_source=previous_source,
+                previous_source_name=previous_source_name,
+                cancel_check=cancel_check,
+                progress_callback=progress_callback,
+                usage_callback=usage_callback,
+                max_repairs=max_repairs,
+                skills=skills,
+            )
+            return merge_hardware_ai_traces(vibe_result, hardware_traces)
         except RuntimeError as exc:
             if "canceled" in str(exc).lower() or "cancelled" in str(exc).lower():
                 raise DesignCanceled(str(exc) or "Generation canceled.") from exc
             raise
 
     if is_mesh:
+        skills = [
+            s for s in (skills or [])
+            if str(s).strip().lower() not in {"cad", "cad-viewer", "step-parts", "vibecad", "mcmaster"}
+        ]
+        if "img2threejs" not in {str(s).strip().lower() for s in skills}:
+            skills = [*(skills or []), "img2threejs"]
         trace_add(
             "info",
-            f"[Mesh] img2threejs procedural Three.js pipeline active, max_repairs={max_repairs}",
+            f"[Mesh{' · beta' if (context or {}).get('mesh_beta') else ''}] img2threejs procedural Three.js pipeline active, max_repairs={max_repairs}",
             trace_id=trace_id,
             data={"max_repairs": max_repairs},
         )
@@ -5349,7 +6481,10 @@ def run_design(
     if cancel_check and cancel_check():
         raise DesignCanceled("Generation canceled.")
     if progress_callback:
-        progress_callback({"stage": "analyze", "pct": 8, "label": "Analyzing prompt and references…"})
+        payload = {"stage": "analyze", "pct": 8, "label": "Analyzing prompt and references…"}
+        if is_v2:
+            payload["pipeline"] = "architect" if is_architect else "fusion" if is_fusion else "jake"
+        progress_callback(payload)
 
     if not previous_source and _looks_like_pet_bottle(prompt, images) and not is_v2:
         from backend.engineering.bottles import pet_soda_bottle_program
@@ -5368,6 +6503,39 @@ def run_design(
             "ai_trace": [{"provider": "deterministic", "generator": "pet_soda_bottle"}],
             "dfm_warnings": dfm.get("warnings", []),
         }
+
+    if not previous_source and _looks_like_planetary_gear_assembly(prompt, images):
+        ratio = _planetary_ratio_from_prompt(prompt)
+        if ratio:
+            from backend.engineering.gears import planetary_reduction_program
+
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "plan",
+                        "pct": 18,
+                        "label": f"Building a 1:{ratio:g} planetary gearbox…",
+                    }
+                )
+            program = planetary_reduction_program(ratio=ratio)
+            result = kernel_bridge.build_and_export(program, project_path, basename=program.name)
+            _maybe_run_cad_inspect(result, project_path, skills, trace_id)
+            achieved = float((program.meta or {}).get("overall_ratio") or ratio)
+            trace_add(
+                "info",
+                f"Deterministic planetary reduction used (1:{achieved:g})",
+                trace_id=trace_id,
+            )
+            dfm = result.get("dfm") or {}
+            return {
+                "intent": "generative",
+                "message": program.description or f"Built a 1:{achieved:g} planetary gearbox.",
+                "specs_used": [{"source": "planetary_reduction", "ratio": achieved}],
+                "result": result,
+                "attempts": 1,
+                "ai_trace": [{"provider": "deterministic", "generator": "planetary_reduction"}],
+                "dfm_warnings": dfm.get("warnings", []),
+            }
 
     if is_v2:
         return _run_text_to_cad_v2(
@@ -5388,7 +6556,13 @@ def run_design(
             strict_upstream=strict_upstream_text_to_cad,
         )
 
-    sketch_structural = is_custom_sketch_structural_request(prompt, images)
+    sketch_structural = (
+        not previous_source
+        and not (context or {}).get("base")
+        and not (context or {}).get("base_filename")
+        and not (context or {}).get("referenced_components")
+        and is_custom_sketch_structural_request(prompt, images)
+    )
     if sketch_structural:
         context = dict(context or {})
         context["component_specs"] = []
@@ -5605,7 +6779,7 @@ def run_design(
                 if export_base in ("component_mounting_fixture", "fixture_base"):
                     export_base = _sketch_design_basename(prompt)
             result = kernel_bridge.build_and_export(
-                program, project_path, basename=export_base
+                program, project_path, basename=export_base, progress=progress_callback
             )
         except (KernelBuildError, ValueError) as exc:
             last_error = str(exc)
@@ -5636,6 +6810,17 @@ def run_design(
                 continue
         else:
             _maybe_run_cad_inspect(result, project_path, skills, trace_id)
+
+        try:
+            from backend.services.cad_harness import finalize_harness_run
+
+            finalize_harness_run(
+                project_path,
+                published_step=(result.get("files") or {}).get("step") or result.get("basename"),
+                is_edit=False,
+            )
+        except Exception:
+            pass
 
         return {
             "intent": design.get("intent"),

@@ -39,7 +39,7 @@ def render_welcome_email(user: dict[str, Any]) -> dict[str, str]:
   <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:720px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
-        <img src="https://render3d.app/render3d-logo.png" alt="Render Studio" width="56" height="56" style="border-radius:14px;" />
+        <img src="https://render3d.app/render-logo-gear-still.png?v=20260915-logo1" alt="Render Studio" width="56" height="56" style="border-radius:14px;background:transparent;" />
         <h1 style="margin:18px 0 8px;font-size:28px;">Welcome to Render Studio, {name}.</h1>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">You can generate CAD models from text, edit parts in the viewport, organize files into projects, use knowledge bases for context, and publish products or agent apps in the marketplace.</p>
         <div style="margin:18px 0;">{link_html}</div>
@@ -114,51 +114,46 @@ def send_welcome_email(user: dict[str, Any]) -> dict[str, Any]:
 
 def render_trial_credits_email(user: dict[str, Any]) -> dict[str, str]:
     name = html.escape(str(user.get("display_name") or "there"))
-    subject = "You've got $10 free credits for one week"
+    subject = "Try rendering something — 3 ChatGPT renders"
     studio = "https://render3d.app/"
     html_body = f"""<!doctype html>
 <html>
   <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:720px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:linear-gradient(135deg,#161b22,#0d1117);">
-        <img src="https://render3d.app/render3d-logo.png" alt="Render Studio" width="56" height="56" style="border-radius:14px;" />
-        <h1 style="margin:18px 0 8px;font-size:26px;">Hi {name} — you have $10 for one week.</h1>
+        <img src="https://render3d.app/render-logo-gear-still.png?v=20260915-logo1" alt="Render Studio" width="56" height="56" style="border-radius:14px;background:transparent;" />
+        <h1 style="margin:18px 0 8px;font-size:26px;">Hi {name} — try rendering something a few times.</h1>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
-          We added <strong style="color:#e6edf3;">$10 in free trial credits</strong> to your account
-          (one week only). That unlocks the temporary <strong style="color:#e6edf3;">Render Studio Key</strong>
-          for OpenAI, Claude, and Kimi — no personal API key required.
+          You have <strong style="color:#e6edf3;">3 trial renders</strong> on ChatGPT.
+          Pick GPT-5.6 Sol, Terra, Luna, Astra, or Astra Pro — no personal API key required.
         </p>
         <p style="margin:0 0 16px;color:#9da7b3;line-height:1.55;">
-          If you don’t use them for a week, unused credits may be reclaimed for other new users.
-          When the $10 is used up, the Render Studio Key disappears until you buy more credits (or add your own API key).
-          Usage uses the same pricing as paid render credits (model cost + 15% markup).
+          Each Generate uses one of the three. When they’re gone, sign in with your own ChatGPT
+          (Account → Subscriptions), use a teammate’s shared login, or add an API key / buy Studio credits.
         </p>
         <a href="{studio}" style="display:inline-block;margin:8px 0 18px;padding:12px 16px;border-radius:999px;background:#fb8500;color:#0d1117;text-decoration:none;font-weight:800;">Open Studio</a>
         <h2 style="margin:18px 0 10px;font-size:18px;">Want more after the trial?</h2>
         <ol style="color:#c9d1d9;line-height:1.65;padding-left:22px;">
-          <li>Open <strong>Account → AI &amp; billing</strong> (or the key picker next to Generate).</li>
-          <li>Choose <strong>Buy</strong> under render credits and checkout with Stripe.</li>
-          <li>Credits keep the Render Studio Key available for any supported model.</li>
+          <li>Open <strong>Account → Subscriptions</strong> and sign in with ChatGPT, or share a teammate’s login.</li>
+          <li>Or add your own OpenAI / Claude key under <strong>AI &amp; billing</strong>.</li>
+          <li>Studio credits still buy the shared Render Studio Key if you want that instead.</li>
         </ol>
-        <p style="margin:18px 0 0;color:#9da7b3;line-height:1.55;">Prefer your own key? You can add OpenAI, Claude, Kimi, or Grok anytime in AI &amp; billing.</p>
       </div>
     </div>
   </body>
 </html>"""
-    text_body = f"""Hi {user.get('display_name') or 'there'} — you have $10 for one week.
+    text_body = f"""Hi {user.get('display_name') or 'there'} — try rendering something a few times.
 
-We added $10 in free trial credits (one week only). That unlocks the temporary Render Studio Key for OpenAI, Claude, and Kimi — no personal API key required.
+You have 3 trial renders on ChatGPT. Pick GPT-5.6 Sol, Terra, Luna, Astra, or Astra Pro — no personal API key required.
 
-If you don't use them for a week, unused credits may be reclaimed for other new users. When the $10 is used up, the Render Studio Key disappears until you buy more credits (or add your own API key).
+Each Generate uses one of the three. When they're gone, sign in with your own ChatGPT (Account → Subscriptions), use a teammate's shared login, or add an API key / buy Studio credits.
 
 Open Studio: {studio}
 
 Want more after the trial?
-1. Open Account → AI & billing (or the key picker next to Generate).
-2. Choose Buy under render credits and checkout with Stripe.
-3. Credits keep the Render Studio Key available for any supported model.
-
-Prefer your own key? Add OpenAI, Claude, Kimi, or Grok anytime in AI & billing.
+1. Open Account → Subscriptions and sign in with ChatGPT, or share a teammate's login.
+2. Or add your own OpenAI / Claude key under AI & billing.
+3. Studio credits still buy the shared Render Studio Key if you want that instead.
 """
     return {"subject": subject, "html": html_body, "text": text_body}
 

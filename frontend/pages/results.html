@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Results — chatlog index</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/gitbook-lite.css?v=20260916-gb1" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand"><a href="/" class="brand-link"><span class="brand-mark brand-mark--intro"><img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" /></span></a></div>
+      <nav class="toolbar-nav"><div class="toolbar-nav-menu">
+<a href="/api-docs.html" class="nav-tab">API Docs</a>
+        <a href="/results.html" class="nav-tab">Results</a>
+        <a href="/opensource.html" class="nav-tab">The Office</a>
+      </div></nav>
+    </header>
+    <main class="info-main" style="padding:1.25rem">
+      <nav class="docs-category-tabs">
+        <a class="docs-category-tab" href="/white-paper.html#cast">Cast</a>
+        <a class="docs-category-tab" href="/api-docs.html">API Docs</a>
+        <a class="docs-category-tab active" href="/results.html">Results</a>
+      </nav>
+      <h2>Results</h2>
+      <p class="muted">Today’s index from <code>scripts/index-chatlog-today.py</code>. Hire: <strong>qa-verify</strong>. SQLite: <a href="/docs/media/results-20260916.sqlite">download</a>.</p>
+      <div id="res-meta"></div>
+      <div class="gb-main"><table id="res-table"><thead><tr><th>agent</th><th>chat_id</th><th>instance</th><th>group</th><th>cycle</th><th>model</th></tr></thead><tbody></tbody></table></div>
+    </main>
+  </div>
+  <script type="module">
+    const data = await (await fetch("/docs/media/results-20260916.json")).json();
+    document.getElementById("res-meta").textContent = `${data.count} rows · forgot then added: ${(data.forgot_then_added||[]).join(", ")} · hire ${data.hire}`;
+    const tb = document.querySelector("#res-table tbody");
+    (data.rows || []).slice(0, 80).forEach((r) => {
+      const tr = document.createElement("tr");
+      [r.agent, r.chat_id, r.instance_id, r.group_id, r.cycle_id, r.model].forEach((c) => {
+        const td = document.createElement("td");
+        td.textContent = c || "—";
+        tr.append(td);
+      });
+      tb.append(tr);
+    });
+  </script>
+</body>
+</html>

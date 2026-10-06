@@ -1,0 +1,79 @@
+{
+	storage file_system {
+		root "/Users/sam/Library/Application Support/Render3D/caddy-storage"
+	}
+	auto_https disable_redirects
+	skip_install_trust
+}
+
+render3d.app, www.render3d.app, smartcallusa.com, www.smartcallusa.com {
+	tls internal
+	request_body {
+		max_size 512MB
+	}
+	@mcp path /mcp /mcp/*
+	handle @mcp {
+		reverse_proxy 127.0.0.1:8744 {
+			flush_interval -1
+		}
+	}
+	handle {
+		encode gzip zstd
+		reverse_proxy 127.0.0.1:8001 {
+			transport http {
+				read_timeout 540s
+				write_timeout 540s
+			}
+		}
+	}
+}
+
+# AutoPrep origin (:5050) — project folder /Users/sam/AutoPrep
+# Public hostnames: autoprep.render3d.app (canonical) and health.render3d.app (alias)
+autoprep.render3d.app, health.render3d.app {
+	tls internal
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:5050
+}
+
+http://impact-advocates.org, http://www.impact-advocates.org, http://impact-advocates.com, http://www.impact-advocates.com, http://127.0.0.1:8093, http://192.168.1.83:8093 {
+	encode gzip zstd
+	root * /Users/sam/impact-advocates/dist
+	route {
+		@hidden_files path_regexp hidden ^/(?:\.|.*?/\.)
+		respond @hidden_files 404
+
+		@app_api path /api/contact-sales /api/contact-sales/* /api/demo-chat /api/demo-chat/*
+		reverse_proxy @app_api 127.0.0.1:8787
+
+		@site_root path /
+		redir @site_root /demo/ 302
+
+		@demo_no_slash path /demo
+		redir @demo_no_slash /demo/ 308
+
+		@demo path /demo/
+		rewrite @demo /demo/index.html
+
+		try_files {path} {path}/index.html /index.html
+		file_server
+	}
+	header {
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+
+http://192.168.1.83 {
+	encode gzip zstd
+	request_body {
+		max_size 512MB
+	}
+	reverse_proxy 127.0.0.1:8001 {
+		transport http {
+			read_timeout 540s
+			write_timeout 540s
+		}
+	}
+}

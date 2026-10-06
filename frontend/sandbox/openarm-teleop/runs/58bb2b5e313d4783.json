@@ -1,0 +1,71 @@
+{
+  "kind": "openarm_teleop_episode",
+  "scope": "simulation_only",
+  "episode_id": "58bb2b5e313d4783",
+  "prompt": "Pick up the cube and place it in the tray.",
+  "status": "closed",
+  "samples": 101,
+  "operator_label_success": null,
+  "first": {
+    "episode_id": "58bb2b5e313d4783",
+    "sequence": 0,
+    "timestamp_ms": 0,
+    "head": [
+      0,
+      1.68,
+      0
+    ],
+    "left": [
+      -0.4,
+      1.2,
+      -0.4
+    ],
+    "right": [
+      0.52,
+      1.22,
+      -0.4
+    ],
+    "gripper": 0,
+    "edges": [],
+    "feature_checks": {
+      "viewport.boot": "ok",
+      "viewport.models": "ok",
+      "vr.controllers.trigger": "unknown"
+    }
+  },
+  "last": {
+    "episode_id": "58bb2b5e313d4783",
+    "sequence": 100,
+    "timestamp_ms": 4000,
+    "head": [
+      0,
+      1.68,
+      0
+    ],
+    "left": [
+      -0.4,
+      1.2,
+      -0.4
+    ],
+    "right": [
+      0.6,
+      1.25,
+      -0.4
+    ],
+    "gripper": 0,
+    "edges": [],
+    "feature_checks": {
+      "viewport.boot": "ok",
+      "viewport.models": "ok",
+      "vr.controllers.trigger": "unknown"
+    }
+  },
+  "trials": [],
+  "feature_checks": {
+    "viewport.boot": "ok",
+    "viewport.models": "ok",
+    "vr.controllers.trigger": "unknown"
+  },
+  "agent_read_path": "openarm-teleop/runs/58bb2b5e313d4783.json",
+  "note": "Pose stream is simulation training data. Not a hardware command bus."
+}

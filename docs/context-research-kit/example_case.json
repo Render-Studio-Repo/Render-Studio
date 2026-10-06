@@ -1,0 +1,219 @@
+{
+  "case_id": "synthetic-vr-trigger-vote-001",
+  "document": {
+    "source": "Snapshot before: kernel K2; VR trigger works. Snapshot after: kernel K2; VR trigger fails after overlay enabled.",
+    "sha256": "b5a7073c11d660eef42c004ff8d4ffd6a7a871cd55a8ddc2cf0257b674a04bf5",
+    "chunks": [
+      {
+        "id": "chunk-1",
+        "start_char": 0,
+        "end_char": 112,
+        "text": "Snapshot before: kernel K2; VR trigger works. Snapshot after: kernel K2; VR trigger fails after overlay enabled.",
+        "sha256": "b5a7073c11d660eef42c004ff8d4ffd6a7a871cd55a8ddc2cf0257b674a04bf5"
+      }
+    ]
+  },
+  "baseline": {
+    "snapshot_id": "snap-before",
+    "environment": {
+      "browser": "synthetic-browser",
+      "headset": "synthetic-headset",
+      "kernel": "K2"
+    },
+    "features": {
+      "vr.controllers.trigger": "ok",
+      "viewport.models": "ok",
+      "webgl.context": "ok"
+    }
+  },
+  "current": {
+    "snapshot_id": "snap-after",
+    "environment": {
+      "browser": "synthetic-browser",
+      "headset": "synthetic-headset",
+      "kernel": "K2"
+    },
+    "features": {
+      "vr.controllers.trigger": "ok",
+      "viewport.models": "ok",
+      "webgl.context": "ok"
+    }
+  },
+  "mandatory_features": [
+    "vr.controllers.trigger",
+    "viewport.models",
+    "webgl.context"
+  ],
+  "evidence": [
+    {
+      "id": "snap-before",
+      "kind": "golden_snapshot",
+      "facts": {
+        "kernel": "K2",
+        "trigger_status": "ok"
+      }
+    },
+    {
+      "id": "snap-after",
+      "kind": "failure_snapshot",
+      "facts": {
+        "kernel": "K2",
+        "trigger_status": "broken"
+      }
+    },
+    {
+      "id": "trace-input",
+      "kind": "client_trace",
+      "facts": {
+        "button_edge_seen": true,
+        "action_dispatch": false
+      }
+    },
+    {
+      "id": "test-overlay-off",
+      "kind": "sandbox_test",
+      "facts": {
+        "action_dispatch": true
+      }
+    },
+    {
+      "id": "test-after-patch",
+      "kind": "client_check",
+      "facts": {
+        "trigger_status": "ok",
+        "models_status": "ok",
+        "webgl_status": "ok"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "feature_id": "vr.controllers.trigger",
+      "status": "ok",
+      "source_ref": "test-after-patch"
+    },
+    {
+      "feature_id": "viewport.models",
+      "status": "ok",
+      "source_ref": "test-after-patch"
+    },
+    {
+      "feature_id": "webgl.context",
+      "status": "ok",
+      "source_ref": "test-after-patch"
+    }
+  ],
+  "patch_ref": "synthetic-patch-001",
+  "hypotheses": [
+    {
+      "id": "kernel-switch",
+      "statement": "Kernel switched to K3",
+      "prediction": "Failure snapshot has K3",
+      "support_ids": [],
+      "contradict_ids": [
+        "snap-before",
+        "snap-after"
+      ],
+      "votes": [
+        {
+          "role": "intake",
+          "value": "abstain",
+          "evidence_ids": [
+            "snap-before"
+          ]
+        },
+        {
+          "role": "investigator",
+          "value": "support",
+          "evidence_ids": []
+        },
+        {
+          "role": "skeptic",
+          "value": "reject",
+          "evidence_ids": [
+            "snap-before",
+            "snap-after"
+          ]
+        },
+        {
+          "role": "test_runner",
+          "value": "reject",
+          "evidence_ids": [
+            "snap-after"
+          ]
+        },
+        {
+          "role": "adjudicator",
+          "value": "reject",
+          "evidence_ids": [
+            "snap-before",
+            "snap-after"
+          ]
+        }
+      ],
+      "prediction_check": {
+        "evidence_id": "snap-after",
+        "field": "kernel",
+        "equals": "K3"
+      }
+    },
+    {
+      "id": "overlay-routing",
+      "statement": "Overlay intercepted trigger action routing",
+      "prediction": "Disabling overlay restores dispatch",
+      "support_ids": [
+        "trace-input",
+        "test-overlay-off",
+        "test-after-patch"
+      ],
+      "contradict_ids": [],
+      "votes": [
+        {
+          "role": "intake",
+          "value": "abstain",
+          "evidence_ids": [
+            "snap-before",
+            "snap-after"
+          ]
+        },
+        {
+          "role": "investigator",
+          "value": "support",
+          "evidence_ids": [
+            "trace-input"
+          ]
+        },
+        {
+          "role": "skeptic",
+          "value": "support",
+          "evidence_ids": [
+            "test-overlay-off"
+          ]
+        },
+        {
+          "role": "test_runner",
+          "value": "support",
+          "evidence_ids": [
+            "test-after-patch"
+          ]
+        },
+        {
+          "role": "adjudicator",
+          "value": "support",
+          "evidence_ids": [
+            "test-after-patch"
+          ]
+        }
+      ],
+      "prediction_check": {
+        "evidence_id": "test-overlay-off",
+        "field": "action_dispatch",
+        "equals": true
+      }
+    }
+  ],
+  "verification": {
+    "before_evidence_id": "snap-after",
+    "after_evidence_id": "test-after-patch"
+  }
+}

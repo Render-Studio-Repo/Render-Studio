@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 # Solid studio black for OG / link-preview cards (iMessage, Slack, etc.).
 SHARE_OG_BACKGROUND_RGB = (0, 0, 0)
 
+# Default unfurl when a share has no model screenshot — gear logo card, not the old RENDER3D banner.
+BRAND_OG_CACHE = "oglogo=20260916-1"
+BRAND_OG_PATH = "/render-logo-gear-og.png"
+BRAND_OG_WIDTH = 1200
+BRAND_OG_HEIGHT = 630
+BRAND_OG_TYPE = "image/png"
+
+
+def brand_og_url(origin: str = "") -> str:
+    """Absolute (or root-relative) URL for the gear-logo Open Graph card."""
+    base = str(origin or "").rstrip("/")
+    path = f"{BRAND_OG_PATH}?{BRAND_OG_CACHE}"
+    return f"{base}{path}" if base else path
+
+
+def is_brand_og_url(url: str) -> bool:
+    return "render-logo-gear-og.png" in str(url or "")
+
 
 def _snapshot_base_stem(snapshot_name: str) -> str:
     stem = Path(snapshot_name).stem
@@ -134,7 +152,99 @@ def _rgba_image_is_clay_grey(image: Any) -> bool:
         return False
 
 
-def _collect_colored_preview_meshes(project_path: Path, cad_stem: str) -> list[Any]:
+def is_usable_share_preview(path: Path) -> bool:
+    """False for missing, tiny, all-black, or failed viewport captures."""
+    try:
+        dest = Path(path)
+        if not dest.is_file():
+            return False
+        size = int(dest.stat().st_size)
+    except OSError:
+        return False
+    if size < 32:
+        return False
+    if size >= 24_000:
+        return True
+    try:
+        from PIL import Image
+
+        with Image.open(dest) as img:
+            rgba = img.convert("RGBA")
+            width, height = rgba.size
+            samples = [
+                rgba.getpixel((0, 0)),
+                rgba.getpixel((width - 1, 0)),
+                rgba.getpixel((0, height - 1)),
+                rgba.getpixel((width - 1, height - 1)),
+                rgba.getpixel((width // 2, height // 2)),
+            ]
+        if all(max(px[:3]) <= 14 for px in samples):
+            return False
+        if all(min(px[:3]) >= 240 for px in samples):
+            return False
+    except Exception:
+        return size > 8_000
+    return True
+
+
+def resolve_share_model_path(project_path: Path, filename: str) -> Path | None:
+    """Find the shared GLB/mesh, including vibecad/jake/mesh nested files."""
+    raw = str(filename or "").strip()
+    if not raw:
+        return None
+    try:
+        from backend.services.engine_layout import resolve_in_layout
+
+        hit = resolve_in_layout(project_path, raw)
+        if hit is not None and hit.is_file():
+            return hit
+    except Exception:
+        pass
+    name = Path(raw).name
+    direct = project_path / raw
+    if direct.is_file():
+        return direct
+    if name and (project_path / name).is_file():
+        return project_path / name
+    return None
+
+
+def _trimesh_geoms(path: Path) -> list[Any]:
+    try:
+        import trimesh
+    except Exception:
+        return []
+
+    def _face_count(geom: Any) -> int:
+        try:
+            faces = getattr(geom, "faces", None)
+            return int(len(faces)) if faces is not None else 0
+        except Exception:
+            return 0
+
+    try:
+        loaded = trimesh.load(path, force="scene")
+    except Exception:
+        try:
+            loaded = trimesh.load(path, force="mesh")
+        except Exception:
+            return []
+    meshes: list[Any] = []
+    if hasattr(loaded, "geometry"):
+        for geom in loaded.geometry.values():
+            if geom is not None and _face_count(geom) > 0:
+                meshes.append(geom)
+    elif loaded is not None and _face_count(loaded) > 0:
+        meshes.append(loaded)
+    return meshes
+
+
+def _collect_colored_preview_meshes(
+    project_path: Path,
+    cad_stem: str,
+    *,
+    model_path: Path | None = None,
+) -> list[Any]:
     """Load per-part GLBs (preferred) or a single coloured assembly GLB."""
     try:
         import trimesh
@@ -147,6 +257,11 @@ def _collect_colored_preview_meshes(project_path: Path, cad_stem: str) -> list[A
             return int(len(faces)) if faces is not None else 0
         except Exception:
             return 0
+
+    if model_path is not None and model_path.is_file():
+        meshes = _trimesh_geoms(model_path)
+        if meshes:
+            return meshes
 
     meshes: list[Any] = []
     part_paths = sorted(project_path.glob(f"{cad_stem}__part_*.glb"))
@@ -161,30 +276,43 @@ def _collect_colored_preview_meshes(project_path: Path, cad_stem: str) -> list[A
     if meshes:
         return meshes
 
+    from backend.services.engine_layout import ENGINE_FOLDERS
+
     candidates = [
         project_path / f".{cad_stem}.step.glb",
         project_path / f"{cad_stem}.glb",
         project_path / f"{cad_stem}__faceted.glb",
     ]
+    for folder in ENGINE_FOLDERS:
+        candidates.append(project_path / folder / f"{cad_stem}.glb")
+        candidates.append(project_path / folder / f"{cad_stem}__faceted.glb")
+    resolved = resolve_share_model_path(project_path, f"{cad_stem}.glb")
+    if resolved is not None:
+        candidates.insert(0, resolved)
     for path in candidates:
         if not path.is_file():
             continue
-        try:
-            loaded = trimesh.load(path, force="scene")
-        except Exception:
-            try:
-                loaded = trimesh.load(path, force="mesh")
-            except Exception:
-                continue
-        if hasattr(loaded, "geometry"):
-            for geom in loaded.geometry.values():
-                if geom is not None and _face_count(geom) > 0:
-                    meshes.append(geom)
-        elif loaded is not None and _face_count(loaded) > 0:
-            meshes.append(loaded)
+        meshes = _trimesh_geoms(path)
         if meshes:
-            break
+            return meshes
     return meshes
+
+
+def _raster_model_png_layer(src: Path, *, size: int = 1200) -> Any | None:
+    """CPU iso still from any mesh — does not require vertex colors or Pillow JPEG."""
+    try:
+        from PIL import Image
+
+        from backend.services.cad_reference_geometry import preview_png_bytes
+    except Exception:
+        return None
+    try:
+        png = preview_png_bytes(src, view="iso", size=size)
+        if not png or not png.startswith(b"\x89PNG"):
+            return None
+        return Image.open(BytesIO(png)).convert("RGBA")
+    except Exception:
+        return None
 
 
 def _render_colored_model_rgba(
@@ -192,6 +320,7 @@ def _render_colored_model_rgba(
     snapshot_name: str,
     *,
     size: tuple[int, int] = (1200, 900),
+    model_path: Path | None = None,
 ) -> Any | None:
     """CPU isometric preview from coloured part GLBs (share OG when CAD iso is clay grey)."""
     import math
@@ -203,7 +332,7 @@ def _render_colored_model_rgba(
         return None
 
     cad_stem = _cad_stem_from_snapshot(snapshot_name)
-    meshes = _collect_colored_preview_meshes(project_path, cad_stem)
+    meshes = _collect_colored_preview_meshes(project_path, cad_stem, model_path=model_path)
     if not meshes:
         return None
 
@@ -568,8 +697,9 @@ def _draw_render3d_badge(image: Any) -> None:
     icon_size = max(216, min(336, int(height * 0.285)))
 
     logo_paths = [
-        Path(__file__).resolve().parents[2] / "frontend" / "render3d-logo.png",
-        Path(__file__).resolve().parents[2] / "frontend" / "favicon-180.png",
+        Path(__file__).resolve().parents[2] / "frontend" / "media" / "images" / "render-animations" / "VR-Animations" / "render-logo-gear-still.png",
+        Path(__file__).resolve().parents[2] / "frontend" / "assets" / "brand" / "render-logo-gear-r-transparent.png",
+        Path(__file__).resolve().parents[2] / "frontend" / "assets" / "brand" / "favicon-180.png",
     ]
     logo = None
     for path in logo_paths:
@@ -744,28 +874,55 @@ def make_share_og_png(project_path: Path, snapshot_name: str) -> tuple[str, int,
 
 def make_share_og_png_from_model(project_path: Path, filename: str) -> tuple[str, int, int] | None:
     """Black-background PNG thumbnail rendered directly from a coloured GLB/model file."""
-    src = project_path / Path(filename).name
-    if not src.is_file():
+    src = resolve_share_model_path(project_path, filename)
+    if src is None or not src.is_file():
         return None
     out = project_path / f"{Path(src.name).stem}_share_og_color.png"
     try:
         from PIL import Image
 
-        if (
-            out.is_file()
-            and out.stat().st_mtime_ns >= src.stat().st_mtime_ns
-            and not _legacy_share_og_needs_rebuild(out)
-        ):
-            with Image.open(out) as existing:
-                return out.name, int(existing.size[0]), int(existing.size[1])
+        existing_ok: tuple[str, int, int] | None = None
+        if out.is_file() and is_usable_share_preview(out):
+            try:
+                with Image.open(out) as existing:
+                    existing_ok = (out.name, int(existing.size[0]), int(existing.size[1]))
+            except Exception:
+                existing_ok = None
+            if (
+                existing_ok
+                and out.stat().st_mtime_ns >= src.stat().st_mtime_ns
+                and not _legacy_share_og_needs_rebuild(out)
+            ):
+                return existing_ok
 
-        model_layer = _render_colored_model_rgba(project_path, src.name, size=(1600, 1200))
+        model_layer = _render_colored_model_rgba(
+            project_path,
+            src.name,
+            size=(1600, 1200),
+            model_path=src,
+        )
         if model_layer is None:
-            return None
+            model_layer = _raster_model_png_layer(src, size=1200)
+        if model_layer is None:
+            return existing_ok
         canvas = Image.new("RGBA", model_layer.size, (*SHARE_OG_BACKGROUND_RGB, 255))
         canvas.alpha_composite(model_layer)
-        _draw_render3d_badge(canvas)
-        canvas.save(out, format="PNG", optimize=True)
+        try:
+            _draw_render3d_badge(canvas)
+        except Exception:
+            logger.debug("Share OG brand stamp skipped for %s", src.name, exc_info=True)
+        try:
+            canvas.save(out, format="PNG", optimize=True)
+        except Exception:
+            # Pillow JPEG/encoder issues on older 3.9 builds — write raw PNG bytes.
+            from backend.services.cad_reference_geometry import preview_png_bytes
+
+            png = preview_png_bytes(src, view="iso", size=1200)
+            if not png:
+                return None
+            out.write_bytes(png)
+            with Image.open(out) as existing:
+                return out.name, int(existing.size[0]), int(existing.size[1])
         return out.name, int(canvas.size[0]), int(canvas.size[1])
     except Exception as exc:
         logger.warning("Could not create model share OG preview for %s: %s", src.name, exc)
@@ -789,19 +946,30 @@ def _has_exact_snapshot(project_path: Path, filename: str) -> bool:
 
 def share_preview_filename(project_path: Path, filename: str, *, resolve_viewport=None) -> str | None:
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
-    if not snapshot:
-        return None
-    og = make_share_og_png(project_path, snapshot)
-    if og:
-        return og[0]
-    return make_share_preview_transparent(project_path, snapshot) or snapshot
+    if snapshot:
+        og = make_share_og_png(project_path, snapshot)
+        if og:
+            return og[0]
+        return make_share_preview_transparent(project_path, snapshot) or snapshot
+    og = make_share_og_png_from_model(project_path, filename)
+    return og[0] if og else None
 
 
 def share_preview_image_meta(project_path: Path, filename: str, *, resolve_viewport=None) -> dict[str, Any]:
     snapshot = share_snapshot_filename(project_path, filename, resolve_viewport=resolve_viewport)
-    if not snapshot:
-        return {}
-    og = make_share_og_png(project_path, snapshot)
+    if snapshot:
+        og = make_share_og_png(project_path, snapshot)
+        if og:
+            name, width, height = og
+            return {
+                "preview_file": name,
+                "preview_width": width,
+                "preview_height": height,
+                "preview_type": "image/png",
+            }
+        preview = make_share_preview_transparent(project_path, snapshot) or snapshot
+        return {"preview_file": preview, "preview_type": "image/png"}
+    og = make_share_og_png_from_model(project_path, filename)
     if og:
         name, width, height = og
         return {
@@ -810,5 +978,4 @@ def share_preview_image_meta(project_path: Path, filename: str, *, resolve_viewp
             "preview_height": height,
             "preview_type": "image/png",
         }
-    preview = make_share_preview_transparent(project_path, snapshot) or snapshot
-    return {"preview_file": preview, "preview_type": "image/png"}
+    return {}

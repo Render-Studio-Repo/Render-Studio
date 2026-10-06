@@ -1,0 +1,50 @@
+{
+	storage file_system {
+		root "/Users/sam/Library/Application Support/Render3D/caddy-storage"
+	}
+	auto_https disable_redirects
+	skip_install_trust
+}
+
+render3d.app, www.render3d.app, smartcallusa.com, www.smartcallusa.com {
+	tls internal
+	request_body {
+		max_size 100MB
+	}
+	@mcp path /mcp /mcp/*
+	handle @mcp {
+		reverse_proxy 127.0.0.1:8744 {
+			flush_interval -1
+		}
+	}
+	handle {
+		encode gzip zstd
+		reverse_proxy 127.0.0.1:8001 {
+			transport http {
+				read_timeout 540s
+				write_timeout 540s
+			}
+		}
+	}
+}
+
+# AutoPrep origin (:5050) — project folder /Users/sam/AutoPrep
+# Public hostnames: autoprep.render3d.app (canonical) and health.render3d.app (alias)
+autoprep.render3d.app, health.render3d.app {
+	tls internal
+	encode gzip zstd
+	reverse_proxy 127.0.0.1:5050
+}
+
+http://192.168.1.83 {
+	encode gzip zstd
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy 127.0.0.1:8001 {
+		transport http {
+			read_timeout 540s
+			write_timeout 540s
+		}
+	}
+}
