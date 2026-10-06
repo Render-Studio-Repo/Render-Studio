@@ -37,7 +37,7 @@
         },
         {
           "id": "public-first-run-contract",
-          "argv": ["python3", "-m", "unittest", "backend.tests.test_local_ai_key_schema", "backend.tests.test_render_login_setup", "backend.tests.test_instance_setup", "-v"],
+          "argv": [".venv/bin/python", "-m", "unittest", "backend.tests.test_local_ai_key_schema", "backend.tests.test_render_login_setup", "backend.tests.test_instance_setup", "-v"],
           "mandatory": true
         },
         {
