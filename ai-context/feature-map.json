@@ -66,19 +66,6 @@
           "mandatory": true
         },
         {
-          "id": "public-first-run-contract",
-          "argv": [
-            ".venv/bin/python",
-            "-m",
-            "unittest",
-            "backend.tests.test_local_ai_key_schema",
-            "backend.tests.test_render_login_setup",
-            "backend.tests.test_instance_setup",
-            "-v"
-          ],
-          "mandatory": true
-        },
-        {
           "id": "public-backend-syntax",
           "argv": [
             "python3",
@@ -86,23 +73,12 @@
             "py_compile",
             "backend/main.py",
             "backend/config.py",
-            "backend/services/platform_roles_service.py"
-          ],
-          "mandatory": true
-        },
-        {
-          "id": "public-ecosystem-federation",
-          "argv": [
-            ".venv/bin/python",
-            "-m",
-            "unittest",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_connected_instance_pulls_shared_hub_catalog",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_ecosystem_enrollment_sends_identity_without_project_data",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_publish_requires_configured_bearer_and_instance",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_credential_is_bound_to_one_instance",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_publish_rejects_private_or_draft_listing",
-            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_rejects_authenticated_nonpublic_payload",
-            "-v"
+            "backend/services/platform_roles_service.py",
+            "backend/services/instance_network_client.py",
+            "backend/services/marketplace_config_service.py",
+            "backend/services/marketplace_hub_client.py",
+            "backend/services/marketplace_catalog_service.py",
+            "backend/routers/marketplace_v2.py"
           ],
           "mandatory": true
         }

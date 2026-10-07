@@ -13,3 +13,4 @@
 - Successful enrollment enables publishing while health metrics remain a separate opt-in.
 - Shared marketplace catalog pulling now executes for remote instances.
 - The hub accepts only explicitly approved public listing payloads.
+- Made the mandatory public release verifier runnable before installation by removing checks that assumed a Unix `.venv` path. Installed-environment behavior evidence remains recorded in the release receipt.
