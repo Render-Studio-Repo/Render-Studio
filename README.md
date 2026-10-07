@@ -321,6 +321,8 @@ The updater accepts only the exact fetched `origin/master` commit and a fast-for
 
 Connected installations also receive dismissible service announcements from Render. Announcements are authenticated with the installation's existing instance credential and may contain an update notice, suggestion, or What's New message with an optional Render action link. Standalone installations do not request or display service announcements.
 
+Each installation keeps an immutable UUID for authentication and data ownership. Connected installations may also claim a unique public handle during setup, such as `sam-robotics`. Handles are centrally checked, exclude reserved system names, and provide the foundation for future public instance pages, links, discovery, and promotion without exposing the internal UUID.
+
 ## Verify the public release
 
 Run the dependency-free release checks from a fresh clone:

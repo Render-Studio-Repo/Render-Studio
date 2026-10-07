@@ -7,7 +7,7 @@
   <title>Connect your database — Render Studio</title>
   <link rel="icon" type="image/png" href="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" sizes="any" />
   <link rel="stylesheet" href="/studio/styles.css?v=20260914-installsb1-20260915-browserdots1-20260915-wristwindow1-webglfb1" />
-  <link rel="stylesheet" href="/site/setup-instance.css?v=20261006-update-progress1" />
+  <link rel="stylesheet" href="/site/setup-instance.css?v=20261006-instance-handles1" />
 </head>
 <body class="info-page">
   <main class="setup-page">
@@ -137,6 +137,11 @@
         <label>Instance name
           <input id="instance-network-name" maxlength="80" value="Render Studio instance" required />
         </label>
+        <label>Public instance handle
+          <span class="setup-handle-row"><input id="instance-network-handle" maxlength="32" placeholder="sam-robotics" /><button type="button" class="btn secondary" id="btn-check-instance-handle">Check</button></span>
+          <small>This becomes the promotable identity for your connected instance. Render will generate one if left blank.</small>
+        </label>
+        <p class="setup-status" id="instance-handle-status" aria-live="polite"></p>
         <label class="setup-check"><input id="instance-network-ecosystem" type="checkbox" /> Join the Render ecosystem, report this instance ID, and use the shared public marketplace</label>
         <label class="setup-check"><input id="instance-network-public" type="checkbox" /> This instance has its own public HTTPS URL</label>
         <label class="setup-check"><input id="instance-network-reporting" type="checkbox" /> Share aggregate health and online status with Render</label>
@@ -192,6 +197,6 @@
       <p><a href="/getting-started.html">Getting Started</a> · <a href="/database.html">Database configuration</a> · <a href="/docs.html#quick-start">Docs quick start</a> · <a href="/setup-marketplace.html">Marketplace install</a></p>
     </section>
   </main>
-  <script type="module" src="/site/setup-instance.js?v=20261006-update-progress1"></script>
+  <script type="module" src="/site/setup-instance.js?v=20261006-instance-handles1"></script>
 </body>
 </html>

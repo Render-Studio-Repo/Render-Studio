@@ -72,6 +72,7 @@ PUBLIC_KEYS = (
     "tickets_enabled",
     "instance_id",
     "instance_name",
+    "instance_handle",
     "is_official_hub",
     "payouts_enabled",
     "stripe_connect_enabled",
@@ -131,6 +132,7 @@ STR_KEYS = {
     "hub_url",
     "hub_token",
     "instance_name",
+    "instance_handle",
     "default_sort",
     "hub_categories",
 }
@@ -180,6 +182,7 @@ def _defaults() -> dict[str, Any]:
         "instance_secret": "",
         "hub_token": "",
         "instance_name": "Render Studio" if official else "Render Studio instance",
+        "instance_handle": "render-official" if official else "",
         "is_official_hub": official,
     }
 
@@ -318,6 +321,8 @@ def save(patch: dict[str, Any]) -> dict[str, Any]:
                 cfg["hub_token"] = token
         elif key == "instance_name":
             cfg["instance_name"] = str(value or "Render Studio instance").strip()[:80]
+        elif key == "instance_handle":
+            cfg["instance_handle"] = str(value or "").strip().lower()[:32]
         elif key == "default_sort":
             cfg["default_sort"] = _clean_sort(value)
         elif key == "hub_categories":

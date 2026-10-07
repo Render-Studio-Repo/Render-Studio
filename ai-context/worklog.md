@@ -1,5 +1,11 @@
 # Render Studio public worklog
 
+## 2026-10-06 — Public instance handles
+
+- Preserved the generated UUID as the immutable technical identity and added a separate promotable public handle.
+- Added central availability, reserved-name, uniqueness, and ownership checks.
+- Added setup controls to choose or generate a handle before joining the Render ecosystem.
+
 ## 2026-10-06 — Connected instance announcements
 
 - Added authenticated service-wide announcements for updates, suggestions, and What's New messages.

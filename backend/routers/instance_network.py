@@ -27,6 +27,7 @@ def _allowed(request: Request, user: dict[str, Any] | None) -> bool:
 
 class NetworkConfigBody(BaseModel):
     instance_name: str = Field(default="Render Studio instance", min_length=1, max_length=80)
+    instance_handle: str = Field(default="", max_length=32)
     reporting_opt_in: bool = False
     public_network: bool = False
     ecosystem_opt_in: bool = False
@@ -263,10 +264,16 @@ def configure(
         raise HTTPException(403, "Instance network setup is available only on this machine or to a super admin.")
     return {"ok": True, **network.configure(
         instance_name=body.instance_name,
+        instance_handle=body.instance_handle,
         reporting_opt_in=body.reporting_opt_in,
         public_network=body.public_network,
         ecosystem_opt_in=body.ecosystem_opt_in,
     )}
+
+
+@router.get("/api/setup/instance-handle-availability/{handle}")
+def instance_handle_availability(handle: str):
+    return network.handle_availability(handle)
 
 
 @router.post("/api/setup/instance-updates")

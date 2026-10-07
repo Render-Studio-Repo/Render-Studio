@@ -49,6 +49,8 @@
 }
 .setup-fields .setup-check { grid-template-columns: auto 1fr; align-items: center; font-weight: 400; }
 .setup-fields .setup-check input { width: 17px; height: 17px; padding: 0; }
+.setup-handle-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.setup-fields label small { color: #8b949e; font-weight: 400; line-height: 1.4; }
 .setup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .setup-actions[hidden] { display: none !important; }
 .setup-status { min-height: 1.3em; margin: 10px 0 0; font-size: 13px; }
