@@ -8,7 +8,7 @@ Render Studio installs are local-first. A clean clone resolves relative `PROJECT
 
 `hybrid` keeps the local catalog and leaves hub pull and publish disabled until the operator enables them.
 
-`public` pulls the official catalog from `https://render3d.app`. New public installations are pull-only. Publishing requires a hub-issued bearer credential and explicit approval. Paid hub listings redirect to the official Render product page. The official host owns checkout, entitlements, refunds, payouts, and platform fees.
+`public` pulls the official catalog from `https://render3d.app`. Enrollment binds a private instance credential to the installation's stable instance ID. A connected installation can publish listings after a local administrator explicitly approves them for public use. Paid hub listings redirect to the official Render product page. The official host owns checkout, entitlements, refunds, payouts, and platform fees.
 
 Joining the ecosystem registers only the stable instance ID and operator-chosen instance name. A public base URL is included only when the operator says the instance has its own public HTTPS origin. Enrollment does not scan or upload projects.
 
@@ -24,7 +24,7 @@ An independently hosted instance cannot create an official entitlement. A missin
 
 Marketplace browsing and instance reporting are separate choices. Reporting is disabled until the operator opts in. Explicit support submissions are redacted before transmission. The client sends a stable instance ID, chosen instance name, version, and coarse aggregate counts. It does not send project files, prompts, credentials, hostnames, IP addresses, or user identities.
 
-Marketplace publishing is also a separate boundary. Hub synchronization accepts metadata and public URLs only for listings with an explicit approved or published state. Draft listings, private projects, project folders, and raw project files fail closed and remain on the instance.
+Marketplace publishing is also a separate boundary. Hub synchronization accepts sanitized metadata and public URLs only for listings with an explicit `approved` state and `public` visibility. Draft listings, private projects, project folders, and raw project files fail closed and remain on the instance.
 
 ## Premium delivery contract
 
@@ -35,7 +35,7 @@ Premium downloads should be issued by the hosted control plane after it verifies
 1. Leave `PROJECTS_DIR=projects` and `DATA_DIR=data` for a normal repository-local install.
 2. Generate a unique `JWT_SECRET` and `SECRETS_FERNET_KEY` outside version control.
 3. Choose private, local-first, or connected marketplace setup.
-4. Keep `MARKETPLACE_HUB_TOKEN` empty unless Render has approved the instance for publishing.
+4. Keep the generated instance credential private. Set `MARKETPLACE_HUB_TOKEN` only for a legacy hub deployment that still uses one shared bearer.
 5. Opt into health reporting separately from marketplace access.
 6. Verify that a hub listing redirects checkout to `render3d.app`.
 7. Verify that an unauthenticated hub publish returns HTTP 401.
