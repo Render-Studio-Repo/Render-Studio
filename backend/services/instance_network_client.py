@@ -126,6 +126,7 @@ def configure(*, instance_name: str, reporting_opt_in: bool, public_network: boo
         "instance_reporting_opt_in": bool(reporting_opt_in),
         "instance_reporting_answered": True,
         "instance_public_network": bool(public_network),
+        "instance_update_notifications": bool(ecosystem_opt_in),
     })
     market.answer_install(include=bool(ecosystem_opt_in), mode="public" if ecosystem_opt_in else "private")
     result = public_status()
@@ -209,23 +210,33 @@ def apply_update(commit_sha: str) -> dict[str, Any]:
     remote = _git("remote", "get-url", "origin", timeout=3.0).lower()
     if "github.com/wprojects/render-studio" not in remote:
         raise ValueError("Origin is not the official Render Studio repository.")
-    if _git("status", "--porcelain", "--untracked-files=no", timeout=5.0):
+    current = _full_git_sha()
+    if current == target:
+        return {"ok": True, "already_current": True, "current_sha": current, "restart_required": False}
+    if _git("status", "--porcelain", "--untracked-files=all", timeout=5.0):
         raise ValueError("Application source has local changes. Update refused so nothing is overwritten.")
     _git("fetch", "--quiet", "origin", timeout=90.0)
     _git("cat-file", "-e", f"{target}^{{commit}}", timeout=3.0)
+    stable = _git("rev-parse", "refs/remotes/origin/master", timeout=3.0).lower()
+    if target != stable:
+        raise ValueError("The requested commit is not the current official stable release.")
     _git("merge-base", "--is-ancestor", "HEAD", target, timeout=3.0)
     changed = _git("diff", "--name-only", "HEAD", target, timeout=10.0).splitlines()
-    protected = ("projects/", "data/", "backend/local_private/", ".env")
-    if any(path == ".env" or path.startswith(protected) for path in changed):
+    protected = (
+        "projects/", "data/", "backups/", "inbox/", "logs/", "output/",
+        "backend/local_private/", "frontend/admin/", "server-configurations/profiles/enterprise-private/",
+    )
+    protected_files = {".env", "backend/render3d.db", "frontend/super-admin.html"}
+    if any(path in protected_files or path.startswith(protected) for path in changed):
         raise ValueError("Release touches protected instance data. Update refused.")
-    previous = _full_git_sha()
+    previous = current
     _git("merge", "--ff-only", target, timeout=90.0)
     return {
         "ok": True,
         "previous_sha": previous,
         "current_sha": _full_git_sha(),
         "restart_required": True,
-        "protected": ["projects/", "data/", ".env", "backend/local_private/"],
+        "protected": ["projects/", "data/", "backups/", "logs/", ".env", "backend/local_private/", "private admin surfaces"],
     }
 
 

@@ -7,7 +7,7 @@ export function mountInstanceUpdateNotice({ api, documentRef = document, storage
     const notice = documentRef.createElement("aside");
     notice.className = "instance-update-notice";
     notice.setAttribute("role", "dialog");
-    notice.innerHTML = `<strong>Render ${clean(release.version || "update")} is available</strong><span>${clean(release.notes || "Install when you are ready.")}</span><div><button type="button" data-update-later>Later</button><a href="/setup-instance.html#setup-updates-card">Review update</a></div>`;
+    notice.innerHTML = `<strong>Render ${clean(release.version || "update")} is available</strong><span>${clean(release.notes || "Install when you are ready.")} Your projects and instance data stay in place.</span><div><button type="button" data-update-later>Later</button><a href="/setup-instance.html#setup-updates-card">Review safe update</a></div>`;
     notice.querySelector("[data-update-later]")?.addEventListener("click", () => {
       storage?.setItem?.("render3d:dismissed-update", release.commit_sha);
       notice.remove();

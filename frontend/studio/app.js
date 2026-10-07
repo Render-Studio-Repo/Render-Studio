@@ -299,7 +299,7 @@ import { collectSceneShareItems, createSceneSharePublisher, shouldPublishSceneMe
 import { createAIKeyUI } from "../components/ai-key-ui.js?v=20260907-ws-share-setui1&astraoffice=20260917-1&substate2&sub-pending=20260928-1";
 import { pendingSubscriptionShareMarkup } from "../components/pending-subscription-shares.js?v=20260928-ownerstatus1&sub-pending=20260928-1";
 import { createAiSubscriptionsUI, hideProfileFlyoutPanels, applyAiBillingTab, applyAiBillingCostsOpen } from "../components/ai-subscriptions-ui.js?v=20260908-nocursor1-logo-ko1-cloudopenai1-subsyn1-peoplimit1-setui1-subplan1-weeklyuse1&leakfix59&substate1&substate2&sharedsubs=20260926-1&peopleclick=20260927-1&claude-connect=20260927-1&sub-access=20260928-2&claude-submit=20260928-1&sub-pending=20260928-1&share-actions=20260928-1&claude-tabs=20260928-2&hey-ai-onboarding=20260929-1&claude-setup-token=20261001-1&claude-connect-disclosure=20261002-1&claude-connect-dialog=20261002-1";
-import { mountInstanceUpdateNotice } from "../components/instance-update-notice.js?v=20261001-1";
+import { mountInstanceUpdateNotice } from "../components/instance-update-notice.js?v=20261006-safe-updates1";
 import { createUserProfileUI } from "../components/user-profile.js?v=20260908-recv-pay-shareov1-proftabs1-histprof1-settings-redesign2&leakfix75";
 import { createStorePreferencesUI } from "../marketplace/store-preferences.js?v=20260908-store-ux-storepop1-proftabs1&leakfix72";
 import { openStoreListingPopup } from "../marketplace/store-listing-popup.js?v=20260909-storepop1";

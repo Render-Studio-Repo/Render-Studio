@@ -1,0 +1,36 @@
+name: Publish connected-instance update
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish stable release pointer
+        env:
+          RELEASE_TOKEN: ${{ secrets.RENDER_RELEASE_WEBHOOK_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          PUBLISHED_AT: ${{ github.event.head_commit.timestamp }}
+        run: |
+          test -n "$RELEASE_TOKEN"
+          python3 - <<'PY' > /tmp/render-release.json
+          import json, os
+          print(json.dumps({
+              "repository": "wprojects/Render-Studio",
+              "branch": "master",
+              "commit_sha": os.environ["COMMIT_SHA"],
+              "notes": os.environ.get("COMMIT_MESSAGE", "").splitlines()[0],
+              "published_at": os.environ.get("PUBLISHED_AT", ""),
+          }))
+          PY
+          curl --fail-with-body --retry 3 \
+            --header "Content-Type: application/json" \
+            --header "X-Render-Release-Token: $RELEASE_TOKEN" \
+            --data-binary @/tmp/render-release.json \
+            https://render3d.app/api/instance-network/v1/releases/publish

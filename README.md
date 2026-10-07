@@ -313,6 +313,12 @@ Stop Render Studio, remove `.venv`, and run the installer again. This rebuilds i
 - [Context research method](docs/context-research-method.md)
 - [Fusion connector reference](docs/fusion-connector-for-jake/README.md)
 
+## Safe instance updates
+
+Instances connected to the Render ecosystem receive admin-only update notices when the public repository's `master` branch advances. Updates are never installed automatically. An administrator reviews the release and clicks **Update Render**.
+
+The updater accepts only the exact fetched `origin/master` commit and a fast-forward history. It refuses to run when application source has tracked or untracked changes, or when a release touches projects, databases, backups, logs, credentials, private modules, or hosted super-admin surfaces. Runtime data remains outside Git and stays in place across updates. Changes made only to render3d.app do not publish an instance update.
+
 ## Verify the public release
 
 Run the dependency-free release checks from a fresh clone:

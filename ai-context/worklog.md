@@ -34,3 +34,9 @@
 
 - Expanded the repository README with product capabilities, platform installation steps, setup modes, AI configuration, API entry points, marketplace federation, data paths, privacy boundaries, updates, troubleshooting, and a documentation map.
 - Updated the marketplace hub and open-source boundary guides to match per-instance credentials and public-only listing ingestion.
+## 2026-10-06 — Safe connected-instance updates
+
+- Added a stable release pointer backed by the public `wprojects/Render-Studio` `master` branch. Production site edits cannot move the pointer.
+- Connected ecosystem instances now opt into admin update notices. Installation remains a deliberate admin click.
+- Hardened update preflight to require the exact stable commit, a clean tree including untracked source, fast-forward history, and a diff outside protected runtime and private-admin paths.
+- Kept projects, data, backups, logs, credentials, and instance-only modules outside the update boundary.
