@@ -59,6 +59,20 @@ class InstanceNetworkClientTests(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertNotIn("abc.def.ghi", str(sent))
 
+    def test_self_hosted_feedback_is_copied_without_context(self) -> None:
+        with (
+            patch.object(network, "is_official_hub", return_value=False),
+            patch.object(network, "submit", return_value={"ok": True}) as submit,
+        ):
+            result = network.forward_management_feedback(kind="suggestion", message="Please add a fixture browser")
+        self.assertTrue(result["ok"])
+        submit.assert_called_once_with(
+            kind="suggestion",
+            subject="Studio suggestion",
+            message="Please add a fixture browser",
+            severity="normal",
+        )
+
     def test_update_notifications_are_opt_in(self) -> None:
         with patch.object(network, "is_official_hub", return_value=False):
             self.assertFalse(network.check_for_update()["enabled"])

@@ -341,10 +341,10 @@ def send_heartbeat() -> dict[str, Any]:
 
 
 def submit(*, kind: str, subject: str, message: str, severity: str = "normal", diagnostic: str = "") -> dict[str, Any]:
-    allowed = {"support", "issue", "diagnostic"}
+    allowed = {"support", "issue", "diagnostic", "bug", "suggestion"}
     clean_kind = str(kind or "support").strip().lower()
     if clean_kind not in allowed:
-        raise ValueError("kind must be support, issue, or diagnostic")
+        raise ValueError("kind must be support, issue, diagnostic, bug, or suggestion")
     clean_subject = " ".join(str(subject or "").split()).strip()[:160]
     clean_message = log_redact.redact_text(str(message or "")).strip()[:8000]
     clean_diagnostic = log_redact.redact_text(str(diagnostic or "")).strip()[:MAX_DIAGNOSTIC]
@@ -363,6 +363,19 @@ def submit(*, kind: str, subject: str, message: str, severity: str = "normal", d
     if not registered.get("ok"):
         return registered
     return _post(SUBMISSION_PATH, body, timeout=8.0)
+
+
+def forward_management_feedback(*, kind: str, message: str) -> dict[str, Any]:
+    """Copy an explicit self-hosted report to the central inbox without user or project data."""
+    clean_kind = str(kind or "").strip().lower()
+    if is_official_hub() or clean_kind not in {"bug", "suggestion"}:
+        return {"ok": True, "local_only": True}
+    return submit(
+        kind=clean_kind,
+        subject="Studio bug report" if clean_kind == "bug" else "Studio suggestion",
+        message=message,
+        severity="normal",
+    )
 
 
 def _take_leader_lock() -> bool:

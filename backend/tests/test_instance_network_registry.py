@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from backend.auth import get_current_user_optional
 from backend.routers.instance_network import router
 from backend.services import instance_network_registry as registry
+from backend.services import instance_network_client as network
 
 
 class InstanceNetworkRegistryTests(unittest.TestCase):
@@ -20,6 +21,8 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
         self.data_dir = Path(self.tmp.name)
         self.patch = patch.object(registry.settings, "data_dir", str(self.data_dir))
         self.patch.start()
+        self.hub_patch = patch.object(network, "is_official_hub", return_value=True)
+        self.hub_patch.start()
         app = FastAPI()
         app.include_router(router)
         self.app = app
@@ -37,6 +40,7 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
+        self.hub_patch.stop()
         self.patch.stop()
         self.tmp.cleanup()
 
@@ -123,6 +127,34 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
             })
         self.assertEqual(response.status_code, 200)
         submit.assert_called_once()
+
+    def test_non_hub_instance_cannot_open_central_management(self) -> None:
+        self._admin()
+        with patch.object(network, "is_official_hub", return_value=False):
+            response = self.client.get("/api/admin/instance-network/overview")
+        self.assertEqual(response.status_code, 403)
+
+    def test_submission_can_be_linked_to_github_issue_and_managed(self) -> None:
+        self.client.post("/api/instance-network/v1/register", json=self.identity)
+        report = self.client.post("/api/instance-network/v1/submissions", json={
+            **self.identity,
+            "kind": "suggestion",
+            "subject": "Add a fixture browser",
+            "message": "A fixture browser would help this workshop.",
+            "client_token": "suggestion-1",
+        }).json()
+        self._admin()
+        with patch("backend.routers.instance_network.github_issues_service.create_instance_report_issue", return_value={
+            "ok": True, "number": 42, "html_url": "https://github.com/wprojects/Render-Studio/issues/42", "state": "open",
+        }):
+            linked = self.client.post(f"/api/admin/instance-network/submissions/{report['submission_id']}/github-issue")
+        self.assertEqual(linked.status_code, 200)
+        self.assertEqual(linked.json()["github_issue_number"], 42)
+        with patch("backend.routers.instance_network.github_issues_service.update_issue_state", return_value={"ok": True, "number": 42, "state": "closed"}):
+            changed = self.client.patch("/api/admin/instance-network/github/issues/42", json={"state": "closed"})
+        self.assertEqual(changed.status_code, 200)
+        overview = self.client.get("/api/admin/instance-network/overview").json()
+        self.assertEqual(overview["submissions"][0]["github_issue_state"], "closed")
 
 
 if __name__ == "__main__":

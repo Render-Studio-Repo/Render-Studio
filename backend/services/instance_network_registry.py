@@ -17,7 +17,7 @@ from backend.config import settings
 from backend.services import log_redact
 
 _LOCK = threading.RLock()
-_KINDS = {"support", "issue", "diagnostic"}
+_KINDS = {"support", "issue", "diagnostic", "bug", "suggestion"}
 _SEVERITIES = {"low", "normal", "high", "critical"}
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{5,127}$")
 _NAMED_SECRET = re.compile(
@@ -82,12 +82,23 @@ def _connect() -> sqlite3.Connection:
             diagnostic TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             read_at TEXT,
+            github_issue_number INTEGER,
+            github_issue_url TEXT NOT NULL DEFAULT '',
+            github_issue_state TEXT NOT NULL DEFAULT '',
             UNIQUE (instance_id, client_token)
         );
         CREATE INDEX IF NOT EXISTS idx_instance_submissions_created
             ON instance_submissions(created_at DESC);
         """
     )
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(instance_submissions)")}
+    for name, definition in (
+        ("github_issue_number", "INTEGER"),
+        ("github_issue_url", "TEXT NOT NULL DEFAULT ''"),
+        ("github_issue_state", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE instance_submissions ADD COLUMN {name} {definition}")
     return conn
 
 
@@ -194,7 +205,7 @@ def submit(payload: dict[str, Any]) -> dict[str, Any]:
     kind = str(payload.get("kind") or "support").strip().lower()
     severity = str(payload.get("severity") or "normal").strip().lower()
     if kind not in _KINDS:
-        raise ValueError("kind must be support, issue, or diagnostic")
+        raise ValueError("kind must be support, issue, diagnostic, bug, or suggestion")
     if severity not in _SEVERITIES:
         severity = "normal"
     subject = _text(payload.get("subject"), 160, one_line=True)
@@ -230,7 +241,8 @@ def overview(query: str = "") -> dict[str, Any]:
     with _LOCK, _connect() as conn:
         rows = conn.execute("SELECT * FROM instances ORDER BY last_seen DESC").fetchall()
         submissions = conn.execute(
-            "SELECT id, instance_id, kind, subject, message, severity, diagnostic, created_at, read_at "
+            "SELECT id, instance_id, kind, subject, message, severity, diagnostic, created_at, read_at, "
+            "github_issue_number, github_issue_url, github_issue_state "
             "FROM instance_submissions ORDER BY created_at DESC LIMIT 200"
         ).fetchall()
         history = conn.execute(
@@ -275,3 +287,30 @@ def mark_read(submission_ids: list[str] | None = None) -> dict[str, Any]:
         else:
             cursor = conn.execute("UPDATE instance_submissions SET read_at=? WHERE read_at IS NULL", (stamp,))
     return {"ok": True, "updated": max(0, cursor.rowcount), "read_at": stamp}
+
+
+def submission(submission_id: str) -> dict[str, Any] | None:
+    with _LOCK, _connect() as conn:
+        row = conn.execute("SELECT * FROM instance_submissions WHERE id=?", (str(submission_id or "").strip(),)).fetchone()
+    return dict(row) if row else None
+
+
+def link_github_issue(submission_id: str, *, number: int, url: str, state: str = "open") -> dict[str, Any]:
+    sid = str(submission_id or "").strip()
+    with _LOCK, _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE instance_submissions SET github_issue_number=?, github_issue_url=?, github_issue_state=? WHERE id=?",
+            (int(number), _text(url, 500), _text(state, 20, one_line=True), sid),
+        )
+    if cursor.rowcount != 1:
+        raise ValueError("Submission was not found.")
+    return {"ok": True, "submission_id": sid, "github_issue_number": int(number), "github_issue_url": _text(url, 500), "github_issue_state": _text(state, 20, one_line=True)}
+
+
+def update_linked_issue_state(number: int, state: str) -> int:
+    with _LOCK, _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE instance_submissions SET github_issue_state=? WHERE github_issue_number=?",
+            (_text(state, 20, one_line=True), int(number)),
+        )
+    return max(0, cursor.rowcount)
