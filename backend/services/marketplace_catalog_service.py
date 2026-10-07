@@ -448,6 +448,7 @@ def to_hub_payload(listing: dict[str, Any], *, instance_id: str, public_base: st
         "boosted_until": listing.get("boosted_until"),
         "published_at": listing.get("published_at"),
         "owner": listing.get("owner"),
+        "visibility": "public",
         "origin_url": f"{public_base.rstrip('/')}/m/{kind}/{listing.get('slug') or listing['id']}",
         "instance_id": instance_id,
         **extras,

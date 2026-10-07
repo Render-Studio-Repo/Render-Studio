@@ -132,9 +132,16 @@ def configure(*, instance_name: str, reporting_opt_in: bool, public_network: boo
     if result["ecosystem_opt_in"]:
         from backend.services import marketplace_hub_client
 
-        result["ecosystem_registration"] = marketplace_hub_client.enroll_instance(
+        enrollment = marketplace_hub_client.enroll_instance(
             public_network=bool(public_network)
         )
+        result["ecosystem_registration"] = enrollment
+        if enrollment.get("ok"):
+            market.save({"hub_publish_enabled": True})
+            result = public_status() | {
+                "ecosystem_registration": enrollment,
+                "publishing_enabled": True,
+            }
     if result["reporting_opt_in"]:
         result["registration"] = send_registration()
     return result

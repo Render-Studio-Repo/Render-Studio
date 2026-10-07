@@ -82,12 +82,16 @@ class MarketplaceV2Tests(unittest.TestCase):
         self.assertFalse(cfg["hub_publish_enabled"])
 
     def test_hub_publish_requires_configured_bearer_and_instance(self) -> None:
-        with patch.object(marketplace_config_service, "ensure_instance_identity", return_value={"hub_token": "issued-secret"}):
-            self.assertTrue(marketplace_hub_client.verify_hub_request("Bearer issued-secret", "instance-1"))
-            self.assertFalse(marketplace_hub_client.verify_hub_request("Bearer wrong", "instance-1"))
-            self.assertFalse(marketplace_hub_client.verify_hub_request("Bearer issued-secret", ""))
-        with patch.object(marketplace_config_service, "ensure_instance_identity", return_value={"hub_token": ""}):
-            self.assertFalse(marketplace_hub_client.verify_hub_request(None, "instance-1"))
+        secret = "issued-secret-for-instance-123456"
+        marketplace_hub_client.register_instance({
+            "instance_id": "instance-1",
+            "instance_secret": secret,
+            "name": "Shop",
+        })
+        self.assertTrue(marketplace_hub_client.verify_hub_request(f"Bearer {secret}", "instance-1"))
+        self.assertFalse(marketplace_hub_client.verify_hub_request("Bearer wrong", "instance-1"))
+        self.assertFalse(marketplace_hub_client.verify_hub_request(f"Bearer {secret}", ""))
+        self.assertFalse(marketplace_hub_client.verify_hub_request(None, "instance-1"))
 
     def test_hub_publish_endpoint_fails_closed(self) -> None:
         body = marketplace_v2.HubListingBody(listing={"id": "part-1", "kind": "model"})
@@ -98,9 +102,24 @@ class MarketplaceV2Tests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_public_hub_registration_never_returns_a_credential(self) -> None:
-        registered = marketplace_hub_client.register_instance({"instance_id": "instance-1", "name": "Shop"})
-        self.assertEqual(registered["publishing"], "pending_approval")
+        registered = marketplace_hub_client.register_instance({
+            "instance_id": "instance-1",
+            "instance_secret": "secret-for-instance-1-123456",
+            "name": "Shop",
+        })
+        self.assertEqual(registered["publishing"], "enabled")
         self.assertNotIn("token", registered)
+
+    def test_hub_credential_is_bound_to_one_instance(self) -> None:
+        secret = "secret-for-instance-1-123456"
+        marketplace_hub_client.register_instance({
+            "instance_id": "instance-1",
+            "instance_secret": secret,
+            "name": "Shop",
+        })
+        self.assertTrue(marketplace_hub_client.verify_hub_request(f"Bearer {secret}", "instance-1"))
+        self.assertFalse(marketplace_hub_client.verify_hub_request(f"Bearer {secret}", "instance-2"))
+        self.assertFalse(marketplace_hub_client.verify_hub_request("Bearer wrong-secret-value-123456", "instance-1"))
 
     def test_hub_publish_rejects_private_or_draft_listing(self) -> None:
         with patch.object(
@@ -110,6 +129,13 @@ class MarketplaceV2Tests(unittest.TestCase):
         ):
             result = marketplace_hub_client.publish_listing({"id": "draft-1", "name": "Private draft"})
         self.assertEqual(result, {"ok": False, "error": "listing_not_public"})
+
+    def test_hub_rejects_authenticated_nonpublic_payload(self) -> None:
+        with self.assertRaisesRegex(ValueError, "explicitly public"):
+            marketplace_hub_client.upsert_hub_listing(
+                "instance-1",
+                {"id": "draft-1", "kind": "model", "visibility": "private"},
+            )
 
     def test_ecosystem_enrollment_sends_identity_without_project_data(self) -> None:
         captured = {}
@@ -132,7 +158,13 @@ class MarketplaceV2Tests(unittest.TestCase):
                 captured.update(json)
                 return Response()
 
-        cfg = {"enabled": True, "mode": "public", "instance_id": "instance-1", "instance_name": "Shop"}
+        cfg = {
+            "enabled": True,
+            "mode": "public",
+            "instance_id": "instance-1",
+            "instance_secret": "secret-for-instance-1-123456",
+            "instance_name": "Shop",
+        }
         with (
             patch.object(marketplace_config_service, "ensure_instance_identity", return_value=cfg),
             patch.object(marketplace_hub_client, "hub_is_self", return_value=False),
@@ -140,7 +172,37 @@ class MarketplaceV2Tests(unittest.TestCase):
         ):
             result = marketplace_hub_client.enroll_instance(public_network=False)
         self.assertTrue(result["ok"])
-        self.assertEqual(captured, {"instance_id": "instance-1", "name": "Shop", "public_base_url": ""})
+        self.assertEqual(captured["instance_id"], "instance-1")
+        self.assertEqual(captured["name"], "Shop")
+        self.assertEqual(captured["public_base_url"], "")
+        self.assertTrue(captured["instance_secret"])
+
+    def test_connected_instance_pulls_shared_hub_catalog(self) -> None:
+        class Response:
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"listings": [{"id": "shared-1", "kind": "model", "visibility": "public"}]}
+
+        class Client:
+            def __init__(self, **_kwargs):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return None
+            def get(self, _url, headers):
+                self.headers = headers
+                return Response()
+
+        cfg = {"enabled": True, "mode": "public", "hub_pull_enabled": True}
+        with (
+            patch.object(marketplace_config_service, "load", return_value=cfg),
+            patch.object(marketplace_hub_client, "hub_is_self", return_value=False),
+            patch("httpx.Client", Client),
+        ):
+            listings = marketplace_hub_client.pull_listings()
+        self.assertEqual(listings[0]["id"], "shared-1")
 
     def test_remote_hub_product_uses_authoritative_checkout_page(self) -> None:
         with patch.object(marketplace_hub_client, "_hub_url", return_value="https://render3d.app"):

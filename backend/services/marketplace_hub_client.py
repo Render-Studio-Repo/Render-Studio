@@ -55,12 +55,21 @@ def _hash_token(token: str) -> str:
 
 def verify_hub_request(authorization: str | None, instance_id: str | None) -> bool:
     """Authenticate a publisher with the official hub bearer credential."""
-    cfg = marketplace_config_service.ensure_instance_identity()
-    expected = str(cfg.get("hub_token") or getattr(settings, "marketplace_hub_token", "") or "").strip()
     bearer = ""
     if authorization and authorization.lower().startswith("bearer "):
         bearer = authorization[7:].strip()
-    return bool(expected and bearer and instance_id and secrets_equal(bearer, expected))
+    if not bearer or not instance_id:
+        return False
+    ensure_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT token_hash FROM marketplace_hub_instances WHERE instance_id=?",
+            (str(instance_id),),
+        ).fetchone()
+    if row and str(row["token_hash"] or ""):
+        return secrets_equal(_hash_token(bearer), str(row["token_hash"]))
+    legacy = str(getattr(settings, "marketplace_hub_token", "") or "").strip()
+    return bool(legacy and secrets_equal(bearer, legacy))
 
 
 def hosted_product_url(listing: dict[str, Any]) -> str:
@@ -85,14 +94,21 @@ def secrets_equal(a: str, b: str) -> bool:
 
 def register_instance(payload: dict[str, Any]) -> dict[str, Any]:
     ensure_schema()
-    instance_id = str(payload.get("instance_id") or uuid.uuid4())
+    instance_id = str(payload.get("instance_id") or uuid.uuid4()).strip()
     name = str(payload.get("name") or "Render instance")[:80]
     base = str(payload.get("public_base_url") or "")[:300]
-    # Enrollment creates a pending identity only. Publishing credentials are
-    # issued out of band after approval and are never returned by this endpoint.
-    token = uuid.uuid4().hex
+    token = str(payload.get("instance_secret") or "").strip()
+    if len(instance_id) < 8 or len(token) < 20:
+        raise ValueError("A stable instance id and secret are required.")
+    token_hash = _hash_token(token)
     now = _now()
     with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT token_hash FROM marketplace_hub_instances WHERE instance_id=?",
+            (instance_id,),
+        ).fetchone()
+        if existing and not secrets_equal(str(existing["token_hash"] or ""), token_hash):
+            raise PermissionError("Instance identity is already registered.")
         conn.execute(
             """
             INSERT INTO marketplace_hub_instances (instance_id, name, public_base_url, token_hash, last_seen_at, created_at)
@@ -102,14 +118,16 @@ def register_instance(payload: dict[str, Any]) -> dict[str, Any]:
               public_base_url=excluded.public_base_url,
               last_seen_at=excluded.last_seen_at
             """,
-            (instance_id, name, base, _hash_token(token), now, now),
+            (instance_id, name, base, token_hash, now, now),
         )
         conn.commit()
-    return {"instance_id": instance_id, "publishing": "pending_approval", "ok": True}
+    return {"instance_id": instance_id, "publishing": "enabled", "ok": True}
 
 
 def upsert_hub_listing(instance_id: str, listing: dict[str, Any]) -> dict[str, Any]:
     ensure_schema()
+    if str(listing.get("visibility") or "").strip().lower() != "public":
+        raise ValueError("Only explicitly public listings can enter the hub catalog.")
     origin_id = str(listing.get("id") or "")
     kind = str(listing.get("kind") or "model")
     if not origin_id:
@@ -182,6 +200,20 @@ def pull_listings() -> list[dict[str, Any]]:
     cfg = marketplace_config_service.load()
     if not cfg.get("hub_pull_enabled") or cfg.get("mode") == "private":
         return []
+    if hub_is_self():
+        return list_hub_listings()
+    url = f"{_hub_url()}/api/marketplace/hub/v1/listings"
+    try:
+        import httpx
+
+        with httpx.Client(timeout=12.0) as client:
+            res = client.get(url, headers=marketplace_config_service.hub_auth_headers())
+            res.raise_for_status()
+            data = res.json()
+        return list(data.get("listings") or [])
+    except Exception as exc:
+        logger.info("Hub pull skipped: %s", type(exc).__name__)
+        return []
 
 
 def enroll_instance(*, public_network: bool = False) -> dict[str, Any]:
@@ -195,6 +227,7 @@ def enroll_instance(*, public_network: bool = False) -> dict[str, Any]:
         public_base = configured_base
     payload = {
         "instance_id": str(cfg.get("instance_id") or ""),
+        "instance_secret": str(cfg.get("instance_secret") or ""),
         "name": str(cfg.get("instance_name") or "Render Studio instance")[:80],
         "public_base_url": public_base,
     }
@@ -211,27 +244,13 @@ def enroll_instance(*, public_network: bool = False) -> dict[str, Any]:
     except Exception as exc:
         logger.info("Hub enrollment unavailable: %s", type(exc).__name__)
         return {"ok": False, "offline": True}
-    if hub_is_self():
-        return list_hub_listings()
-    url = f"{_hub_url()}/api/marketplace/hub/v1/listings"
-    try:
-        import httpx
-
-        with httpx.Client(timeout=12.0) as client:
-            res = client.get(url, headers=marketplace_config_service.hub_auth_headers())
-            res.raise_for_status()
-            data = res.json()
-        return list(data.get("listings") or [])
-    except Exception as exc:
-        logger.info("Hub pull skipped: %s", exc)
-        return []
 
 
 def publish_listing(listing: dict[str, Any]) -> dict[str, Any]:
     cfg = marketplace_config_service.ensure_instance_identity()
     if not cfg.get("hub_publish_enabled") or cfg.get("mode") == "private":
         return {"ok": False, "error": "publish_disabled"}
-    if str(listing.get("status") or "").strip().lower() != "approved" and not listing.get("published_at"):
+    if str(listing.get("status") or "").strip().lower() != "approved":
         return {"ok": False, "error": "listing_not_public"}
     from backend.services import marketplace_catalog_service
 

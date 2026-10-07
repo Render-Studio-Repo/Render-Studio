@@ -349,8 +349,8 @@ def answer_install(*, include: bool, mode: str) -> dict[str, Any]:
         patch["hub_publish_enabled"] = False
     elif mode == "public":
         patch["hub_pull_enabled"] = True
-        # Public installs may browse the official catalog immediately. Publishing
-        # requires a hub-issued credential and explicit approval.
+        # Enrollment proves ownership of the stable instance identity. Individual
+        # listings still need explicit local approval before they can publish.
         patch["hub_publish_enabled"] = bool(_is_official_host())
     elif mode == "hybrid":
         patch["hub_pull_enabled"] = False
@@ -380,7 +380,7 @@ def allowed_kinds(cfg: dict[str, Any] | None = None) -> set[str]:
 
 def hub_auth_headers() -> dict[str, str]:
     cfg = ensure_instance_identity()
-    token = str(cfg.get("hub_token") or "").strip()
+    token = str(cfg.get("hub_token") or cfg.get("instance_secret") or "").strip()
     headers = {
         "X-Render-Instance-Id": str(cfg.get("instance_id") or ""),
         "X-Render-Instance-Name": str(cfg.get("instance_name") or "Render Studio")[:80],

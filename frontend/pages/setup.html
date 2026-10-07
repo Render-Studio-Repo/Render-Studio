@@ -137,12 +137,13 @@
         <label>Instance name
           <input id="instance-network-name" maxlength="80" value="Render Studio instance" required />
         </label>
-        <label class="setup-check"><input id="instance-network-ecosystem" type="checkbox" /> Join the Render ecosystem and browse the shared marketplace</label>
+        <label class="setup-check"><input id="instance-network-ecosystem" type="checkbox" /> Join the Render ecosystem, report this instance ID, and use the shared public marketplace</label>
         <label class="setup-check"><input id="instance-network-public" type="checkbox" /> This instance has its own public HTTPS URL</label>
         <label class="setup-check"><input id="instance-network-reporting" type="checkbox" /> Share aggregate health and online status with Render</label>
         <div class="setup-actions"><button class="btn accent" type="submit">Save instance settings</button></div>
       </form>
       <p class="setup-meta" id="instance-network-id"></p>
+      <p class="muted small">Only listings you explicitly publish and approve are sent to Render. Connected instances can discover those public listings from the same marketplace catalog.</p>
       <p class="setup-status" id="instance-network-status"></p>
     </section>
 

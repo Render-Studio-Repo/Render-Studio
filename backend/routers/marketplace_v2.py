@@ -183,10 +183,10 @@ class HubListingBody(BaseModel):
 
 
 class HubRegisterBody(BaseModel):
-    instance_id: str | None = None
-    name: str = ""
-    public_base_url: str = ""
-    token: str | None = None
+    instance_id: str = Field(..., min_length=8, max_length=100)
+    instance_secret: str = Field(..., min_length=20, max_length=200)
+    name: str = Field(default="", max_length=80)
+    public_base_url: str = Field(default="", max_length=300)
 
 
 @router.get("/api/marketplace/config")
@@ -630,7 +630,7 @@ def marketplace_hub_sync(user: dict[str, Any] = Depends(get_current_user)):
     listings = marketplace_catalog_service.list_catalog(include_hub=False)
     published = 0
     for listing in listings:
-        if listing.get("status") == "approved" or listing.get("published_at"):
+        if listing.get("status") == "approved":
             result = marketplace_hub_client.publish_listing(listing)
             if result.get("ok") is not False:
                 published += 1
@@ -661,7 +661,12 @@ def hub_publish_listing(body: HubListingBody, request: Request):
 
 @router.post("/api/marketplace/hub/v1/instances")
 def hub_register_instance(body: HubRegisterBody):
-    return marketplace_hub_client.register_instance(body.model_dump())
+    try:
+        return marketplace_hub_client.register_instance(body.model_dump())
+    except PermissionError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/api/marketplace/og/store/{slug}.png")

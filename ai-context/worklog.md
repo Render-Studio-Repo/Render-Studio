@@ -6,3 +6,10 @@
 - Preserved the canonical setup page at `frontend/pages/setup.html` and removed the obsolete duplicate setup files introduced by the installer branch.
 - Combined the public release and desktop installer verification contracts.
 - Updated installer behavior coverage for hosted Render login and independent local setup.
+
+### Ecosystem marketplace federation
+
+- Connected installs now register a stable instance ID with a credential bound to that ID.
+- Successful enrollment enables publishing while health metrics remain a separate opt-in.
+- Shared marketplace catalog pulling now executes for remote instances.
+- The hub accepts only explicitly approved public listing payloads.

@@ -282,7 +282,9 @@ document.getElementById("instance-network-form")?.addEventListener("submit", asy
     fillInstanceNetwork(data);
     const registration = data.registration || {};
     const ecosystem = data.ecosystem_opt_in
-      ? " Shared marketplace browsing is on; publishing remains approval-gated."
+      ? (data.ecosystem_registration?.ok
+        ? " This instance ID is registered. Shared marketplace browsing is on, and locally approved public items publish to all connected instances."
+        : " Ecosystem access is saved, but the Render hub is offline. Registration will need to be retried.")
       : " Marketplace sharing is off.";
     setStatus(status, (data.reporting_opt_in
       ? (registration.ok ? "Connected. Aggregate health will refresh about every five minutes." : "Saved. The health hub is currently unreachable; reporting will retry automatically.")

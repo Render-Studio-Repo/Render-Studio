@@ -89,6 +89,22 @@
             "backend/services/platform_roles_service.py"
           ],
           "mandatory": true
+        },
+        {
+          "id": "public-ecosystem-federation",
+          "argv": [
+            ".venv/bin/python",
+            "-m",
+            "unittest",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_connected_instance_pulls_shared_hub_catalog",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_ecosystem_enrollment_sends_identity_without_project_data",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_publish_requires_configured_bearer_and_instance",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_credential_is_bound_to_one_instance",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_publish_rejects_private_or_draft_listing",
+            "backend.tests.test_marketplace_v2.MarketplaceV2Tests.test_hub_rejects_authenticated_nonpublic_payload",
+            "-v"
+          ],
+          "mandatory": true
         }
       ],
       "client_checks": [
