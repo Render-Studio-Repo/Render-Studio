@@ -365,6 +365,18 @@ def submit(*, kind: str, subject: str, message: str, severity: str = "normal", d
     return _post(SUBMISSION_PATH, body, timeout=8.0)
 
 
+def forward_feedback_bug(message: str) -> dict[str, Any]:
+    """Forward an explicit self-hosted Studio bug report to the Render hub inbox."""
+    if is_official_hub():
+        return {"ok": True, "local_management": True}
+    return submit(
+        kind="issue",
+        subject="Studio bug report",
+        message=message,
+        severity="normal",
+    )
+
+
 def _take_leader_lock() -> bool:
     global _leader_handle
     try:

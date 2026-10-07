@@ -11735,6 +11735,7 @@ def _feedback_context_snapshot(
 
 @app.post("/api/feedback/requests")
 async def submit_feedback_request(
+    background_tasks: BackgroundTasks,
     kind: str = Form(...),
     message: str = Form(...),
     project_id: str | None = Form(None),
@@ -11788,6 +11789,10 @@ async def submit_feedback_request(
         data={"feedback_id": item["id"], "project_id": project_id, "prompt_id": prompt_id},
     )
     _notify_management_update("feedback.created", {"request": item})
+    if kind_norm == "bug":
+        from backend.services import instance_network_client
+
+        background_tasks.add_task(instance_network_client.forward_feedback_bug, message)
     from backend.services import site_settings_service
 
     mail = site_settings_service.deliver_suggestion_mail(
