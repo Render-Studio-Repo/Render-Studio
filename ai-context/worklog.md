@@ -14,3 +14,8 @@
 - Shared marketplace catalog pulling now executes for remote instances.
 - The hub accepts only explicitly approved public listing payloads.
 - Made the mandatory public release verifier runnable before installation by removing checks that assumed a Unix `.venv` path. Installed-environment behavior evidence remains recorded in the release receipt.
+
+## Public documentation expansion
+
+- Expanded the repository README with product capabilities, platform installation steps, setup modes, AI configuration, API entry points, marketplace federation, data paths, privacy boundaries, updates, troubleshooting, and a documentation map.
+- Updated the marketplace hub and open-source boundary guides to match per-instance credentials and public-only listing ingestion.

@@ -11,20 +11,24 @@ To **connect multiple instances** (self-hosted studios posting into Render’s p
 | **A. This instance** | Already live at `/api/marketplace/hub/v1` | Official `render3d.app` (default) |
 | **B. Separate service** | Extract `services/marketplace-hub/` into a new Git repo named **`render-marketplace-hub`** | If you want the hub on its own host (`marketplace.render3d.app`) |
 
-Instance-side env (no secrets in git):
+Environment settings on each instance:
 
 ```
 MARKETPLACE_HUB_URL=https://render3d.app
-MARKETPLACE_HUB_TOKEN=          # optional shared bearer; set the same value on the hub
+MARKETPLACE_HUB_TOKEN=          # optional legacy shared bearer
 PUBLIC_BASE_URL=https://your-host
 STRIPE_SECRET_KEY=
 STRIPE_PUBLISHABLE_KEY=
 STRIPE_WEBHOOK_SECRET=
 ```
 
-Install-time question (CLI or `/setup-marketplace.html`):
+Each installation creates a stable instance ID and a private instance secret. Enrollment sends both values over HTTPS. The hub stores only the secret hash and binds it to the instance ID. Successful enrollment enables shared catalog reads and approved listing publication.
+
+The setup page asks these questions:
 
 1. Include marketplace on this instance?
-2. Mode: **public** (pull official catalog; optionally publish) / **private** (local only) / **hybrid** (local now, connect later).
+2. Mode: **public** (pull the official catalog and publish approved public listings), **private** (local only), or **hybrid** (local now and connect later).
+
+Only listings with an explicit `approved` status can publish. The hub also requires `visibility=public` in the sanitized listing payload. Drafts and private listings fail closed.
 
 OpenAPI: `services/marketplace-hub/openapi.yaml`
