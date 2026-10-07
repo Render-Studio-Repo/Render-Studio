@@ -36,5 +36,10 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("/api/setup/local", js)
         self.assertIn("ecosystem_opt_in: false", js)
 
+    def test_installer_bootstrap_initializes_sqlite(self):
+        bootstrap = (ROOT / "scripts" / "bootstrap_render_instance.py").read_text()
+        self.assertIn("from backend.database import init_db", bootstrap)
+        self.assertIn("init_db()", bootstrap)
+
 if __name__ == "__main__":
     unittest.main()

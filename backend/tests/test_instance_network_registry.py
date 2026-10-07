@@ -134,6 +134,21 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
             response = self.client.get("/api/admin/instance-network/overview")
         self.assertEqual(response.status_code, 403)
 
+    def test_instance_admin_sees_only_current_instance_management(self) -> None:
+        self._admin()
+        with (
+            patch.object(network, "is_official_hub", return_value=False),
+            patch.object(network, "public_status", return_value={"instance_id": "instance-test-001", "instance_name": "Friend's workshop"}),
+            patch.object(network, "metrics", return_value={"user_count": 2, "project_count": 4, "storage_bytes": 100}),
+            patch("backend.routers.instance_network.feedback_service.summary", return_value={"unread_count": 1}),
+        ):
+            response = self.client.get("/api/setup/instance-management")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["scope"], "current_instance")
+        self.assertEqual(data["instance"]["instance_id"], "instance-test-001")
+        self.assertNotIn("instances", data)
+
     def test_submission_can_be_linked_to_github_issue_and_managed(self) -> None:
         self.client.post("/api/instance-network/v1/register", json=self.identity)
         report = self.client.post("/api/instance-network/v1/submissions", json={

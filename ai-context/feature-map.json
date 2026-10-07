@@ -15,6 +15,8 @@
       "criticality": "high",
       "contract": "The public branch contains the complete runnable product source and installer while excluding credentials, user data, generated recordings, private deployment profiles, and personal administrator defaults.",
       "paths": [
+        "AGENTS.md",
+        "PUBLIC_RELEASE_BOUNDARY.md",
         ".env.example",
         ".github/",
         ".gitignore",

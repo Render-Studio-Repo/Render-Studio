@@ -34,6 +34,8 @@ Some integrations need their own software or hardware. MuJoCo, robot bridges, VR
 
 ## Install Render Studio
 
+The installer creates the local SQLite database and applies its schema automatically. No separate SQLite download or manual SQL step is required. SQLite ships with Python, and Render Studio initializes it during setup and again safely at backend startup.
+
 ### Windows
 
 1. Download the repository ZIP from GitHub and extract it.

@@ -14,6 +14,7 @@ from backend.services import instance_network_registry as registry
 from backend.services import github_issues_service
 from backend.services import github_link_service
 from backend.services import platform_roles_service
+from backend.services import feedback_service
 
 router = APIRouter()
 
@@ -78,9 +79,14 @@ class GithubIssueStateBody(BaseModel):
     state: str = Field(..., pattern="^(open|closed)$")
 
 
-def _admin_only(user: dict[str, Any] | None) -> None:
+def _central_admin_only(user: dict[str, Any] | None) -> None:
     if not network.is_official_hub() or not user or not platform_roles_service.is_platform_admin(user):
         raise HTTPException(403, "Instance updates are available only to this instance's admins.")
+
+
+def _instance_admin_only(user: dict[str, Any] | None) -> None:
+    if not user or not platform_roles_service.is_platform_admin(user):
+        raise HTTPException(403, "This instance's management page is available only to its administrators.")
 
 
 def _hub_only() -> None:
@@ -119,7 +125,7 @@ def instance_submission(body: InstanceSubmissionBody):
 
 @router.get("/api/admin/instance-network/overview")
 def instance_overview(q: str = "", user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _central_admin_only(user)
     return registry.overview(q)
 
 
@@ -128,19 +134,19 @@ def mark_instance_submissions_read(
     body: MarkReadBody | None = None,
     user: dict[str, Any] | None = Depends(get_current_user_optional),
 ):
-    _admin_only(user)
+    _central_admin_only(user)
     return registry.mark_read(body.submission_ids if body else None)
 
 
 @router.get("/api/admin/instance-network/github")
 def instance_github_work(user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _central_admin_only(user)
     return github_issues_service.repository_work(token=github_link_service.access_token_for(str(user.get("id") or "")))
 
 
 @router.post("/api/admin/instance-network/submissions/{submission_id}/github-issue")
 def create_submission_github_issue(submission_id: str, user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _central_admin_only(user)
     item = registry.submission(submission_id)
     if not item:
         raise HTTPException(404, "Instance submission was not found.")
@@ -167,7 +173,7 @@ def create_submission_github_issue(submission_id: str, user: dict[str, Any] | No
 
 @router.patch("/api/admin/instance-network/github/issues/{number}")
 def set_instance_github_issue_state(number: int, body: GithubIssueStateBody, user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _central_admin_only(user)
     result = github_issues_service.update_issue_state(number, body.state, token=github_link_service.access_token_for(str(user.get("id") or "")))
     if not result.get("ok"):
         raise HTTPException(502, str(result.get("error") or "GitHub issue update failed."))
@@ -178,6 +184,18 @@ def set_instance_github_issue_state(number: int, body: GithubIssueStateBody, use
 @router.get("/api/setup/instance-network")
 def status():
     return {"ok": True, **network.public_status(), "metrics": network.metrics()}
+
+
+@router.get("/api/setup/instance-management")
+def local_instance_management(user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    _instance_admin_only(user)
+    return {
+        "ok": True,
+        "scope": "current_instance",
+        "instance": network.public_status(),
+        "metrics": network.metrics(force=True),
+        "feedback": feedback_service.summary(),
+    }
 
 
 @router.post("/api/setup/instance-network")
@@ -198,19 +216,19 @@ def configure(
 
 @router.post("/api/setup/instance-updates")
 def configure_updates(body: UpdateConfigBody, user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _instance_admin_only(user)
     return network.configure_updates(body.enabled)
 
 
 @router.get("/api/setup/instance-updates/check")
 def check_updates(user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _instance_admin_only(user)
     return network.check_for_update()
 
 
 @router.post("/api/setup/instance-updates/apply")
 def apply_update(body: ApplyUpdateBody, user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _admin_only(user)
+    _instance_admin_only(user)
     try:
         return network.apply_update(body.commit_sha)
     except (ValueError, subprocess.SubprocessError) as exc:

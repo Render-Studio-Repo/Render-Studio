@@ -13,6 +13,9 @@
 - Centralized self-hosted suggestions and bug reports in the official hub while retaining the full local record on the originating installation. Central copies contain the stable source instance and report text without user identity or project content.
 - Restricted the aggregate Instance Management API to platform administrators on the official Render hub.
 - Added GitHub issue and pull request tracking to Instance Management, including creating an issue from a report and opening, closing, or reopening linked work through the signed-in administrator's GitHub connection.
+- Added a locked public release boundary in `AGENTS.md`, `PUBLIC_RELEASE_BOUNDARY.md`, and the public release audit so hosted super admin UI, aggregate management modules, private marketplace operations, production data, and private profiles cannot be added silently.
+- Added automatic SQLite initialization to installer bootstrap. Backend startup continues to run the same idempotent schema initialization.
+- Added a current-instance-only management endpoint and dashboard for self-hosted administrators. It shows local account, project, storage, connection, version, and feedback totals without exposing other instances or hosted settings.
 
 - Merged current `master` into the complete public release branch for PR #30.
 - Preserved the canonical setup page at `frontend/pages/setup.html` and removed the obsolete duplicate setup files introduced by the installer branch.
