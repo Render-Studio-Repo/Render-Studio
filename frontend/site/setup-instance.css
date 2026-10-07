@@ -54,6 +54,24 @@
 .setup-status { min-height: 1.3em; margin: 10px 0 0; font-size: 13px; }
 .setup-status.ok { color: #3fb950; }
 .setup-status.err { color: #f85149; }
+.setup-status.loading { color: #dbeafe; display: flex; align-items: center; gap: 8px; }
+.setup-status.loading::before,
+.btn.is-loading::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: render-update-spin 0.7s linear infinite;
+}
+.btn.is-loading { display: inline-flex; align-items: center; gap: 7px; cursor: wait; }
+.btn:disabled { opacity: 0.72; cursor: wait; }
+@keyframes render-update-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .setup-status.loading::before, .btn.is-loading::before { animation-duration: 1.5s; }
+}
 .setup-pre {
   white-space: pre-wrap;
   word-break: break-word;

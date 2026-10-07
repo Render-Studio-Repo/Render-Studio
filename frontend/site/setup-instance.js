@@ -10,7 +10,7 @@ const form = document.getElementById("setup-form");
 function setStatus(el, text, kind) {
   if (!el) return;
   el.textContent = text || "";
-  el.classList.remove("ok", "err");
+  el.classList.remove("ok", "err", "loading");
   if (kind) el.classList.add(kind);
 }
 
@@ -119,7 +119,7 @@ let pendingUpdate = null;
 async function checkForUpdate() {
   const status = document.getElementById("instance-update-status");
   const apply = document.getElementById("btn-apply-update");
-  setStatus(status, "Checking the official stable channel…");
+  setStatus(status, "Checking GitHub for the latest public Render Studio release…", "loading");
   if (apply) apply.hidden = true;
   try {
     const data = await api("/api/setup/instance-updates/check");
@@ -309,19 +309,34 @@ document.getElementById("btn-save-update-setting")?.addEventListener("click", as
 document.getElementById("btn-check-update")?.addEventListener("click", checkForUpdate);
 document.getElementById("btn-apply-update")?.addEventListener("click", async () => {
   const status = document.getElementById("instance-update-status");
+  const apply = document.getElementById("btn-apply-update");
+  const check = document.getElementById("btn-check-update");
   if (!pendingUpdate?.commit_sha) return;
-  setStatus(status, "Installing the verified fast-forward update…");
+  apply.disabled = true;
+  check.disabled = true;
+  apply.classList.add("is-loading");
+  apply.setAttribute("aria-busy", "true");
+  apply.textContent = "Updating…";
+  setStatus(status, "Downloading the latest verified GitHub release. Large updates can take a few minutes…", "loading");
   try {
     const data = await api("/api/setup/instance-updates/apply", {
       method: "POST",
       body: JSON.stringify({ commit_sha: pendingUpdate.commit_sha }),
     });
     pendingUpdate = null;
-    document.getElementById("btn-apply-update").hidden = true;
+    apply.classList.remove("is-loading");
+    apply.removeAttribute("aria-busy");
+    apply.textContent = "Update complete";
     setStatus(status, data.restart_required
-      ? "Update installed. Restart this Render instance when you are ready. Projects, data, and credentials were untouched."
-      : "Update installed.", "ok");
+      ? "Update installed. Refreshing the interface now. Restart this Render instance to activate server changes. Projects and data were untouched."
+      : "Update installed. Refreshing Render now…", "ok");
+    window.setTimeout(() => window.location.reload(), 1200);
   } catch (err) {
+    apply.disabled = false;
+    check.disabled = false;
+    apply.classList.remove("is-loading");
+    apply.removeAttribute("aria-busy");
+    apply.textContent = "Update Render";
     setStatus(status, err.message || "The update was refused. Nothing was overwritten.", "err");
   }
 });
