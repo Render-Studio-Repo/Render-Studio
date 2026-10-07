@@ -179,6 +179,55 @@ def attach_role_fields(user: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
+def claim_initial_instance_admin(user: dict[str, Any]) -> bool:
+    """Make the earliest local account admin when no admin is configured yet."""
+    user_id = str((user or {}).get("id") or "").strip()
+    if not user_id or SUPER_ADMIN_EMAILS or SITE_ADMIN_EMAILS or MANAGEMENT_EMAIL:
+        return False
+    now = _now()
+    with get_conn() as conn:
+        _ensure(conn)
+        earliest = conn.execute(
+            """
+            SELECT id FROM users
+             WHERE password_hash <> 'marketplace-profile-only'
+             ORDER BY created_at ASC, id ASC LIMIT 1
+            """
+        ).fetchone()
+        existing_admin = conn.execute(
+            "SELECT 1 FROM platform_roles WHERE role='admin' LIMIT 1"
+        ).fetchone()
+        if not earliest or str(earliest["id"]) != user_id or existing_admin:
+            return False
+        defaults = GROUP_DEFAULTS["admin"]
+        conn.execute(
+            """
+            INSERT INTO platform_roles (
+                user_id, role, can_export, can_edit_files, can_access_tools,
+                workspace_ids, created_by, created_at, updated_at
+            ) VALUES (?, 'admin', ?, ?, ?, '[]', ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                role='admin', can_export=excluded.can_export,
+                can_edit_files=excluded.can_edit_files,
+                can_access_tools=excluded.can_access_tools,
+                updated_at=excluded.updated_at
+            """,
+            (
+                user_id,
+                int(bool(defaults["can_export"])),
+                int(bool(defaults["can_edit_files"])),
+                int(bool(defaults["can_access_tools"])),
+                user_id,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+    _sync_role_to_supabase(user_id, "admin")
+    _invalidate_auth_cache(user_id)
+    return True
+
+
 def _sync_role_to_supabase(user_id: str, role: str) -> None:
     if not _prefer_supabase_roles():
         return
