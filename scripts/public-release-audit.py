@@ -61,6 +61,9 @@ def tracked_paths() -> list[str]:
 
 def main() -> int:
     errors: list[str] = []
+    legacy_dashboard = ROOT / "frontend" / "admin-dashboard.html"
+    if legacy_dashboard.is_file() and b"data-public-instance-management-only" not in legacy_dashboard.read_bytes():
+        errors.append("public admin dashboard must redirect to current-instance management")
     for relative in tracked_paths():
         path = Path(relative)
         parts = set(path.parts)
