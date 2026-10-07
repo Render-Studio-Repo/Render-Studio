@@ -249,8 +249,7 @@ def local_instance_management(user: dict[str, Any] | None = Depends(get_current_
 
 
 @router.get("/api/setup/instance-announcements")
-def local_instance_announcements(user: dict[str, Any] | None = Depends(get_current_user_optional)):
-    _instance_admin_only(user)
+def local_instance_announcements():
     return network.check_announcements()
 
 
