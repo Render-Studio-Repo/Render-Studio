@@ -83,6 +83,15 @@ class InstanceNetworkClientTests(unittest.TestCase):
             self.assertTrue(result["enabled"])
             self.assertTrue(result["offline"])
 
+    def test_existing_ecosystem_instance_defaults_to_update_notices(self) -> None:
+        with (
+            patch.object(network, "is_official_hub", return_value=False),
+            patch.object(network, "_market", return_value={"enabled": True, "mode": "public", "hub_pull_enabled": True}),
+        ):
+            self.assertTrue(network.update_notifications_enabled())
+            network.configure_updates(False)
+            self.assertFalse(network.update_notifications_enabled())
+
     def test_update_refuses_local_source_changes(self) -> None:
         calls = []
 

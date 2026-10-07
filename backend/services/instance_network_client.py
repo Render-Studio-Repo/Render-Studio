@@ -64,6 +64,14 @@ def reporting_enabled() -> bool:
     return bool(state.get("instance_reporting_opt_in")) or is_official_hub()
 
 
+def update_notifications_enabled() -> bool:
+    state = _setup_state()
+    if bool(state.get("instance_update_notifications_answered")):
+        return bool(state.get("instance_update_notifications"))
+    cfg = _market()
+    return bool(cfg.get("enabled")) and cfg.get("mode") == "public" and bool(cfg.get("hub_pull_enabled"))
+
+
 def is_official_hub() -> bool:
     base = str(getattr(settings, "public_base_url", "") or "").lower()
     return "render3d.app" in base
@@ -80,7 +88,7 @@ def public_status() -> dict[str, Any]:
         "reporting_answered": bool(state.get("instance_reporting_answered")) or is_official_hub(),
         "public_network": bool(state.get("instance_public_network")),
         "ecosystem_opt_in": marketplace_connected,
-        "update_notifications": bool(state.get("instance_update_notifications")),
+        "update_notifications": update_notifications_enabled(),
         "debug_opt_in": bool(state.get("telemetry_opt_in")) or is_official_hub(),
         "hub": hub_base(),
         "privacy": {
@@ -127,6 +135,7 @@ def configure(*, instance_name: str, reporting_opt_in: bool, public_network: boo
         "instance_reporting_answered": True,
         "instance_public_network": bool(public_network),
         "instance_update_notifications": bool(ecosystem_opt_in),
+        "instance_update_notifications_answered": True,
     })
     market.answer_install(include=bool(ecosystem_opt_in), mode="public" if ecosystem_opt_in else "private")
     result = public_status()
@@ -151,7 +160,10 @@ def configure(*, instance_name: str, reporting_opt_in: bool, public_network: boo
 def configure_updates(enabled: bool) -> dict[str, Any]:
     from backend.services import instance_setup_service as setup
 
-    setup._save_state({"instance_update_notifications": bool(enabled)})
+    setup._save_state({
+        "instance_update_notifications": bool(enabled),
+        "instance_update_notifications_answered": True,
+    })
     return {"ok": True, "update_notifications": bool(enabled)}
 
 
@@ -170,7 +182,7 @@ def _full_git_sha() -> str:
 
 def check_for_update() -> dict[str, Any]:
     """Read the official release pointer without sending project or user data."""
-    if is_official_hub() or not bool(_setup_state().get("instance_update_notifications")):
+    if is_official_hub() or not update_notifications_enabled():
         return {"ok": True, "enabled": False, "available": False}
     try:
         import httpx
