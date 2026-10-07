@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     data_dir: str = "data"
     jwt_secret: str = "change-me-in-production-render3d"
     jwt_expire_hours: int = 168
+    render3d_release_webhook_token: str = ""
 
     @field_validator("projects_dir", "data_dir", mode="after")
     @classmethod

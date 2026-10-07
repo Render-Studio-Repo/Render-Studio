@@ -51,6 +51,7 @@ class InstanceNetworkClientTests(unittest.TestCase):
         answer.assert_called_once_with(include=True, mode="public")
         self.assertTrue(result["ecosystem_opt_in"])
         self.assertFalse(result["reporting_opt_in"])
+        self.assertTrue(setup._load_state()["instance_update_notifications"])
 
     def test_submit_redacts_secrets(self) -> None:
         sent = []
@@ -104,12 +105,28 @@ class InstanceNetworkClientTests(unittest.TestCase):
                 return "https://github.com/wprojects/Render-Studio.git"
             if args[:2] == ("status", "--porcelain"):
                 return ""
+            if args[:2] == ("rev-parse", "refs/remotes/origin/master"):
+                return "b" * 40
             if args[:2] == ("diff", "--name-only"):
                 return "frontend/index.html\nprojects/customer/model.step"
             return ""
 
         with patch.object(network, "_git", side_effect=fake_git):
             with self.assertRaisesRegex(ValueError, "protected instance data"):
+                network.apply_update("b" * 40)
+
+    def test_update_refuses_commit_other_than_stable_head(self) -> None:
+        def fake_git(*args, **_kwargs):
+            if args[:3] == ("remote", "get-url", "origin"):
+                return "https://github.com/wprojects/Render-Studio.git"
+            if args[:2] == ("status", "--porcelain"):
+                return ""
+            if args[:2] == ("rev-parse", "refs/remotes/origin/master"):
+                return "c" * 40
+            return ""
+
+        with patch.object(network, "_git", side_effect=fake_git):
+            with self.assertRaisesRegex(ValueError, "official stable release"):
                 network.apply_update("b" * 40)
 
 

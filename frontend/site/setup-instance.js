@@ -283,7 +283,7 @@ document.getElementById("instance-network-form")?.addEventListener("submit", asy
     const registration = data.registration || {};
     const ecosystem = data.ecosystem_opt_in
       ? (data.ecosystem_registration?.ok
-        ? " This instance ID is registered. Shared marketplace browsing is on, and locally approved public items publish to all connected instances."
+        ? " This instance ID is registered. Shared marketplace browsing is on, and publishing remains approval-gated for locally approved public items."
         : " Ecosystem access is saved, but the Render hub is offline. Registration will need to be retried.")
       : " Marketplace sharing is off.";
     setStatus(status, (data.reporting_opt_in

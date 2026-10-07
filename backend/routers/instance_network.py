@@ -5,11 +5,12 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.auth import get_current_user_optional
 from backend.services import instance_network_client as network
+from backend.services import instance_release_service
 from backend.services import instance_network_registry as registry
 from backend.services import github_issues_service
 from backend.services import github_link_service
@@ -79,6 +80,14 @@ class GithubIssueStateBody(BaseModel):
     state: str = Field(..., pattern="^(open|closed)$")
 
 
+class ReleasePublishBody(BaseModel):
+    repository: str = Field(..., max_length=160)
+    branch: str = Field(..., max_length=80)
+    commit_sha: str = Field(..., min_length=40, max_length=40)
+    notes: str = Field(default="", max_length=1000)
+    published_at: str = Field(default="", max_length=80)
+
+
 def _central_admin_only(user: dict[str, Any] | None) -> None:
     if not network.is_official_hub() or not user or not platform_roles_service.is_platform_admin(user):
         raise HTTPException(403, "Instance updates are available only to this instance's admins.")
@@ -121,6 +130,28 @@ def instance_heartbeat(body: InstanceReportBody):
 def instance_submission(body: InstanceSubmissionBody):
     _hub_only()
     return _registry_call(registry.submit, body.model_dump())
+
+
+@router.get("/api/instance-network/v1/releases/latest")
+def latest_instance_release(channel: str = "stable", current: str = ""):
+    _hub_only()
+    if channel != "stable":
+        raise HTTPException(400, "Only the stable update channel is available.")
+    try:
+        return instance_release_service.latest()
+    except Exception as exc:
+        raise HTTPException(503, "The stable release pointer is temporarily unavailable.") from exc
+
+
+@router.post("/api/instance-network/v1/releases/publish")
+def publish_instance_release(body: ReleasePublishBody, x_render_release_token: str = Header(default="")):
+    _hub_only()
+    try:
+        return instance_release_service.publish(body.model_dump(), x_render_release_token)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/api/admin/instance-network/overview")

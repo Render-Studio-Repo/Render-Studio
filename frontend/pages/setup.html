@@ -148,8 +148,8 @@
     </section>
 
     <section class="setup-card" id="setup-updates-card">
-      <h3>Optional Render updates</h3>
-      <p>Notify this instance’s admins when an official stable update is available. Updates never replace <code>projects/</code>, <code>data/</code>, <code>.env</code>, or private instance modules. Locally edited application code makes the update stop instead of overwriting it.</p>
+      <h3>Safe Render updates</h3>
+      <p>Connected instances receive a review button when the public Render Studio repository publishes a stable update. Changes to render3d.app do not trigger this notice. Updates never replace <code>projects/</code>, <code>data/</code>, <code>backups/</code>, <code>.env</code>, credentials, or private instance modules. Any locally edited or added application source makes the update stop instead of overwriting it.</p>
       <label class="setup-check"><input id="instance-update-notifications" type="checkbox" /> Show update notices to instance admins</label>
       <div class="setup-actions">
         <button type="button" class="btn secondary" id="btn-save-update-setting">Save preference</button>

@@ -20,6 +20,8 @@ test("instance updates are optional and preserve runtime data", () => {
   assert.match(html, /Show update notices to instance admins/);
   assert.match(html, /projects\//);
   assert.match(html, /data\//);
+  assert.match(html, /Changes to render3d\.app do not trigger this notice/);
+  assert.match(html, /Any locally edited or added application source/);
   assert.match(js, /\/api\/setup\/instance-updates\/apply/);
   assert.match(js, /restart this Render instance/i);
 });
