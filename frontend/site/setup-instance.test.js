@@ -24,6 +24,9 @@ test("instance updates are optional and preserve runtime data", () => {
   assert.match(html, /Any locally edited or added application source/);
   assert.match(js, /\/api\/setup\/instance-updates\/apply/);
   assert.match(js, /restart this Render instance/i);
+  assert.match(js, /Downloading the latest verified GitHub release/);
+  assert.match(js, /window\.location\.reload\(\)/);
+  assert.match(html, /aria-live="polite"/);
 });
 
 test("instance ecosystem consent is separate from health reporting", () => {
