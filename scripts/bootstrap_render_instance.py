@@ -40,11 +40,14 @@ def bootstrap(env_path: Path = ENV_PATH) -> str:
         "SECRETS_FERNET_KEY": Fernet.generate_key().decode("ascii"),
     })
     from backend.services import marketplace_config_service
+    from backend.database import init_db
 
+    init_db()
     return str(marketplace_config_service.ensure_instance_identity().get("instance_id") or "")
 
 
 if __name__ == "__main__":
     instance_id = bootstrap()
     print(f"Render instance id: {instance_id}")
+    print("Local SQLite database initialized automatically.")
     print("Private projects remain local. Marketplace and health sharing stay off until answered in setup.")

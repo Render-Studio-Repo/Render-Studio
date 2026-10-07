@@ -20,13 +20,21 @@ FORBIDDEN_PARTS = {
     "tmp",
 }
 FORBIDDEN_PREFIXES = (
+    "backend/local_private/",
     "demos/bambu-funding/out/",
     "frontend/_archive/",
     "frontend/sandbox/live/prompts/",
     "frontend/sandbox/live/wiring/",
     "scripts/gif-demos/raw/",
     "server-configurations/profiles/enterprise-private/",
+    "frontend/admin/",
+    "frontend/pages/admin-dashboard.html",
 )
+FORBIDDEN_EXACT = {
+    "frontend/admin-instance-network.js",
+    "frontend/admin-marketplace-moderation.js",
+    "frontend/super-admin.html",
+}
 SECRET_PATTERNS = {
     "OpenAI key": re.compile(rb"(?:sk-(?:proj|svcacct)-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{32,})"),
     "GitHub token": re.compile(rb"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -56,7 +64,7 @@ def main() -> int:
     for relative in tracked_paths():
         path = Path(relative)
         parts = set(path.parts)
-        if parts & FORBIDDEN_PARTS or relative.startswith(FORBIDDEN_PREFIXES):
+        if parts & FORBIDDEN_PARTS or relative.startswith(FORBIDDEN_PREFIXES) or relative in FORBIDDEN_EXACT:
             errors.append(f"forbidden public path: {relative}")
             continue
         if path.suffix.lower() in {".bak", ".db", ".pem", ".sqlite"}:
