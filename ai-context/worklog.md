@@ -10,6 +10,9 @@
 - Added a privacy-limited central registry and management inbox that stores hashed instance credentials, aggregate instance metadata, redacted reports, retry deduplication, unread state, and no IP, hostname, project, prompt, or user identity data.
 - Added administrator-only overview and read-state endpoints compatible with the Render management Instances panel.
 - Added focused coverage for initial administrator selection, instance authentication, redaction, deduplication, search, overview shape, and inbox read state.
+- Centralized self-hosted suggestions and bug reports in the official hub while retaining the full local record on the originating installation. Central copies contain the stable source instance and report text without user identity or project content.
+- Restricted the aggregate Instance Management API to platform administrators on the official Render hub.
+- Added GitHub issue and pull request tracking to Instance Management, including creating an issue from a report and opening, closing, or reopening linked work through the signed-in administrator's GitHub connection.
 
 - Merged current `master` into the complete public release branch for PR #30.
 - Preserved the canonical setup page at `frontend/pages/setup.html` and removed the obsolete duplicate setup files introduced by the installer branch.

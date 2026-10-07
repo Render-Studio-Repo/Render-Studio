@@ -77,6 +77,8 @@
             "backend/services/instance_network_client.py",
             "backend/services/instance_network_registry.py",
             "backend/routers/instance_network.py",
+            "backend/services/github_issues_service.py",
+            "backend/services/github_link_service.py",
             "backend/services/marketplace_config_service.py",
             "backend/services/marketplace_hub_client.py",
             "backend/services/marketplace_catalog_service.py",

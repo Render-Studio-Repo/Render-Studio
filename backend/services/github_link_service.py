@@ -385,6 +385,15 @@ def list_user_prs(user_id: str, *, limit: int = 12) -> list[dict[str, Any]]:
     return out
 
 
+def access_token_for(user_id: str) -> str:
+    """Return the linked GitHub token for a server-side action."""
+    try:
+        token, _login = _token_for(user_id)
+        return token
+    except Exception:
+        return ""
+
+
 def submit_to_project(user_id: str, title: str, body: str) -> dict[str, Any]:
     """Open an issue on the project as the linked GitHub user (not a second Studio login)."""
     token, login = _token_for(user_id)

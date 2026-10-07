@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from backend.auth import get_current_user_optional
 from backend.services import instance_network_client as network
 from backend.services import instance_network_registry as registry
+from backend.services import github_issues_service
+from backend.services import github_link_service
 from backend.services import platform_roles_service
 
 router = APIRouter()
@@ -72,9 +74,18 @@ class MarkReadBody(BaseModel):
     submission_ids: list[str] = Field(default_factory=list, max_length=200)
 
 
+class GithubIssueStateBody(BaseModel):
+    state: str = Field(..., pattern="^(open|closed)$")
+
+
 def _admin_only(user: dict[str, Any] | None) -> None:
-    if not user or not platform_roles_service.is_platform_admin(user):
+    if not network.is_official_hub() or not user or not platform_roles_service.is_platform_admin(user):
         raise HTTPException(403, "Instance updates are available only to this instance's admins.")
+
+
+def _hub_only() -> None:
+    if not network.is_official_hub():
+        raise HTTPException(404, "Instance network receiver is not enabled on this installation.")
 
 
 def _registry_call(operation, payload: dict[str, Any]):
@@ -90,16 +101,19 @@ def _registry_call(operation, payload: dict[str, Any]):
 
 @router.post("/api/instance-network/v1/register")
 def register_instance(body: InstanceReportBody):
+    _hub_only()
     return _registry_call(registry.register, body.model_dump())
 
 
 @router.post("/api/instance-network/v1/heartbeat")
 def instance_heartbeat(body: InstanceReportBody):
+    _hub_only()
     return _registry_call(registry.heartbeat, body.model_dump())
 
 
 @router.post("/api/instance-network/v1/submissions")
 def instance_submission(body: InstanceSubmissionBody):
+    _hub_only()
     return _registry_call(registry.submit, body.model_dump())
 
 
@@ -116,6 +130,49 @@ def mark_instance_submissions_read(
 ):
     _admin_only(user)
     return registry.mark_read(body.submission_ids if body else None)
+
+
+@router.get("/api/admin/instance-network/github")
+def instance_github_work(user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    _admin_only(user)
+    return github_issues_service.repository_work(token=github_link_service.access_token_for(str(user.get("id") or "")))
+
+
+@router.post("/api/admin/instance-network/submissions/{submission_id}/github-issue")
+def create_submission_github_issue(submission_id: str, user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    _admin_only(user)
+    item = registry.submission(submission_id)
+    if not item:
+        raise HTTPException(404, "Instance submission was not found.")
+    if item.get("github_issue_number"):
+        return {"ok": True, "existing": True, **item}
+    body = "\n".join((
+        f"Source instance: `{item['instance_id']}`",
+        f"Report type: `{item['kind']}`",
+        f"Severity: `{item['severity']}`",
+        f"Central submission: `{item['id']}`",
+        "",
+        str(item.get("message") or ""),
+        "",
+        "Diagnostic excerpt:",
+        "```text",
+        str(item.get("diagnostic") or "No diagnostic excerpt supplied."),
+        "```",
+    ))
+    result = github_issues_service.create_instance_report_issue(title=str(item.get("subject") or "Instance report"), body=body, token=github_link_service.access_token_for(str(user.get("id") or "")))
+    if not result.get("ok"):
+        raise HTTPException(502, str(result.get("error") or "GitHub issue creation failed."))
+    return registry.link_github_issue(submission_id, number=int(result["number"]), url=str(result.get("html_url") or ""), state=str(result.get("state") or "open"))
+
+
+@router.patch("/api/admin/instance-network/github/issues/{number}")
+def set_instance_github_issue_state(number: int, body: GithubIssueStateBody, user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    _admin_only(user)
+    result = github_issues_service.update_issue_state(number, body.state, token=github_link_service.access_token_for(str(user.get("id") or "")))
+    if not result.get("ok"):
+        raise HTTPException(502, str(result.get("error") or "GitHub issue update failed."))
+    registry.update_linked_issue_state(number, str(result.get("state") or body.state))
+    return result
 
 
 @router.get("/api/setup/instance-network")
