@@ -1,0 +1,90 @@
+{
+  "token": "harness2",
+  "at": "2026-09-17T17:16:39.692Z",
+  "routes": [
+    {
+      "agent": "astra",
+      "go": "viewport",
+      "lane": "shop-pack",
+      "interest": "train:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "cursor-engineer",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "project-manager",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "vibe-rnd",
+      "go": "viewport",
+      "lane": "shop-pack",
+      "interest": "train:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "instruction-auditor",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "analytics",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "vibe-marketing",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "comms",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "vibe-sales",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "clip-bot",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "ledger",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    },
+    {
+      "agent": "printer-bot",
+      "go": "teaching",
+      "lane": "teaching",
+      "interest": "move:idle",
+      "at": "2026-09-17T17:16:39.692Z"
+    }
+  ]
+}

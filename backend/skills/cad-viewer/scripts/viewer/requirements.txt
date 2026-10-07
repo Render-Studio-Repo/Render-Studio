@@ -1,1 +1,1 @@
---editable ./packages/cadpy
+cadgen==0.4.28

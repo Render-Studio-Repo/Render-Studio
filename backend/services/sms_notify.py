@@ -1,4 +1,9 @@
-"""Best-effort SMS notify via Twilio REST (no SDK required)."""
+"""Best-effort SMS notify via Twilio REST (no SDK required).
+
+Studio alerts text Sam at DEVELOPER_PHONE. Credentials come from process env,
+Render Studio ``.env``, or the AHM project ``.env`` (same Twilio account / from
+number that already texts him).
+"""
 
 from __future__ import annotations
 
@@ -9,17 +14,69 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 DEVELOPER_PHONE = "+15013171132"
 
+_AHM_ENV_CANDIDATES = (
+    Path("/Users/sam/AHM_Arkansas_Mac/.env"),
+    Path("/Users/sam/Documents/AHM_Arkansas_Mac/.env"),
+    Path.home() / "AHM_Arkansas_Mac" / ".env",
+    Path.home() / "Documents" / "AHM_Arkansas_Mac" / ".env",
+)
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        if not path.is_file():
+            return out
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("'").strip('"')
+            if key and value:
+                out[key] = value
+    except OSError:
+        return {}
+    return out
+
+
+def _studio_env_path() -> Path:
+    try:
+        from backend.config import ENV_FILE
+
+        return Path(ENV_FILE)
+    except Exception:
+        return Path(__file__).resolve().parents[2] / ".env"
+
+
+def _merged_env() -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for path in (*_AHM_ENV_CANDIDATES, _studio_env_path()):
+        parsed = _parse_env_file(path)
+        if parsed:
+            merged.update(parsed)
+    merged.update({key: str(val) for key, val in os.environ.items() if val})
+    return merged
+
 
 def _twilio_creds() -> tuple[str, str, str] | None:
-    sid = (os.environ.get("TWILIO_ACCOUNT_SID") or "").strip()
-    token = (os.environ.get("TWILIO_AUTH_TOKEN") or "").strip()
-    from_num = (os.environ.get("TWILIO_FROM_NUMBER") or os.environ.get("TWILIO_PHONE_NUMBER") or "").strip()
+    env = _merged_env()
+    sid = (env.get("TWILIO_ACCOUNT_SID") or "").strip()
+    token = (env.get("TWILIO_AUTH_TOKEN") or "").strip()
+    from_num = (
+        env.get("TWILIO_FROM_NUMBER")
+        or env.get("TWILIO_PHONE_NUMBER")
+        or env.get("AHM_BUY_TWILIO_FROM_NUMBER")
+        or ""
+    ).strip()
     if sid and token and from_num:
         return sid, token, from_num
     return None

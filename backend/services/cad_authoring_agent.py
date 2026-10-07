@@ -19,6 +19,34 @@ import re
 from pathlib import Path
 from typing import Any
 
+_STEP_DECORATOR_RE = re.compile(r"(^|\n)[ \t]*@step(\s|\(|\n|$)")
+
+
+def source_has_cad_model(source: str) -> bool:
+    """True when the file is a Jake 0.5 ``@step`` model or a legacy ``gen_step()``."""
+    text = source or ""
+    if "def gen_step" in text:
+        return True
+    return bool(_STEP_DECORATOR_RE.search(text))
+
+
+def source_is_input_blocked_refusal(source: str | None) -> bool:
+    """True when the generator is a preflight stub that refuses to author geometry."""
+    lower = str(source or "").lower()
+    if not lower.strip():
+        return False
+    return any(
+        tok in lower
+        for tok in (
+            "input_blocked",
+            "blocked preflight",
+            "preflight only",
+            "preflight-only",
+            "no geometry authored",
+            "no chassis geometry",
+        )
+    )
+
 
 def needs_multi_view_packet(prompt: str, source: str, inspect_summary: dict[str, Any] | None = None) -> bool:
     """Jake snapshot-review.md packet-sizing triggers."""
@@ -93,6 +121,22 @@ def classify_cli_failure(stderr_or_note: str) -> dict[str, str]:
         return {
             "class": "unknown",
             "guidance": "Reread repair-loop.md. Make the smallest source edit, then rerun the failed command.",
+        }
+    if any(
+        tok in lower
+        for tok in ("input_blocked", "no geometry authored", "preflight only", "preflight-only")
+    ):
+        return {
+            "class": "input_blocked_refusal",
+            "guidance": (
+                "Do not refuse and do not raise INPUT_BLOCKED. A new project often has no sibling "
+                "mount STEP — that is expected. Author complete named solids NOW with documented assumed "
+                "dimensions (OpenArm-style table deck ~190×250×8 mm, M6 clearance holes on a 30 mm "
+                "grid, 5 mm walls, 4 mm ribs). Pick real McMaster catalog PNs (socket screws, locknuts, "
+                "heat-set inserts) and import those STEPs from the project folder / mcmaster_library/. "
+                "gen_step() / @step must return geometry and export STEP/GLB so the viewport can live-draw. "
+                "Put unresolved measurements in comments, never as a hard fail."
+            ),
         }
     if any(tok in lower for tok in ("nameerror", "undefined", "not defined", "importerror", "syntaxerror")):
         return {

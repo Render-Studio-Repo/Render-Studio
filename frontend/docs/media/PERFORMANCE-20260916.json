@@ -1,0 +1,55 @@
+{
+  "cycle_id": "CYCLE-20260916-PM1",
+  "model": {
+    "this_chat": "Cursor Grok 4.6",
+    "grok_bot_default": "grok-4.5",
+    "why_both": "Harness is 4.6. mcp/grok-bot DEFAULT_MODEL is still grok-4.5 for specialists."
+  },
+  "original_success": {
+    "hello_7_of_7": true,
+    "white_paper_live": true,
+    "toolbar_white_paper": true,
+    "drive_rnd_doc": true,
+    "x_mcp_read": "@winstead_works",
+    "cursor_desired_result": 67
+  },
+  "failures": {
+    "live_tweets": 0,
+    "x_post_attempts": 3,
+    "x_403": "tsk_56e2da2101",
+    "gmail_mcp": "needsAuth",
+    "smtp": "pydantic_settings missing",
+    "anyone_with_link": false,
+    "user_x_tokens": false
+  },
+  "self_scores": {
+    "project-manager": 4,
+    "vibe-marketing": 4,
+    "vibe-sales": 3,
+    "vibe-rnd": 3,
+    "analytics": 3,
+    "clip-bot": 3
+  },
+  "desired_outcome": {
+    "vibe-marketing": 62,
+    "vibe-rnd": 58,
+    "clip-bot": 58
+  },
+  "vote": [
+    {"from": "cursor-engineer", "keep": ["sam", "cursor-engineer", "project-manager", "vibe-rnd"], "bench": ["clip-bot"], "fire": []},
+    {"from": "project-manager", "keep": ["sam", "cursor-engineer"], "note": "honest 58-62, no fake 95s"},
+    {"from": "vibe-rnd", "best_next_hire": "qa-verify", "fire": "nobody this week"}
+  ],
+  "rank": [
+    {"who": "sam", "value": 22, "why": "Goals and keys only he can tap"},
+    {"who": "cursor-engineer", "value": 18, "why": "Ships UI/API; also owns the tweet-token miss"},
+    {"who": "project-manager", "value": 14, "why": "Fan-out works; cannot mint X user tokens"},
+    {"who": "vibe-rnd", "value": 10, "why": "Falsifiable experiments + Doc"},
+    {"who": "instruction-auditor", "value": 8, "why": "Stops second ID religion"},
+    {"who": "analytics", "value": 8, "why": "Join keys"},
+    {"who": "vibe-marketing", "value": 7, "why": "Drafts; correctly refused fake tweet URLs"},
+    {"who": "comms-bridge", "value": 5, "why": "Human packet idea"},
+    {"who": "vibe-sales", "value": 4, "why": "No ICP yet"},
+    {"who": "clip-bot", "value": 4, "why": "Blocked on verify — bench not fire"}
+  ]
+}

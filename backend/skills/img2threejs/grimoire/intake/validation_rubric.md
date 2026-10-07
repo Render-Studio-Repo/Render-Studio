@@ -64,3 +64,13 @@ For objects with many details, require:
 - evidence refs to image regions
 
 If these cannot be inferred from the image, mark the spec `conditional` and list missing views or close-ups.
+
+---
+
+## Catalogued items: get the real identity before authoring
+
+When an item exists in a catalogue -- a game skin, a product SKU, a model number -- the name in the
+image is not the identity. Ask the user for the exact catalogue name up front, and pull the official
+and vanilla references BEFORE authoring geometry: they show base-model features the name never
+reveals. Never infer stock features from a name alone. A domain plugin that serves such a catalogue
+ships the lookup tooling and states the rule in its own contract.

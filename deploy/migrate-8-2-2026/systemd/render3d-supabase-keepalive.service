@@ -1,0 +1,14 @@
+[Unit]
+Description=Daily Supabase keep-alive ping for Render3D
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu
+EnvironmentFile=/home/ubuntu/.env
+ExecStart=/home/ubuntu/.venv/bin/python /home/ubuntu/scripts/supabase-keepalive.py
+StandardOutput=append:/home/ubuntu/logs/supabase-keepalive.log
+StandardError=append:/home/ubuntu/logs/supabase-keepalive.log

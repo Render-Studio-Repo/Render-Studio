@@ -1,0 +1,285 @@
+/**
+ * Global document units (mm / cm / m / in / ft) with Fusion-style value parsing.
+ *
+ * Every length input in the app accepts strings like "25", "25mm", "1in",
+ * "0.5 in", '1.5"', "1/2in", "12.7 mm", "2cm", "3ft", "1.2m" — converted
+ * internally to mm. Bare numbers use the current document unit.
+ */
+
+const LS_KEY = "render3d:units";
+
+export const MM_PER_IN = 25.4;
+export const MM_PER_FT = 304.8;
+
+/** @typedef {"mm"|"cm"|"m"|"in"|"ft"} UnitId */
+
+export const UNIT_OPTIONS = [
+  { id: "mm", label: "mm", toMm: 1, precision: 3 },
+  { id: "cm", label: "cm", toMm: 10, precision: 3 },
+  { id: "m", label: "m", toMm: 1000, precision: 4 },
+  { id: "in", label: "in", toMm: MM_PER_IN, precision: 4 },
+  { id: "ft", label: "ft", toMm: MM_PER_FT, precision: 4 },
+];
+
+/** Primary measure toggles shown in the Measure UI. */
+export const MEASURE_UNIT_OPTIONS = UNIT_OPTIONS.filter((u) => ["mm", "in", "ft"].includes(u.id));
+
+const UNIT_MAP = Object.fromEntries(UNIT_OPTIONS.map((u) => [u.id, u]));
+
+function normalizeUnit(u) {
+  const id = String(u || "").toLowerCase();
+  if (UNIT_MAP[id]) return id;
+  if (id === "inch" || id === "inches" || id === '"') return "in";
+  if (id === "feet" || id === "foot" || id === "'") return "ft";
+  if (id === "meter" || id === "meters" || id === "metre" || id === "metres") return "m";
+  if (id === "centimeter" || id === "centimeters" || id === "centimetre" || id === "centimetres") return "cm";
+  if (id === "millimeter" || id === "millimeters" || id === "millimetre" || id === "millimetres") return "mm";
+  return "mm";
+}
+
+let current = "mm";
+try {
+  current = normalizeUnit(localStorage.getItem(LS_KEY) || "mm");
+} catch (_) {
+  current = "mm";
+}
+
+export function getUnits() {
+  return current;
+}
+
+export function setUnits(u) {
+  const next = normalizeUnit(u);
+  if (next === current) return;
+  current = next;
+  try {
+    localStorage.setItem(LS_KEY, current);
+  } catch (_) {}
+  window.dispatchEvent(new CustomEvent("render3d:units-changed", { detail: { units: current } }));
+}
+
+export function onUnitsChanged(fn) {
+  window.addEventListener("render3d:units-changed", (e) => fn(e.detail.units));
+}
+
+/**
+ * Parse a length expression into millimetres. Returns NaN when invalid.
+ * Bare numbers use `defaultUnit` (document unit unless overridden).
+ */
+export function parseLength(text, { defaultUnit = current } = {}) {
+  if (typeof text === "number") {
+    const def = UNIT_MAP[normalizeUnit(defaultUnit)] || UNIT_MAP.mm;
+    return text * def.toMm;
+  }
+  const s = String(text ?? "").trim().toLowerCase().replace(/”|″/g, '"').replace(/’|′/g, "'");
+  if (!s) return NaN;
+  const m = s.match(
+    /^(-?(?:\d+\s+)?\d*\.?\d+(?:\s*\/\s*\d*\.?\d+)?)\s*(mm|millimetres?|millimeters?|cm|centimetres?|centimeters?|m|metres?|meters?|in|inch|inches|"|ft|feet|foot|')?$/
+  );
+  if (!m) return NaN;
+
+  let raw = m[1].trim();
+  let value;
+  const whole = raw.match(/^(-?\d+)\s+(\d*\.?\d+)\s*\/\s*(\d*\.?\d+)$/); // "1 1/2"
+  if (whole) {
+    const sign = whole[1].startsWith("-") ? -1 : 1;
+    value = sign * (Math.abs(parseFloat(whole[1])) + parseFloat(whole[2]) / parseFloat(whole[3]));
+  } else if (raw.includes("/")) {
+    const [a, b] = raw.split("/");
+    value = parseFloat(a) / parseFloat(b);
+  } else {
+    value = parseFloat(raw);
+  }
+  if (!Number.isFinite(value)) return NaN;
+
+  const unit = normalizeUnit(m[2] || defaultUnit);
+  return value * (UNIT_MAP[unit]?.toMm ?? 1);
+}
+
+/** mm → numeric value in the current display unit. */
+export function displayValue(mm, precision) {
+  if (!Number.isFinite(mm)) return NaN;
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  const v = mm / def.toMm;
+  const p = precision ?? def.precision;
+  return parseFloat(v.toFixed(p));
+}
+
+/** mm → "12.7 mm" / "0.5 in" in the current unit. */
+export function formatLength(mm, precision) {
+  if (!Number.isFinite(mm)) return "—";
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  return `${displayValue(mm, precision)} ${def.label}`;
+}
+
+/** mm² → area string in the current unit. */
+export function formatArea(mm2, precision) {
+  if (!Number.isFinite(mm2)) return "—";
+  const def = UNIT_MAP[current] || UNIT_MAP.mm;
+  const scale = def.toMm * def.toMm;
+  const v = mm2 / scale;
+  const p = precision ?? (current === "m" || current === "ft" ? 4 : 2);
+  return `${parseFloat(v.toFixed(p))} ${def.label}²`;
+}
+
+/** Suffix for labels, e.g. `Distance (${unitSuffix()})`. */
+export function unitSuffix() {
+  return (UNIT_MAP[current] || UNIT_MAP.mm).label;
+}
+
+/**
+ * Heuristic model-unit scale: kernel/exported parts are mm-scale (extent >= 1),
+ * legacy uploaded meshes are metres. Returns mm per 1 model unit.
+ */
+export function mmPerModelUnit(maxExtent) {
+  return Number.isFinite(maxExtent) && maxExtent >= 1.0 ? 1 : 1000;
+}
+
+const UNIT_MENU_LABELS = {
+  mm: "Millimetres",
+  cm: "Centimetres",
+  m: "Metres",
+  in: "Inches",
+  ft: "Feet",
+};
+
+const RULER_ICON = `<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3.2 12.8 12.8 3.2a1.4 1.4 0 0 1 2 0l1.9 1.9a1.4 1.4 0 0 1 0 2L7.2 16.8a1.4 1.4 0 0 1-2 0l-1.9-1.9a1.4 1.4 0 0 1 0-2z"/><path d="M6.2 9.8 8 8M8.4 12 10.2 10.2M10.6 14.2 12.4 12.4"/></svg>`;
+
+/**
+ * Ribbon control: ruler + “Units” + current unit, with a settings menu.
+ */
+export function createUnitsControl() {
+  const wrap = document.createElement("div");
+  wrap.className = "ribbon-units";
+  wrap.id = "ribbon-units";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "btn-units";
+  btn.className = "ribbon-units-btn";
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
+  btn.title = "Document units — sizes and measurements";
+  btn.innerHTML = `
+    ${RULER_ICON}
+    <span class="ribbon-units-copy">
+      <span class="ribbon-units-name">Units</span>
+      <span class="ribbon-units-value">${getUnits()}</span>
+    </span>
+    <span class="ribbon-units-caret" aria-hidden="true">▾</span>
+  `;
+
+  const menu = document.createElement("div");
+  menu.className = "ribbon-units-menu hidden";
+  menu.id = "ribbon-units-menu";
+  menu.setAttribute("role", "listbox");
+  menu.setAttribute("aria-label", "Document units");
+
+  const select = document.createElement("select");
+  select.id = "unit-select";
+  select.className = "unit-select visually-hidden";
+  select.setAttribute("aria-label", "Document units");
+  select.setAttribute("data-unit-select", "");
+  fillUnitSelect(select);
+  select.value = getUnits();
+
+  function closeMenu() {
+    menu.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+    wrap.classList.remove("is-open");
+  }
+
+  function openMenu() {
+    renderMenu();
+    menu.classList.remove("hidden");
+    btn.setAttribute("aria-expanded", "true");
+    wrap.classList.add("is-open");
+  }
+
+  function renderMenu() {
+    const cur = getUnits();
+    const valueEl = wrap.querySelector(".ribbon-units-value");
+    if (valueEl) valueEl.textContent = cur;
+    btn.title = `Document units: ${UNIT_MENU_LABELS[cur] || cur}. Click to change.`;
+    menu.innerHTML = UNIT_OPTIONS.map((u) => {
+      const on = u.id === cur;
+      return `<button type="button" role="option" data-unit="${u.id}" aria-selected="${on ? "true" : "false"}" class="ribbon-units-option${on ? " active" : ""}">
+        <span class="ribbon-units-option-name">${UNIT_MENU_LABELS[u.id] || u.label}</span>
+        <span class="ribbon-units-option-id">${u.label}</span>
+      </button>`;
+    }).join("");
+  }
+
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menu.classList.contains("hidden")) openMenu();
+    else closeMenu();
+  });
+
+  menu.addEventListener("click", (e) => {
+    const opt = e.target.closest("[data-unit]");
+    if (!opt) return;
+    setUnits(opt.getAttribute("data-unit"));
+    closeMenu();
+  });
+
+  select.addEventListener("change", () => setUnits(select.value));
+
+  onUnitsChanged((u) => {
+    if (select.value !== u) {
+      fillUnitSelect(select);
+      select.value = u;
+    }
+    renderMenu();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+
+  renderMenu();
+  wrap.append(btn, menu, select);
+  return wrap;
+}
+
+/** Fill a <select> with unit options and keep it synced. */
+export function fillUnitSelect(selectEl) {
+  if (!selectEl) return;
+  const prev = selectEl.value;
+  selectEl.innerHTML = UNIT_OPTIONS.map(
+    (u) => `<option value="${u.id}">${u.label}</option>`
+  ).join("");
+  selectEl.value = UNIT_MAP[prev] ? prev : current;
+}
+
+/**
+ * Mount global unit switcher(s). Accepts one element or a NodeList/array.
+ * All `.unit-select` elements stay in sync.
+ */
+export function initUnitSwitcher(selectElOrList) {
+  const list = selectElOrList
+    ? Array.from(selectElOrList.length != null && !selectElOrList.tagName ? selectElOrList : [selectElOrList])
+    : Array.from(document.querySelectorAll(".unit-select, [data-unit-select]"));
+  if (!list.length) return;
+
+  for (const el of list) {
+    fillUnitSelect(el);
+    el.value = current;
+    el.addEventListener("change", () => setUnits(el.value));
+  }
+  onUnitsChanged((u) => {
+    for (const el of list) {
+      if (el.value !== u) el.value = u;
+    }
+    document.querySelectorAll(".unit-select, [data-unit-select]").forEach((el) => {
+      if (el.value !== u) {
+        fillUnitSelect(el);
+        el.value = u;
+      }
+    });
+  });
+}

@@ -1,0 +1,79 @@
+{
+  "realPiEmotes": [
+    "no emotes yet \u2014 save a take and accept"
+  ],
+  "commands": {
+    "resets": [
+      {
+        "type": "y",
+        "action": "session_reset"
+      }
+    ],
+    "start": true,
+    "stop": true,
+    "aRisingEdges": 2,
+    "sockets": 1,
+    "recording": false
+  },
+  "piRequests": [
+    {
+      "url": "https://192.168.1.77:8443/teleop/status",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    },
+    {
+      "url": "https://192.168.1.77:8443/emote/play",
+      "method": "POST",
+      "body": "{\"id\":\"take-1\"}"
+    },
+    {
+      "url": "https://192.168.1.77:8443/emote/accept",
+      "method": "POST",
+      "body": "{}"
+    },
+    {
+      "url": "https://192.168.1.77:8443/emotes",
+      "method": "GET",
+      "body": null
+    }
+  ],
+  "cloudRequests": [
+    "https://render3d.app/api/robotics/hand-cam/status",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg",
+    "https://render3d.app/api/robotics/workspace",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg",
+    "https://render3d.app/api/robotics/hand-cam/left.jpg",
+    "https://render3d.app/api/robotics/hand-cam/right.jpg"
+  ],
+  "pageErrors": [],
+  "safety": "All POSTs intercepted by mocks; WebSocket replaced with an in-memory fake. Only config/status/emote-list GETs reached the Pi. No robot motion tested.",
+  "date": "2026-09-15",
+  "tests": {
+    "node_passed": 63,
+    "node_failed": 0,
+    "syntax": "passed"
+  },
+  "headset_verified": false,
+  "limitations": [
+    "Browser Pi HTTPS GETs used an isolated context with certificate errors ignored; existing Quest certificate trust is not verified.",
+    "All motion/control/recording commands were mocked. Tests prove routing and button semantics, not a physical stop."
+  ],
+  "editorSmoke": {
+    "editorStarted": true,
+    "pageErrors": [],
+    "piRequestsWithoutEnable": [],
+    "appModule": "/studio/app.js?v=20260915-picontrols1-20260915-landiscovery2-20260915-load-resources2-project-open4-debugui4-roboticsinput3-windowplacement1-final2-ro"
+  }
+}

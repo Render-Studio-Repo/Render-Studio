@@ -47,8 +47,10 @@ def _prune(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def list_pending(user_id: str) -> list[dict[str, Any]]:
-    items = _prune(_read(user_id))
-    _write(user_id, items)
+    raw = _read(user_id)
+    items = _prune(raw)
+    if len(items) != len(raw):
+        _write(user_id, items)
     return items
 
 
@@ -61,6 +63,7 @@ def push_capture(
     url: str,
     mode_label: str | None = None,
     source_client_id: str | None = None,
+    share_x: bool = False,
 ) -> dict[str, Any]:
     items = _prune(_read(user_id))
     entry = {
@@ -72,6 +75,7 @@ def push_capture(
         "url": url,
         "mode_label": mode_label or "AR",
         "source_client_id": source_client_id or "",
+        "share_x": bool(share_x),
         "created_at": time.time(),
     }
     items.append(entry)

@@ -1,0 +1,28 @@
+{
+  "kind": "openarm_train_manifest",
+  "token": "train1",
+  "updated_at": "2026-09-29T17:15:11.537Z",
+  "holdout_count": 0,
+  "plan": {
+    "action": "run_5_more_heldout_trials",
+    "heldout_trials": 0,
+    "successes": 0,
+    "wilson_95_lower": 0,
+    "target_lower": 0.8,
+    "hard_limit_violations": 0,
+    "invalid_trials": 0,
+    "priority_failure_mode": null,
+    "note": "Gate only — train weights externally (LeRobot). Never promote on synthetic viewport geometry alone.",
+    "token": "train1"
+  },
+  "paths": {
+    "episodes": "openarm-mujoco/episodes",
+    "robotics_episodes": "openarm-robotics/episodes",
+    "holdout": "openarm-mujoco/episodes/holdout.jsonl",
+    "latest": "openarm-mujoco/episodes/latest.json",
+    "robotics_latest": "openarm-robotics/episodes/latest.json",
+    "mujoco_feed": "openarm-mujoco/runs/latest.json",
+    "policy_runner": "demos/openarm-teleop-training/openarm2_mujoco_policy.py"
+  },
+  "promote_gate": "do_not_promote"
+}

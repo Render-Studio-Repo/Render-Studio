@@ -1,0 +1,21 @@
+{
+  "orderClickLive": true,
+  "microphoneRequestsForClick": 1,
+  "sessionsAfterClick": 1,
+  "Hey agent": true,
+  "Hey Astra": true,
+  "delayedSettingsChecks": {
+    "oneSettingsRead": true,
+    "oneMicrophonePrime": true,
+    "oneSessionStart": true,
+    "live": true
+  },
+  "menuPoseChecks": {
+    "smallTriggerJitterStable": true,
+    "topBarRotation": true,
+    "repaintPreservesRotation": true
+  },
+  "sessions": 3,
+  "pageErrors": [],
+  "providerRequests": 0
+}

@@ -1,0 +1,11 @@
+# Parts List purchase deduplication — September 15, 2026
+
+Project `f730285c` had 289 shopping rows imported from an authoring manifest: individual battery sub-bodies, every hardware instance, unsourced custom geometry, and 63 uses of the reference robot's URL for unrelated subparts. Import identity was based on body IDs rather than purchased products.
+
+The shopping list now groups by normalized product URL, including Amazon product aliases, McMaster part numbers, and tracking-parameter variants. Functional variant parameters remain distinct. Missing links, documentation/PDFs, home/search pages and fabricated parts are excluded. Documentation stays attached to its product without repeating the purchase link. This filtering runs for saved lists, imports, additions and approved replacements; generation receives the same purchasing rules.
+
+Stable product IDs and source aliases preserve replacement behavior. Replaced sources cannot return under a different body ID on the next import. Duplicate mesh rows are not added to an existing aggregate quantity. Where old records do not distinguish quantities of modules from quantities of their sub-bodies, the largest stated quantity is retained rather than inferring a sum; generation is now instructed to provide a single total per product.
+
+The requested project was cleaned to **8 product rows**: four McMaster products and four electronics products. The driver quantity is four module instances, excluding their separate PCB/heatsink geometry. Its existing candidate/fit caveat and draft status remain. The reference whole-robot URL is excluded from this project's purchasing imports; missing component and charger sources remain follow-up questions. Original authoring manifests and model geometry were untouched, and the previous Parts List directory was backed up locally.
+
+Validation: **65 Python tests passed** across purchasing, manifest recovery, replacements, link previews, and CAD assembly-scope checks. Chromium on `render3d.app` verified 8 unique product links, tab counts (Home 8 / Electronics 4 / McMaster 4 / Mechanical 0), search, and repeated reads without resurrected rows, with no page errors. No generation, sourcing searches, or purchases were submitted during verification. Existing links were retained; availability and fit were not newly verified. No frontend assets changed.

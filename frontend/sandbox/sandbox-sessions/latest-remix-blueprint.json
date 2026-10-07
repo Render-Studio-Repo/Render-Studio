@@ -1,0 +1,71 @@
+{
+  "kind": "sandbox_remix_blueprint",
+  "token": "remix1",
+  "remix_id": null,
+  "root": null,
+  "source_project_id": null,
+  "session_id": null,
+  "map_token": "map1",
+  "created_at": "2026-09-17T15:33:06.550Z",
+  "restore_guide": {
+    "tree": null,
+    "chunks": null,
+    "health": "sandbox-sessions/latest-merge-health.json",
+    "system_check": "sandbox-sessions/latest-system-check.json",
+    "openarm_rig": "openarm-teleop/rig.schema.json",
+    "openarm_lab": "/sandbox/openarm-teleop/index.html"
+  },
+  "safe_to_merge": false,
+  "health": {
+    "kind": "sandbox_merge_health",
+    "token": "remix1",
+    "remix_id": null,
+    "session_id": null,
+    "observed_at": "2026-09-17T15:33:05.982Z",
+    "safe_to_merge": false,
+    "probes": [
+      {
+        "id": "mcp.stats",
+        "ok": true,
+        "note": "stats reachable"
+      },
+      {
+        "id": "sandbox.rev",
+        "ok": true,
+        "note": "rev 1789659185769111384"
+      },
+      {
+        "id": "openarm.mujoco_web",
+        "ok": true,
+        "note": "mujoco web ok"
+      },
+      {
+        "id": "openarm.mujoco_scenes",
+        "ok": true,
+        "note": "v2 scenes ok"
+      },
+      {
+        "id": "openarm.rig_2_0",
+        "ok": true,
+        "note": "rig schema ok"
+      },
+      {
+        "id": "map1.session",
+        "ok": false,
+        "note": "no active map session"
+      }
+    ],
+    "failed": [
+      "map1.session"
+    ],
+    "ask": "Unsafe to merge: map1.session. Do not promote."
+  },
+  "system_check_ok": false,
+  "repeat_steps": [
+    "1. Open sandbox Super IDE",
+    "2. Remix import the same project_id (restore pointers in tree.json)",
+    "3. Diff chunks.json content_hash vs prior blueprint version",
+    "4. Run merge health — promote only when safe_to_merge",
+    "5. Human Approve — never auto-merge"
+  ]
+}

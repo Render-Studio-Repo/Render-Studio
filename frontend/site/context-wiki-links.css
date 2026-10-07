@@ -1,0 +1,208 @@
+/* Wiki-link file paths + debugger menu. Token: ctxlink1 */
+
+.ctx-wiki-md {
+  color: #c5d0dc;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  word-spacing: normal;
+  letter-spacing: normal;
+}
+
+.ctx-wiki-md h1,
+.ctx-wiki-md h2,
+.ctx-wiki-md h3,
+.ctx-wiki-md p,
+.ctx-wiki-md li {
+  white-space: normal;
+  word-break: normal;
+}
+
+.ctx-wiki-md h1,
+.ctx-wiki-md h2,
+.ctx-wiki-md h3 {
+  color: #e6edf3;
+  margin: 1.1em 0 0.4em;
+  font-weight: 650;
+}
+
+.ctx-wiki-md p,
+.ctx-wiki-md li {
+  margin: 0.35em 0;
+}
+
+.ctx-wiki-md ul {
+  margin: 0.4em 0 0.6em 1.2em;
+}
+
+.ctx-wiki-md hr {
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  margin: 1em 0;
+}
+
+a.ctx-wiki-link {
+  color: #58a6ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+a.ctx-wiki-link:hover,
+a.ctx-wiki-link.is-ctx-picked {
+  color: #79c0ff;
+  background: rgba(56, 139, 253, 0.16);
+}
+
+a.ctx-wiki-link.is-missing {
+  color: #f85149;
+}
+
+.ctx-wiki-md code,
+.ctx-wiki-fence {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82em;
+}
+
+.ctx-wiki-md code {
+  color: #9ecbff;
+  background: rgba(56, 139, 253, 0.08);
+  padding: 0.08em 0.28em;
+  border-radius: 4px;
+}
+
+.ctx-wiki-fence {
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #0d1117;
+  color: #c5d0dc;
+  white-space: pre-wrap;
+}
+
+.ctx-wiki-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.7em 0;
+  font-size: 0.86rem;
+}
+
+.ctx-wiki-table th,
+.ctx-wiki-table td {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ctx-wiki-table th {
+  color: #9ecbff;
+  background: rgba(22, 27, 34, 0.7);
+}
+
+.ctx-wiki-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #161b22;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  color: #e6edf3;
+}
+
+.ctx-wiki-menu-kicker {
+  margin: 4px 8px 6px;
+  font-size: 0.72rem;
+  color: #8b9bb0;
+}
+
+.ctx-wiki-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.ctx-wiki-menu button:hover {
+  background: rgba(56, 139, 253, 0.18);
+}
+
+.ctx-wiki-menu-status {
+  margin: 6px 8px 4px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #8b9bb0;
+}
+
+.ctx-wiki-menu-status[data-related="yes"] {
+  color: #3fb950;
+}
+
+.ctx-wiki-menu-status[data-related="no"] {
+  color: #d29922;
+}
+
+.ctx-wiki-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+}
+
+.ctx-wiki-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 16, 0.45);
+}
+
+.ctx-wiki-dialog {
+  position: relative;
+  width: min(420px, 92vw);
+  margin: 12vh auto 0;
+  padding: 16px 16px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #161b22;
+  color: #e6edf3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ctx-wiki-dialog h4 {
+  margin: 0;
+}
+
+.ctx-wiki-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.ctx-wiki-dialog textarea,
+.ctx-wiki-dialog select {
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: #0d1117;
+  color: inherit;
+  padding: 7px 8px;
+  font: inherit;
+}
+
+.ctx-wiki-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}

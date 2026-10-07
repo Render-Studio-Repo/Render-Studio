@@ -1,0 +1,105 @@
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.5
+OPENAI_MODEL_QUALITY=gpt-5.5-pro
+OPENAI_REASONING_EFFORT=low
+
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-5
+
+KIMI_API_KEY=
+KIMI_MODEL=kimi-k2.6
+KIMI_MODEL_QUALITY=kimi-k3
+
+JWT_SECRET=
+JWT_EXPIRE_HOURS=168
+
+HOST=127.0.0.1
+PORT=8000
+PROJECTS_DIR=projects
+DATA_DIR=data
+
+ONSHAPE_CLIENT_ID=
+ONSHAPE_CLIENT_SECRET=
+ONSHAPE_REDIRECT_URI=https://render3d.app/oauth/callback
+
+AUTODESK_CLIENT_ID=
+AUTODESK_CLIENT_SECRET=
+AUTODESK_REDIRECT_URI=http://127.0.0.1:8000/oauth/autodesk/callback
+AUTODESK_SCOPES=data:read data:write data:create viewables:read
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=https://render3d.app/oauth/google/callback
+
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_REDIRECT_URI=https://render3d.app/oauth/microsoft/callback
+
+APPLE_CLIENT_ID=
+APPLE_CLIENT_SECRET=
+APPLE_REDIRECT_URI=https://render3d.app/oauth/apple/callback
+APPLE_TEAM_ID=
+APPLE_KEY_ID=
+APPLE_PRIVATE_KEY=
+
+# Capacity collapse alerts (Gmail → sam@render3d.app)
+# Create a Google App Password for info@render3d.app (2FA required).
+CAPACITY_ALERT_SMTP_HOST=smtp.gmail.com
+CAPACITY_ALERT_SMTP_PORT=587
+CAPACITY_ALERT_SMTP_USER=info@render3d.app
+CAPACITY_ALERT_SMTP_PASSWORD=
+CAPACITY_ALERT_FROM=info@render3d.app
+CAPACITY_ALERT_TO=sam@render3d.app
+
+RENDER3D_FUSION_BRIDGE_TOKEN=
+
+# Discord product updates + video-editor clip share (bot OR webhook)
+DISCORD_BOT_TOKEN=
+# Default Share to Discord destination (channel picker prefers this id)
+DISCORD_UPDATES_CHANNEL_ID=1512906649822560508
+DISCORD_PUBLIC_MODELS_CHANNEL_ID=
+DISCORD_APPLICATION_ID=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_REDIRECT_URI=https://render3d.app/oauth/discord/callback
+DISCORD_UPDATES_WEBHOOK_URL=
+
+# X (Twitter) — Connect X / Share to X for viewport videos
+# Create an app at https://developer.x.com with OAuth 2.0 + PKCE.
+# X / Twitter — OAuth 2.0 app for Connect X + Share to X (viewport video).
+# Use Client ID / Client Secret from the X developer portal (User authentication /
+# OAuth 2.0). Callback URL must match TWITTER_REDIRECT_URI exactly.
+TWITTER_CLIENT_ID=
+TWITTER_CLIENT_SECRET=
+TWITTER_REDIRECT_URI=https://render3d.app/oauth/twitter/callback
+# Optional app-only bearer (not required for user Connect / Share to X).
+TWITTER_BEARER_TOKEN=
+
+# X Account Activity webhook for the Grok bot (inbound mentions / DMs).
+# Public URL: https://render3d.app/api/webhooks/x  (alias /api/x/webhook)
+X_CONSUMER_KEY=
+X_CONSUMER_SECRET=
+X_WEBHOOK_PATH=/api/webhooks/x
+X_WEBHOOK_ENV=
+X_WEBHOOK_AUTO_REPLY=false
+TWITTER_ACCESS_TOKEN=
+TWITTER_ACCESS_TOKEN_SECRET=
+
+# LinkedIn product updates
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+LINKEDIN_ACCESS_TOKEN=
+LINKEDIN_AUTHOR_URN=
+LINKEDIN_ENABLED=true
+LINKEDIN_SCHEDULE_NAME=Sam's posts
+LINKEDIN_SCHEDULE_TIMEZONE=America/New_York
+LINKEDIN_SCHEDULE_WEEKDAY_HOURS=10
+LINKEDIN_SCHEDULE_SUNDAY_HOURS=10,16
+LINKEDIN_SCHEDULE_RECENT_WINDOW=10
+
+# Supabase — server-side only (secret key never in frontend)
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
+# After setting URL: run integrations/supabase/migrations/001_*.sql and 002_users.sql in SQL Editor
+SECRETS_FERNET_KEY=  # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

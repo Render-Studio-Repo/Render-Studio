@@ -1,0 +1,9 @@
+Fritzing breadboard graphics in the fritzing/ folder are from
+https://github.com/fritzing/fritzing-parts
+and are licensed under Creative Commons Attribution-ShareAlike 3.0 Unported
+(CC BY-SA 3.0): https://creativecommons.org/licenses/by-sa/3.0/
+
+A credit can be as simple as "this image was created with Fritzing."
+
+Original graphics in the custom/ folder are Render Studio artwork and are
+not Fritzing derivatives.

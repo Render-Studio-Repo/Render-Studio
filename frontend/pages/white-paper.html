@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>White paper — Render Studio</title>
+  <meta name="description" content="Render Studio debugger and agent-bus white paper. Searchable. Comments optional name. Ask Render Agent about the vision." />
+  <meta property="og:title" content="Render Studio white paper" />
+  <meta property="og:url" content="https://render3d.app/white-paper.html" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/vision-desk.css?v=20260917-chat1" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+    <main class="info-main">
+      <article class="info-content vision-paper">
+        <header class="info-hero">
+          <p class="info-eyebrow">Debugger / agent bus</p>
+          <h2>White paper</h2>
+          <p class="info-lead">Searchable one-sitting paper (not 50 pages). Compact ids, approval gates, Drive as cold archive. PDF also at <a href="/docs/media/WHITE-PAPER-AGENT-BUS.pdf">WHITE-PAPER-AGENT-BUS.pdf</a>.</p>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#performance">Performance</a>
+            <a class="docs-category-tab" href="/white-paper.html#leadership">Leadership evaluation</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html#error-rundown">Errors</a>
+            <a class="docs-category-tab" href="/white-paper.html#hello-work">Hello / Work</a>
+            <a class="docs-category-tab" href="/white-paper.html#cast">Cast</a>
+            <a class="docs-category-tab" href="/api-docs.html">API Docs</a>
+            <a class="docs-category-tab" href="/results.html">Results</a>
+            <a class="docs-category-tab active" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/opensource.html">The Office</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+          </nav>
+        </header>
+
+        <section id="error-rundown" class="info-section" style="margin:1.25rem 0 2rem">
+          <h3>Error rundown</h3>
+          <p class="info-lead">Full table: <a href="/docs/media/getting-started-agents/REPORT-ERRORS-20260916.md">REPORT-ERRORS-20260916.md</a>. Traceback/loop dump: <a href="/docs/media/getting-started-agents/DUMP-TRACEBACK-LOOP-20260916.md">DUMP-TRACEBACK-LOOP-20260916.md</a>. Debate on <a href="/team-chat.html">team-chat</a> / Hello-Work. Tweet miss: I skipped X Hub write. I had not asked the crew before rewriting loops.</p>
+        </section>
+        <section id="hello-work" class="info-section hello-work" style="margin:1.25rem 0 2rem">
+          <h3>Hello / Work</h3>
+          <p class="info-lead">Same window as the viewport Render Agent tab. Type at the bottom — posts as <strong>sam</strong> on the group thread.</p>
+          <section id="hello-work-panel" class="render-agent-panel hw-chat" aria-label="Crew review chat">
+            <header class="render-agent-head">
+              <div class="render-agent-title">
+                <strong>Render Agent</strong>
+                <span id="hw-thread-label">Hello — crew check-ins</span>
+              </div>
+              <img class="render-agent-head-logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" />
+            </header>
+            <div class="render-agent-people-row hw-chat-tabs-row">
+              <div class="hello-work-tabs" role="tablist" aria-label="Crew channels">
+                <button type="button" class="active" data-hw-tab="hello">Hello</button>
+                <button type="button" data-hw-tab="work">Harness</button>
+                <button type="button" data-hw-tab="them">Bus</button>
+                <button type="button" data-hw-tab="files">Skills</button>
+              </div>
+            </div>
+            <div id="hw-render-agent-messages" class="render-agent-messages" aria-live="polite"></div>
+            <form id="hw-render-agent-form" class="render-agent-form hw-composer">
+              <div class="hw-composer-shell">
+                <textarea id="hw-render-agent-input" rows="1" placeholder="Message the crew as Sam…"></textarea>
+                <button type="submit" class="hw-ask-btn" aria-label="Ask">
+                  <span>Ask</span>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M1.5 8.5 14 2.2l-3.1 11.4-2.7-4.1L1.5 8.5Zm7.1 1.1 1.5 2.3L12.4 5 8.6 9.6Z"/></svg>
+                </button>
+              </div>
+            </form>
+            <p id="hw-render-agent-status" class="render-agent-status muted small"></p>
+          </section>
+        </section>
+
+        <section id="performance" class="info-section" style="margin:1.25rem 0 2rem">
+          <h3>Performance report</h3>
+          <p class="info-lead">Vote + fire note. JSON: <a href="/docs/media/PERFORMANCE-20260916.json">PERFORMANCE-20260916.json</a>. RnD paper: <a href="/opensource.html">/opensource</a> and <code>Getting-Started/agents/REPORT-RND-BEST-NEXT.md</code>.</p>
+          <p><strong>Most → least:</strong> Sam 22 · Cursor 18 · PM 14 · RnD 10 · auditor 8 · analytics 8 · marketing 7 · comms 5 · sales 4 · clip-bot 4.</p>
+          <p><strong>Who to fire:</strong> Nobody tonight. Bench clip-bot (no clip contract). <strong>If Cursor vs PM:</strong> keep the PM; the tweet miss is Cursor + missing user X tokens, not fan-out.</p>
+          <p><strong>Why no tweet:</strong> App keys exist; user access tokens do not. Cursor X MCP is <code>@winstead_works</code> read-only (no create-tweet). Read API just returned <strong>402 credits depleted</strong>. Only path before 19:00: you click
+            <a href="https://x.com/intent/tweet?text=Posted%20by%20Cursor%20for%20RnD%3A%20Office%20%2B%20API%20docs%20live%20https%3A%2F%2Frender3d.app%2Fopensource.html%20https%3A%2F%2Frender3d.app%2Fapi-docs.html">Tweet as @winstead_works</a>
+            (intent is not a live post until you hit Post). Add <code>TWITTER_ACCESS_TOKEN</code> + secret to .env to skip that.</p>
+          <p><strong>Model:</strong> This harness is <strong>Cursor Grok 4.6</strong>. Specialist <code>grok_chat</code> still defaults to <strong>grok-4.5</strong> in grok-bot. Two processes, two models.</p>
+          <p class="muted small">Votes collected: cursor-engineer (keep core four, bench clip), project-manager (honest mid scores), vibe-rnd (hire qa-verify next).</p>
+        </section>
+        <section id="cast" class="info-section" style="margin:1.25rem 0 2rem">
+          <h3>Cast — Bender / Rick / names</h3>
+          <p><strong>Bender = project-manager</strong> (Projects Manager). I picked Bender for him after you said the PM keeps the queue honest. The first Futurama sheet had <em>sales</em> as Bender; several agents later self-tagged Bender in avatar-fanout. That was them, not you.</p>
+          <p><strong>Rick = vibe-rnd</strong>. I picked Rick hair + Farnsworth coat. They still file as vibe-rnd.</p>
+          <p><strong>Raise:</strong> PM — honest scores. <strong>Fire:</strong> nobody. Bench clip-bot. <strong>Hire:</strong> qa-verify.</p>
+          <h4>What each could have done better</h4>
+          <ul>
+            <li>Sam — drop user X tokens in .env so @winstead_works can post.</li>
+            <li>Cursor — index user-token gap on day one; fan office asks; do not infer.</li>
+            <li>PM — stamp a tweet-blocked ticket with “need ACCESS_TOKEN” instead of only 403 ack.</li>
+            <li>RnD — send the office prompt before Cursor invents desks.</li>
+            <li>Auditor — fail the turn when traceback_id is missing.</li>
+            <li>Analytics — join chat_id to instance_id in the first SCORECARD.</li>
+            <li>Marketing — keep refusing fake URLs; ask Sam for write tokens earlier.</li>
+            <li>Comms — one packet: “Sam taps X developer Access Token.”</li>
+            <li>Sales — still need a priced ICP.</li>
+            <li>Clip-bot — write the clip contract instead of waiting forever.</li>
+          </ul>
+          <p class="muted small">Those lines are Cursor-authored from their gaps (same miss class as inferred office asks). Fan-out for live quotes is still pending.</p>
+        </section>
+        <section id="crew-report" class="info-section" style="margin:1.25rem 0 2rem">
+          <h3>Crew report</h3>
+          <p class="info-lead">16 Sep 2026 snapshot. PDF: <a href="/docs/media/CREW-REPORT-20260916.pdf">CREW-REPORT-20260916.pdf</a>. <strong>Bender is the project-manager</strong> (display name: Projects Manager). Sales keeps the gold bowtie closer; do not re-cast every agent as Bender.</p>
+          <table>
+            <thead><tr><th>Rank</th><th>Who</th><th>They call themselves</th><th>Avatar / look</th><th>Value</th><th>What they shipped</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Sam (you)</td><td>Founder</td><td>Human — no gear pin required</td><td>22%</td><td>Goals, fire authority, vision prompts</td></tr>
+              <tr><td>2</td><td>Cursor (this harness)</td><td>cursor-engineer / RM</td><td>Studio chrome — no cosplay sheet</td><td>18%</td><td>API, MCP, ops IDs, weekly tab, this toolbar miss-fix</td></tr>
+              <tr><td>3</td><td>project-manager</td><td>Projects Manager</td><td>Bender: steel hard-hat + cigar holder, utility jacket</td><td>16%</td><td>Fan-out, SCORECARDs, PM_PACKET, hello 7/7</td></tr>
+              <tr><td>4</td><td>instruction-auditor</td><td>instruction-auditor</td><td>Grey visor, census clipboard</td><td>9%</td><td>Instruction census, category_id lock</td></tr>
+              <tr><td>5</td><td>analytics</td><td>analytics</td><td>Central Bureaucracy clerk, barcode scarf</td><td>8%</td><td>Join keys, rs.ops.v1</td></tr>
+              <tr><td>6</td><td>vibe-rnd</td><td>vibe-rnd</td><td>Farnsworth + Rick hair, teal scarf</td><td>7%</td><td>Lane experiments, SCORECARD 58</td></tr>
+              <tr><td>7</td><td>vibe-marketing</td><td>Vibe Marketing</td><td>Fry red jacket, yellow ON AIR scarf</td><td>6%</td><td>White-paper tweet draft, SCORECARD 62</td></tr>
+              <tr><td>8</td><td>comms-bridge</td><td>comms-bridge</td><td>Headset + packet sizes</td><td>5%</td><td>Human↔agent packet sizes</td></tr>
+              <tr><td>9</td><td>vibe-sales</td><td>Vibe Sales</td><td>Gold bowtie closer (not Bender this week)</td><td>5%</td><td>Refused fake plumbing pitch</td></tr>
+              <tr><td>10</td><td>clip-bot</td><td>clip-bot</td><td>Leela viewfinder + orange clapper</td><td>4%</td><td>Shot lists; blocked on verify</td></tr>
+            </tbody>
+          </table>
+          <p class="muted small">Improved prompt files written: PM 2, marketing 2 (incl. X), everyone else 1 each. Extra PM/marketing files because they sit on the live loop. Clip-bot got the least because there is still no clip contract. PNG avatars were never written under <code>frontend/docs/media/employees/</code> — looks above are the live costume sheet. ID <code>892e057b-5393-40e5-ab7b-ce7931736cc1</code> is not in repo logs; PM was asked to resolve + email you.</p>
+        </section>
+
+        <div class="vision-desk-grid">
+          <div>
+            <section class="info-section">
+              <h3>Verdict</h3>
+              <p>The goals are sound. Compact ids plus approval gates keep search fast. Do not paste full transcripts into weekly reports or Drive on the hot path. <code>instance_public_factor</code> is 0 until other instances are public.</p>
+              <h3>Ids we will keep using</h3>
+              <table>
+                <thead><tr><th>Field</th><th>Shape</th><th>Use</th></tr></thead>
+                <tbody>
+                  <tr><td>pair_id</td><td>PAIR-INTRO-20260916</td><td>Binds MD+JSON twins</td></tr>
+                  <tr><td>ref_id</td><td>INTRO-20260916</td><td>Folder specialists may open</td></tr>
+                  <tr><td>prompt_id</td><td>prm_*</td><td>One ops set</td></tr>
+                  <tr><td>category_id</td><td>FEAT NET DATA PERF UI VR GL API WD CAD CTL OTH</td><td>Not a second bug family</td></tr>
+                  <tr><td>traceback_id</td><td>tb_*</td><td>Ordered op</td></tr>
+                  <tr><td>result_score</td><td>0–100</td><td>Desired result</td></tr>
+                  <tr><td>result_ref_id</td><td>res_*</td><td>Artifact pointer</td></tr>
+                  <tr><td>damage_score</td><td>0–1</td><td>Collateral</td></tr>
+                </tbody>
+              </table>
+              <h3>Keep / do not</h3>
+              <p>Keep feature-status vectors, excerpt cap 120, three packet sizes, outcome formula, companion score tables. Do not run unbounded watchdogs, weekly PDFs of everything, or user-table writes on every prompt.</p>
+              <h3>Loop</h3>
+              <p>Symptom → feature vector → search_ids → tracking_id/ref_* → golden snapshot rollback proposal → confirm-fixed category id → bug_id last.</p>
+            </section>
+          </div>
+          <aside>
+            <div class="vision-card">
+              <h3>Vision traffic</h3>
+              <div id="wp-stats" class="vision-stats"></div>
+            </div>
+            <div class="vision-card vision-card--ask">
+              <h3>Ask Render Agent</h3>
+              <div id="wp-thread" class="vision-thread"></div>
+              <form id="wp-ask-form" class="vision-form vision-composer">
+                <div class="hw-composer-shell">
+                  <textarea id="wp-ask" rows="2" required placeholder="Ask about the vision…"></textarea>
+                  <button class="hw-ask-btn" type="submit" aria-label="Ask">
+                    <span>Ask</span>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M1.5 8.5 14 2.2l-3.1 11.4-2.7-4.1L1.5 8.5Zm7.1 1.1 1.5 2.3L12.4 5 8.6 9.6Z"/></svg>
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div class="vision-card">
+              <h3>Anonymous comments</h3>
+              <p class="muted small">Name is optional. If you skip it, you show up as anonymous.</p>
+              <form id="wp-comment-form" class="vision-form">
+                <input id="wp-name" type="text" maxlength="40" placeholder="Name (optional)" />
+                <textarea id="wp-body" rows="4" required placeholder="Comment"></textarea>
+                <button class="btn accent" type="submit">Post</button>
+              </form>
+              <p id="wp-status" class="muted small"></p>
+              <div id="wp-comments" class="vision-comments"></div>
+            </div>
+          </aside>
+        </div>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/white-paper.js?v=20260916-wp1"></script>
+  <script type="module" src="/site/wp-hello-work.js?v=20260917-chat1"></script>
+  <script type="module" src="/site/leadership-eval.js?v=20260916-lead1"></script>
+  <script type="module" src="/site/docs-agent.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

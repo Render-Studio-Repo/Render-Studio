@@ -1,0 +1,31 @@
+{
+  "receipt_id": "RCPT-20261006-PUBLIC-FULL-RELEASE",
+  "revision_id": "RCPT-20261006-PUBLIC-FULL-RELEASE-REV-2",
+  "at": "2026-10-06T23:40:00.000Z",
+  "author": "codex",
+  "status": "verified",
+  "summary": "Complete public Render Studio source export with one-click installers and private runtime exclusions.",
+  "feature_ids": [
+    "release.public-source"
+  ],
+  "feature_checks": {
+    "public-release-audit": "passed",
+    "public-installer-contract": "passed",
+    "public-first-run-contract": "passed",
+    "public-backend-syntax": "passed",
+    "public-ecosystem-federation": "passed"
+  },
+  "evidence": [
+    "public release audit passed for 6,996 tracked files",
+    "backend import smoke test passed in the Render Studio virtual environment",
+    "seven installer, instance setup, frontend alias, and account preference tests passed",
+    "frontend Studio application and authentication modules passed JavaScript syntax checks",
+    "fresh local database creates user_ai_keys and active_ai_key_id storage",
+    "Render ecosystem setup checks the official login and social provider endpoints",
+    "connected instances pull the shared Render marketplace catalog",
+    "hub credentials are hashed and bound to one stable instance ID",
+    "only explicitly approved public listings pass the hub ingestion boundary"
+  ],
+  "rollback": "Delete the public release branch or revert its single source export commit.",
+  "token": "rcpt1"
+}

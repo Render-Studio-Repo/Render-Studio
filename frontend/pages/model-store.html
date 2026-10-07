@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Model Marketplace — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/docs-marketplace-ui.css?v=20260715-appstore-2" />
+  <link rel="stylesheet" href="/marketplace/marketplace-fx.css?v=20260715-appstore-2" />
+  <link rel="stylesheet" href="/marketplace/marketplace-theme.css?v=20260918-studio-theme1" />
+</head>
+<body class="info-page marketplace-futuristic marketplace-store-page">
+  <div class="marketplace-fx" aria-hidden="true">
+    <div class="marketplace-grid-bg"></div>
+  </div>
+
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab active" role="menuitem">Product Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main">
+      <article class="info-content skills-page agent-store-page model-store-page">
+        <header class="info-hero model-store-hero">
+          <div class="model-store-hero-copy">
+            <p class="info-eyebrow"><a href="/marketplace.html">Product Marketplace</a> · 3D Models</p>
+            <h2>3D Model Store</h2>
+            <p class="info-lead">
+              MakerWorld-style catalog of robot arms, fixtures, toolheads, and creator CAD — cover cards, Get buttons, clear rights and formats.
+            </p>
+            <div class="gs-hero-actions">
+              <a class="btn accent" href="#model-store-list">Browse models</a>
+              <a class="btn secondary" href="#model-listing-form">Publish a model</a>
+            </div>
+          </div>
+          <div class="model-store-hero-panel" aria-hidden="true">
+            <div class="model-store-hero-visual">
+              <span class="model-store-arm-base"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--base"></span>
+              <span class="model-store-arm-link model-store-arm-link--one"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--mid"></span>
+              <span class="model-store-arm-link model-store-arm-link--two"></span>
+              <span class="model-store-arm-joint model-store-arm-joint--end"></span>
+              <span class="model-store-arm-tool"></span>
+              <span class="model-store-build-grid"></span>
+            </div>
+            <div class="model-store-hero-stats">
+              <span><strong id="model-store-free-count">Free</strong><small>public files</small></span>
+              <span><strong>90%</strong><small>seller payout</small></span>
+              <span><strong>GLB STEP 3MF</strong><small>ready formats</small></span>
+            </div>
+          </div>
+        </header>
+
+        <section class="agent-store-hero marketplace-modern-hero">
+          <div>
+            <p class="info-eyebrow">Shop by product</p>
+            <h3>Models with clear rights and access</h3>
+            <p class="muted">Filter by license, access mode, downloads, and boosted listings.</p>
+          </div>
+          <div class="agent-store-search">
+            <input id="model-store-search" type="search" placeholder="Search models, licenses, creators…" />
+          </div>
+        </section>
+
+        <div class="marketplace-filters" id="model-store-filters" aria-label="Product filters">
+          <label>Access
+            <select id="filter-access">
+              <option value="all">All</option>
+              <option value="free">Free</option>
+              <option value="paid">Paid</option>
+              <option value="view_only">View only</option>
+            </select>
+          </label>
+          <label>License
+            <select id="filter-license">
+              <option value="all">All</option>
+              <option value="cc0">CC0</option>
+              <option value="cc-by">CC BY</option>
+              <option value="cc-by-sa">CC BY-SA</option>
+              <option value="cc-by-nc">CC BY-NC</option>
+              <option value="royalty-free">Royalty-free</option>
+              <option value="proprietary">Proprietary</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>Downloads
+            <select id="filter-download">
+              <option value="all">All</option>
+              <option value="on">Downloadable</option>
+              <option value="off">No download</option>
+            </select>
+          </label>
+          <label class="agent-check marketplace-filter-check"><input id="filter-boosted" type="checkbox" /> Boosted only</label>
+        </div>
+
+        <p id="model-store-status" class="skills-status muted"></p>
+        <div id="model-store-categories" class="agent-store-categories" aria-label="Model categories"></div>
+        <section id="model-featured-section" class="agent-store-section hidden">
+          <div class="agent-store-section-head">
+            <h3>Featured &amp; boosted</h3>
+            <span class="muted small">Promoted product listings</span>
+          </div>
+          <div id="model-featured-list" class="agent-featured-row"></div>
+        </section>
+        <section class="agent-store-section">
+          <div class="agent-store-section-head">
+            <h3 id="model-store-results-title">All products</h3>
+            <span id="model-store-results-count" class="muted small"></span>
+          </div>
+          <div id="model-store-list" class="agent-product-grid"></div>
+        </section>
+
+        <section class="info-section agent-submit-section">
+          <h3>Publish a product</h3>
+          <p class="muted">Write a product post, attach a thumbnail and model files, set rights, and invite members. Paid sales keep <strong>90%</strong> after a <strong>10%</strong> platform fee — <a href="/marketplace.html#payments-readme">Payments README</a>.</p>
+          <div id="model-seller-host"></div>
+          <form id="model-listing-form" class="agent-app-form">
+            <div class="marketplace-drop-zone" data-model-drop>
+              <strong>Drop model product files here</strong>
+              <span>Thumbnails, gallery images, STEP, STL, GLB, 3MF, OBJ, and source files.</span>
+            </div>
+            <div class="agent-form-grid">
+              <label>Name <input name="name" required maxlength="120" placeholder="Parametric drone frame" /></label>
+              <label>Category <input name="category" maxlength="80" placeholder="Aerospace, furniture, robotics" /></label>
+              <label>Access mode
+                <select name="access_mode">
+                  <option value="free">Free</option>
+                  <option value="paid">Paid</option>
+                  <option value="view_only">View only</option>
+                </select>
+              </label>
+              <label>License
+                <select name="license">
+                  <option value="proprietary">Proprietary</option>
+                  <option value="cc0">CC0</option>
+                  <option value="cc-by">CC BY</option>
+                  <option value="cc-by-sa">CC BY-SA</option>
+                  <option value="cc-by-nc">CC BY-NC</option>
+                  <option value="royalty-free">Royalty-free</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>Price cents <input name="price_cents" type="number" min="0" max="1000000" value="0" /></label>
+              <p class="marketplace-fee-hint agent-form-wide" id="model-fee-hint"></p>
+              <label class="agent-check"><input name="download_enabled" type="checkbox" checked /> Allow downloads</label>
+              <label class="agent-form-wide">Tagline <input name="tagline" required maxlength="180" placeholder="Lightweight printable frame with mount options." /></label>
+              <label class="agent-form-wide">Short description <textarea name="description" required maxlength="4000" rows="3" placeholder="What buyers get and how to use it."></textarea></label>
+              <label class="agent-form-wide">Product post (markdown)
+                <div class="marketplace-editor-toolbar" data-editor-toolbar>
+                  <button type="button" data-fmt="bold" title="Bold">B</button>
+                  <button type="button" data-fmt="italic" title="Italic"><em>I</em></button>
+                  <button type="button" data-fmt="h2" title="Heading">H</button>
+                  <button type="button" data-fmt="ul" title="List">• List</button>
+                  <button type="button" data-fmt="link" title="Link">Link</button>
+                  <button type="button" data-fmt="code" title="Code">&lt;/&gt;</button>
+                </div>
+                <textarea name="body_md" id="model-body-md" rows="8" maxlength="20000" placeholder="## Features&#10;- ...&#10;&#10;## Specs&#10;..."></textarea>
+              </label>
+              <label class="agent-form-wide">Thumbnail <input name="thumbnail" type="file" accept="image/png,image/jpeg,image/webp" /></label>
+              <label class="agent-form-wide">Gallery images <input name="gallery" type="file" multiple accept="image/png,image/jpeg,image/webp" /></label>
+              <label class="agent-form-wide">Model files <input name="model_files" type="file" multiple accept=".glb,.gltf,.stl,.step,.stp,.3mf,.obj,model/*,application/octet-stream" /></label>
+              <label class="agent-form-wide">Members (emails, comma-separated) <input name="member_emails" maxlength="800" placeholder="teammate@company.com, artist@studio.com" /></label>
+            </div>
+            <button type="submit" class="btn primary">Submit product for review</button>
+          </form>
+        </section>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/site/model-store.js?v=20260715-appstore-2"></script>
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+</body>
+</html>

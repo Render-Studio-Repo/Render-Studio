@@ -1,0 +1,15 @@
+{
+  "project_id": "WAREHOUSE-MVP-20260918",
+  "verdict": "RCPT",
+  "rcpt_id": "RCPT-CAD-20260918-warehouse-floor-walls",
+  "log_id": "LOG-CAD-20260918-warehouse-mvp",
+  "checks": {
+    "units_meters": true,
+    "floor_present": true,
+    "wall_shells_separate": true,
+    "zero_volume": false,
+    "structural_ratings_invented": false
+  },
+  "notes": "MVP boxes for Workshop VR edit. Not a PE-stamped structure. Primitive boxes watertight.",
+  "pointer": "/workspace/cad-checkout/warehouse-mvp"
+}

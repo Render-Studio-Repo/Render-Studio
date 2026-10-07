@@ -1,0 +1,33 @@
+{
+  "episode_id": "58bb2b5e313d4783",
+  "status": "closed",
+  "samples": 101,
+  "last": {
+    "episode_id": "58bb2b5e313d4783",
+    "sequence": 100,
+    "timestamp_ms": 4000,
+    "head": [
+      0,
+      1.68,
+      0
+    ],
+    "left": [
+      -0.4,
+      1.2,
+      -0.4
+    ],
+    "right": [
+      0.6,
+      1.25,
+      -0.4
+    ],
+    "gripper": 0,
+    "edges": [],
+    "feature_checks": {
+      "viewport.boot": "ok",
+      "viewport.models": "ok",
+      "vr.controllers.trigger": "unknown"
+    }
+  },
+  "updated_at": "2026-09-17T16:29:00.310Z"
+}

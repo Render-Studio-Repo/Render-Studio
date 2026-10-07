@@ -5,11 +5,16 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import uuid
 from pathlib import Path
 from typing import Any
 
-from backend.services import cad_service, project_store, teams_service
+from backend.services import project_store, teams_service
+from backend.services.project_lifecycle import (
+    clear_demo_template_suppressed,
+    is_demo_template_suppressed,
+    is_project_deleted,
+    mint_project_id,
+)
 
 logger = logging.getLogger("render3d.demo_templates")
 
@@ -54,16 +59,27 @@ def find_existing_template_project(
     user_id: str,
     template_id: str,
 ) -> dict[str, Any] | None:
+    tmpl = load_template_meta(template_id)
+    primary_name = Path(str(tmpl.get("primary_filename") or "")).name
     for project_id in _user_project_ids(user_id):
-        path = cad_service.project_dir(projects_root, project_id)
+        if is_project_deleted(project_id):
+            continue
+        path = Path(projects_root) / project_id
         if not path.is_dir():
             continue
         meta = project_store.load_meta(path)
         if meta.get("demo_template") != template_id:
             continue
-        primary = meta.get("demo_primary_filename") or load_template_meta(template_id).get("primary_filename")
-        if primary and not (path / Path(str(primary)).name).is_file():
-            # Files missing — treat as stale and recreate.
+        primary = meta.get("demo_primary_filename") or primary_name
+        has_primary = bool(primary) and (path / Path(str(primary)).name).is_file()
+        has_any_demo_file = any(
+            child.is_file() and child.suffix.lower() in {".glb", ".gltf", ".step", ".stp", ".urdf", ".srdf"}
+            for child in path.iterdir()
+            if not child.name.startswith(".")
+        )
+        # The bundled robot-arm template historically omitted the GLB; still treat
+        # URDF/SRDF copies as the existing demo so delete stays deleted.
+        if not has_primary and not has_any_demo_file:
             continue
         return {
             "project_id": project_id,
@@ -72,11 +88,32 @@ def find_existing_template_project(
                 None,
             ),
             "meta": meta,
-            "filename": primary,
+            "filename": primary if has_primary else meta.get("demo_primary_filename"),
             "created": False,
             "url": f"/?project={project_id}",
         }
     return None
+
+
+def _copy_source_primary(dest: Path, tmpl: dict[str, Any]) -> Path | None:
+    """Pull the authored GLB from the source project when the template bundle omits it."""
+    from backend.config import settings
+
+    primary = Path(str(tmpl.get("primary_filename") or "")).name
+    if not primary:
+        return None
+    if (dest / primary).is_file():
+        return dest / primary
+    source_id = str(tmpl.get("source_project_id") or ROBOT_ARM_SOURCE_PROJECT_ID)
+    src = Path(settings.projects_dir) / source_id / primary
+    if not src.is_file():
+        return None
+    try:
+        shutil.copy2(src, dest / primary)
+        return dest / primary
+    except Exception as exc:
+        logger.warning("Could not copy demo primary %s: %s", primary, exc)
+        return None
 
 
 def seed_template_project(
@@ -86,11 +123,26 @@ def seed_template_project(
     template_id: str = ROBOT_ARM_TEMPLATE_ID,
     team_id: str | None = None,
     force_new: bool = False,
+    recreate: bool = False,
 ) -> dict[str, Any]:
     """Copy a demo template into a private project owned by the user."""
     user_id = str(user.get("id") or "")
     if not user_id:
         raise ValueError("User required")
+
+    if force_new or recreate:
+        clear_demo_template_suppressed(user_id, template_id)
+    elif is_demo_template_suppressed(user_id, template_id):
+        existing = find_existing_template_project(projects_root, user_id, template_id)
+        if existing:
+            return existing
+        return {
+            "project_id": None,
+            "created": False,
+            "suppressed": True,
+            "template_id": template_id,
+            "url": None,
+        }
 
     if not force_new:
         existing = find_existing_template_project(projects_root, user_id, template_id)
@@ -109,8 +161,8 @@ def seed_template_project(
     if tid not in {t["id"] for t in teams}:
         raise PermissionError("Not a member of that workspace")
 
-    project_id = str(uuid.uuid4())[:8]
-    dest = cad_service.project_dir(projects_root, project_id)
+    project_id = mint_project_id(projects_root)
+    dest = Path(projects_root) / project_id
     dest.mkdir(parents=True, exist_ok=True)
 
     copied: list[str] = []
@@ -120,6 +172,9 @@ def seed_template_project(
             copied.append(src.name)
         except Exception as exc:
             logger.warning("Could not copy demo file %s: %s", src.name, exc)
+    primary_copy = _copy_source_primary(dest, tmpl)
+    if primary_copy and primary_copy.name not in copied:
+        copied.append(primary_copy.name)
 
     if not copied:
         raise RuntimeError("Could not copy demo template files")
@@ -151,6 +206,7 @@ def seed_robot_arm_project(
     *,
     team_id: str | None = None,
     force_new: bool = False,
+    recreate: bool = False,
 ) -> dict[str, Any]:
     return seed_template_project(
         projects_root,
@@ -158,4 +214,5 @@ def seed_robot_arm_project(
         template_id=ROBOT_ARM_TEMPLATE_ID,
         team_id=team_id,
         force_new=force_new,
+        recreate=recreate,
     )

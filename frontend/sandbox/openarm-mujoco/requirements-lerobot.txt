@@ -1,0 +1,2 @@
+lerobot @ git+https://github.com/huggingface/lerobot.git@e595b7902714ba51f91e47523f66f89c5181b649
+mujoco>=3.3,<4

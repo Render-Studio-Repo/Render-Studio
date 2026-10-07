@@ -1,0 +1,302 @@
+#hello-work-panel .render-agent-messages {
+  min-height: 260px;
+  flex: 1 1 auto;
+  padding: 14px 16px;
+  gap: 10px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(34, 211, 238, 0.07), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(251, 146, 60, 0.06), transparent 50%),
+    #0b1017;
+}
+
+#hello-work-panel.render-agent-panel {
+  position: relative;
+  right: auto;
+  top: auto;
+  z-index: 1;
+  width: min(560px, 100%);
+  max-height: 720px;
+  margin: 14px 0 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(18, 24, 33, 0.98), rgba(10, 14, 20, 0.98));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+#hello-work-panel .render-agent-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+#hello-work-panel .render-agent-title strong {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+#hello-work-panel .render-agent-title span {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+#hello-work-panel .render-agent-head-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+
+.hw-chat-tabs-row {
+  padding: 10px 14px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12) !important;
+  background: transparent !important;
+}
+
+.hello-work-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: auto;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.hello-work-tabs button {
+  background: transparent;
+  border: 0;
+  color: #94a3b8;
+  border-radius: 9px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.hello-work-tabs button:hover {
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.hello-work-tabs button.active {
+  border: 0;
+  color: #0b1220;
+  background: #e2e8f0;
+}
+
+#hello-work-panel .hw-composer,
+#hello-work-panel .render-agent-form.hw-composer {
+  display: block;
+  grid-template-columns: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 12px 14px 14px;
+  background: rgba(8, 12, 18, 0.55);
+}
+
+.hw-composer-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.85));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hw-composer-shell:focus-within {
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 3px rgba(34, 211, 238, 0.12);
+}
+
+.hw-composer-shell textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 140px;
+  resize: none;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  padding: 10px 0 !important;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.hw-composer-shell textarea::placeholder {
+  color: #64748b;
+}
+
+.hw-ask-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #082f49;
+  background: linear-gradient(135deg, #67e8f9 0%, #22d3ee 45%, #fb923c 120%);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.hw-ask-btn:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.hw-ask-btn:active {
+  transform: translateY(0);
+}
+
+.hw-ask-btn:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+
+.ra-file {
+  display: block;
+  padding: 8px 10px;
+  margin: 4px 8px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #58a6ff;
+}
+
+/* Vision desk: white paper + suggestions. Do not add this to styles.css. */
+
+.vision-desk {
+  display: grid;
+  gap: 18px;
+}
+.vision-desk-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.9fr;
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .vision-desk-grid { grid-template-columns: 1fr; }
+}
+.vision-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.vision-card--ask {
+  border-radius: 18px;
+  border-color: rgba(148, 163, 184, 0.22);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(34, 211, 238, 0.08), transparent 50%),
+    #121821;
+  padding: 16px;
+}
+.vision-card--ask h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+.vision-thread {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-height: 220px;
+  overflow: auto;
+}
+.vision-card h3 { margin: 0 0 8px; }
+.vision-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.vision-stat {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-width: 110px;
+}
+.vision-stat strong { display: block; font-size: 1.2rem; }
+.vision-comments { display: grid; gap: 10px; max-height: 320px; overflow: auto; }
+.vision-comment { border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+.vision-form { display: grid; gap: 8px; }
+.vision-form.vision-composer {
+  display: block;
+  gap: 0;
+}
+.vision-form input, .vision-form textarea, .vision-form button {
+  font: inherit;
+}
+.vision-form input, .vision-form textarea {
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px;
+}
+.vision-form.vision-composer .hw-composer-shell textarea {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 10px 0 !important;
+}
+.vision-canvas-wrap {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.vision-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.vision-toolbar button, .vision-toolbar label {
+  background: #21262d;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.vision-toolbar button.active { outline: 2px solid #fb8500; }
+#sug-canvas { display: block; width: 100%; height: 420px; touch-action: none; background: #0b0f14; }
+.vision-paper p { max-width: 72ch; }
+.vision-paper table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.vision-paper th, .vision-paper td { border: 1px solid #30363d; padding: 6px 8px; text-align: left; }
+.vision-rank { list-style: none; padding: 0; margin: 0; }
+.vision-rank li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid #21262d; }
+.score-legend { display: grid; gap: 8px; margin: 12px 0 20px; }
+.score-legend dt { font-weight: 700; }
+.score-legend dd { margin: 0 0 8px; color: #8b949e; }
+.emp-roster { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.emp-roster li {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 10px;
+}
+.emp-roster img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #0d1117;
+}
+.emp-roster .emp-scores { text-align: right; font-variant-numeric: tabular-nums; }
+.emp-roster .emp-scores strong { display: block; font-size: 1.15rem; }

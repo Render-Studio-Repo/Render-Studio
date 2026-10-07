@@ -1,0 +1,1112 @@
+{
+  "name": "Pi 5 \u2192 Octopus Pro \u2192 CL86T \u2192 NEMA 34",
+  "description": "Documented motor power, coil, encoder and USB connections. Finish logic power and select the pulse interface before assembly.",
+  "components": [
+    {
+      "id": "pi",
+      "type": "raspberry-pi",
+      "label": "Raspberry Pi 5",
+      "x": 40,
+      "y": 100,
+      "w": 190,
+      "h": 140,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "usb_power",
+          "label": "USB-C \u00b7 5V",
+          "x": 0.06,
+          "y": 0.12,
+          "title": "USB-C \u00b7 5V \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "usb_host",
+          "label": "USB host",
+          "x": 0.94,
+          "y": 0.12,
+          "title": "USB host \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "usb_power": "USB-C \u00b7 5V",
+        "usb_host": "USB host"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-V1.0/blob/master/Firmware/Klipper/README.md",
+          "title": "usb"
+        }
+      ],
+      "profile": {
+        "power": "Separate Raspberry Pi 5 USB-C supply"
+      },
+      "required_connections": [
+        "usb_host",
+        "usb_power"
+      ]
+    },
+    {
+      "id": "printer_board",
+      "type": "sensor",
+      "label": "Octopus Pro V1.1 \u00b7 H723",
+      "x": 345,
+      "y": 100,
+      "w": 245,
+      "h": 240,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "usb",
+          "label": "USB-C data",
+          "x": 0.06,
+          "y": 0.12,
+          "title": "USB-C data \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "main_vin",
+          "label": "MAIN + \u00b7 24V",
+          "x": 0.06,
+          "y": 0.5,
+          "title": "MAIN + \u00b7 24V \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "main_gnd",
+          "label": "MAIN \u2212",
+          "x": 0.06,
+          "y": 0.88,
+          "title": "MAIN \u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "step0",
+          "label": "M0 STEP \u00b7 PF13",
+          "x": 0.94,
+          "y": 0.12,
+          "title": "M0 STEP \u00b7 PF13 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir0",
+          "label": "M0 DIR \u00b7 PF12",
+          "x": 0.94,
+          "y": 0.37333333333333335,
+          "title": "M0 DIR \u00b7 PF12 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "5v",
+          "label": "5V logic",
+          "x": 0.94,
+          "y": 0.6266666666666667,
+          "title": "5V logic \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "gnd",
+          "label": "Logic GND",
+          "x": 0.94,
+          "y": 0.8800000000000001,
+          "title": "Logic GND \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "usb": "USB-C data",
+        "main_vin": "MAIN + \u00b7 24V",
+        "main_gnd": "MAIN \u2212",
+        "step0": "M0 STEP \u00b7 PF13",
+        "dir0": "M0 DIR \u00b7 PF12",
+        "5v": "5V logic",
+        "gnd": "Logic GND"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        },
+        {
+          "url": "https://github.com/bigtreetech/docs/blob/master/docs/Octopus%20Pro.md",
+          "title": "board_power"
+        },
+        {
+          "url": "https://github.com/Klipper3d/klipper/blob/master/config/generic-bigtreetech-octopus-pro-v1.1.cfg",
+          "title": "pins"
+        }
+      ],
+      "profile": {
+        "kind": "motion-controller",
+        "revision": "V1.1 H723",
+        "signal_outputs": "M0 STEP/DIR socket pins buffered to 5V by U18 MC74HCT125; MCU pins are not socket connector numbers",
+        "main_supply": "15\u201328V DC; use 24V",
+        "required_connections": [
+          "main_vin",
+          "main_gnd"
+        ]
+      },
+      "required_connections": [
+        "usb",
+        "main_vin",
+        "main_gnd",
+        "step0",
+        "dir0",
+        "5v",
+        "gnd"
+      ]
+    },
+    {
+      "id": "signal_interface",
+      "type": "sensor",
+      "label": "STEP/DIR buffer \u00b7 select adapter",
+      "x": 700,
+      "y": 120,
+      "w": 205,
+      "h": 220,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "step_in",
+          "label": "STEP input",
+          "x": 0.06,
+          "y": 0.12,
+          "title": "STEP input \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir_in",
+          "label": "DIR input",
+          "x": 0.06,
+          "y": 0.37333333333333335,
+          "title": "DIR input \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "5v",
+          "label": "5V supply",
+          "x": 0.06,
+          "y": 0.6266666666666667,
+          "title": "5V supply \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "gnd",
+          "label": "GND",
+          "x": 0.06,
+          "y": 0.8800000000000001,
+          "title": "GND \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "pul_plus",
+          "label": "PUL+",
+          "x": 0.94,
+          "y": 0.12,
+          "title": "PUL+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "pul_minus",
+          "label": "PUL\u2212",
+          "x": 0.94,
+          "y": 0.37333333333333335,
+          "title": "PUL\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir_plus",
+          "label": "DIR+",
+          "x": 0.94,
+          "y": 0.6266666666666667,
+          "title": "DIR+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir_minus",
+          "label": "DIR\u2212",
+          "x": 0.94,
+          "y": 0.8800000000000001,
+          "title": "DIR\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "step_in": "STEP input",
+        "dir_in": "DIR input",
+        "5v": "5V supply",
+        "gnd": "GND",
+        "pul_plus": "PUL+",
+        "pul_minus": "PUL\u2212",
+        "dir_plus": "DIR+",
+        "dir_minus": "DIR\u2212"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        },
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        }
+      ],
+      "profile": {
+        "status": "required interface specification; hardware not selected",
+        "requirement": "5V logic compatible; drive CL86T optocouplers at 7\u201320mA. Confirm module datasheet and terminals before assembly."
+      }
+    },
+    {
+      "id": "driver",
+      "type": "motor-driver",
+      "label": "CL86T V4.1",
+      "x": 1020,
+      "y": 100,
+      "w": 240,
+      "h": 310,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "pul_plus",
+          "label": "PUL+",
+          "x": 0.06,
+          "y": 0.12,
+          "title": "PUL+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "pul_minus",
+          "label": "PUL\u2212",
+          "x": 0.06,
+          "y": 0.22857142857142856,
+          "title": "PUL\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir_plus",
+          "label": "DIR+",
+          "x": 0.06,
+          "y": 0.33714285714285713,
+          "title": "DIR+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "dir_minus",
+          "label": "DIR\u2212",
+          "x": 0.06,
+          "y": 0.44571428571428573,
+          "title": "DIR\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ena_plus",
+          "label": "ENA+",
+          "x": 0.06,
+          "y": 0.5542857142857143,
+          "title": "ENA+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ena_minus",
+          "label": "ENA\u2212",
+          "x": 0.06,
+          "y": 0.6628571428571428,
+          "title": "ENA\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ac1",
+          "label": "AC \u00b7 DC input 1",
+          "x": 0.06,
+          "y": 0.7714285714285715,
+          "title": "AC \u00b7 DC input 1 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ac2",
+          "label": "AC \u00b7 DC input 2",
+          "x": 0.06,
+          "y": 0.88,
+          "title": "AC \u00b7 DC input 2 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "a_plus",
+          "label": "A+",
+          "x": 0.94,
+          "y": 0.12,
+          "title": "A+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "a_minus",
+          "label": "A\u2212",
+          "x": 0.94,
+          "y": 0.20444444444444443,
+          "title": "A\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "b_plus",
+          "label": "B+",
+          "x": 0.94,
+          "y": 0.28888888888888886,
+          "title": "B+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "b_minus",
+          "label": "B\u2212",
+          "x": 0.94,
+          "y": 0.37333333333333335,
+          "title": "B\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ea_plus",
+          "label": "EA+",
+          "x": 0.94,
+          "y": 0.4577777777777778,
+          "title": "EA+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ea_minus",
+          "label": "EA\u2212",
+          "x": 0.94,
+          "y": 0.5422222222222222,
+          "title": "EA\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "eb_plus",
+          "label": "EB+",
+          "x": 0.94,
+          "y": 0.6266666666666667,
+          "title": "EB+ \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "eb_minus",
+          "label": "EB\u2212",
+          "x": 0.94,
+          "y": 0.7111111111111111,
+          "title": "EB\u2212 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "enc_vcc",
+          "label": "VCC \u00b7 encoder 5V",
+          "x": 0.94,
+          "y": 0.7955555555555556,
+          "title": "VCC \u00b7 encoder 5V \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "enc_gnd",
+          "label": "EGND",
+          "x": 0.94,
+          "y": 0.88,
+          "title": "EGND \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "pul_plus": "PUL+",
+        "pul_minus": "PUL\u2212",
+        "dir_plus": "DIR+",
+        "dir_minus": "DIR\u2212",
+        "ena_plus": "ENA+",
+        "ena_minus": "ENA\u2212",
+        "ac1": "AC \u00b7 DC input 1",
+        "ac2": "AC \u00b7 DC input 2",
+        "a_plus": "A+",
+        "a_minus": "A\u2212",
+        "b_plus": "B+",
+        "b_minus": "B\u2212",
+        "ea_plus": "EA+",
+        "ea_minus": "EA\u2212",
+        "eb_plus": "EB+",
+        "eb_minus": "EB\u2212",
+        "enc_vcc": "VCC \u00b7 encoder 5V",
+        "enc_gnd": "EGND"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        },
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ],
+      "profile": {
+        "input_supply": "24\u2013110V DC per V4.1 manual; supplied 48V is within range",
+        "signal_mode": "5V selector, SW7 OFF (PUL/DIR), SW6 OFF (closed loop)",
+        "enable": "ENA+ and ENA\u2212 left unconnected per default enabled operation; emergency stop requires separate design"
+      },
+      "required_connections": [
+        "ac1",
+        "ac2",
+        "pul_plus",
+        "pul_minus",
+        "dir_plus",
+        "dir_minus",
+        "a_plus",
+        "a_minus",
+        "b_plus",
+        "b_minus",
+        "ea_plus",
+        "ea_minus",
+        "eb_plus",
+        "eb_minus",
+        "enc_vcc",
+        "enc_gnd"
+      ]
+    },
+    {
+      "id": "motor",
+      "type": "stepper",
+      "label": "NEMA 34 \u00b7 34HS59-6004D-E1000",
+      "x": 1410,
+      "y": 100,
+      "w": 245,
+      "h": 310,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "a_plus",
+          "label": "A+ \u00b7 motor pin 1",
+          "x": 0.06,
+          "y": 0.12,
+          "title": "A+ \u00b7 motor pin 1 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "a_minus",
+          "label": "A\u2212 \u00b7 motor pin 2",
+          "x": 0.06,
+          "y": 0.20444444444444443,
+          "title": "A\u2212 \u00b7 motor pin 2 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "b_plus",
+          "label": "B+ \u00b7 motor pin 3",
+          "x": 0.06,
+          "y": 0.28888888888888886,
+          "title": "B+ \u00b7 motor pin 3 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "b_minus",
+          "label": "B\u2212 \u00b7 motor pin 4",
+          "x": 0.06,
+          "y": 0.37333333333333335,
+          "title": "B\u2212 \u00b7 motor pin 4 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ea_plus",
+          "label": "EA+ \u00b7 DB15 pin 1",
+          "x": 0.06,
+          "y": 0.4577777777777778,
+          "title": "EA+ \u00b7 DB15 pin 1 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "ea_minus",
+          "label": "EA\u2212 \u00b7 DB15 pin 13",
+          "x": 0.06,
+          "y": 0.5422222222222222,
+          "title": "EA\u2212 \u00b7 DB15 pin 13 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "eb_plus",
+          "label": "EB+ \u00b7 DB15 pin 11",
+          "x": 0.06,
+          "y": 0.6266666666666667,
+          "title": "EB+ \u00b7 DB15 pin 11 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "eb_minus",
+          "label": "EB\u2212 \u00b7 DB15 pin 12",
+          "x": 0.06,
+          "y": 0.7111111111111111,
+          "title": "EB\u2212 \u00b7 DB15 pin 12 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "enc_vcc",
+          "label": "5V \u00b7 DB15 pin 2",
+          "x": 0.06,
+          "y": 0.7955555555555556,
+          "title": "5V \u00b7 DB15 pin 2 \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "enc_gnd",
+          "label": "GND \u00b7 DB15 pin 3",
+          "x": 0.06,
+          "y": 0.88,
+          "title": "GND \u00b7 DB15 pin 3 \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "a_plus": "A+ \u00b7 motor pin 1",
+        "a_minus": "A\u2212 \u00b7 motor pin 2",
+        "b_plus": "B+ \u00b7 motor pin 3",
+        "b_minus": "B\u2212 \u00b7 motor pin 4",
+        "ea_plus": "EA+ \u00b7 DB15 pin 1",
+        "ea_minus": "EA\u2212 \u00b7 DB15 pin 13",
+        "eb_plus": "EB+ \u00b7 DB15 pin 11",
+        "eb_minus": "EB\u2212 \u00b7 DB15 pin 12",
+        "enc_vcc": "5V \u00b7 DB15 pin 2",
+        "enc_gnd": "GND \u00b7 DB15 pin 3"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        },
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ],
+      "profile": {
+        "phase_current_A": 6,
+        "holding_torque_Nm": 12,
+        "encoder": "1000-line differential; use the included motor/encoder harness"
+      }
+    },
+    {
+      "id": "motor_psu",
+      "type": "power-supply",
+      "label": "BOSYTRO \u00b7 48V / 25A / 1200W",
+      "x": 680,
+      "y": 545,
+      "w": 330,
+      "h": 150,
+      "pin_layout_mode": "diagram",
+      "pin_layout": [
+        {
+          "id": "vcc",
+          "label": "+V \u00b7 48V",
+          "x": 0.94,
+          "y": 0.12,
+          "title": "+V \u00b7 48V \u2014 functional diagram position; match the terminal label on the actual part"
+        },
+        {
+          "id": "gnd",
+          "label": "\u2212V",
+          "x": 0.94,
+          "y": 0.88,
+          "title": "\u2212V \u2014 functional diagram position; match the terminal label on the actual part"
+        }
+      ],
+      "pin_labels": {
+        "vcc": "+V \u00b7 48V",
+        "gnd": "\u2212V"
+      },
+      "pin_verification": {
+        "status": "documented terminal names; illustrative placement"
+      },
+      "documentation": [
+        {
+          "url": "https://www.amazon.com/dp/B0C591QLNR",
+          "title": "psu"
+        }
+      ],
+      "profile": {
+        "voltage_V": 48,
+        "max_current_A": 25,
+        "rated_power_W": 1200,
+        "asin": "B0C591QLNR"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "usb-host",
+      "from": {
+        "componentId": "pi",
+        "pinId": "usb_host"
+      },
+      "to": {
+        "componentId": "printer_board",
+        "pinId": "usb"
+      },
+      "label": "USB data \u00b7 Pi \u2192 Octopus",
+      "color": "#bdacf3",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-V1.0/blob/master/Firmware/Klipper/README.md",
+          "title": "usb"
+        }
+      ]
+    },
+    {
+      "id": "interface-step0",
+      "from": {
+        "componentId": "printer_board",
+        "pinId": "step0"
+      },
+      "to": {
+        "componentId": "signal_interface",
+        "pinId": "step_in"
+      },
+      "label": "Controller step0",
+      "color": "#65c5ed",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        }
+      ]
+    },
+    {
+      "id": "interface-dir0",
+      "from": {
+        "componentId": "printer_board",
+        "pinId": "dir0"
+      },
+      "to": {
+        "componentId": "signal_interface",
+        "pinId": "dir_in"
+      },
+      "label": "Controller dir0",
+      "color": "#d6a4ef",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        }
+      ]
+    },
+    {
+      "id": "interface-5v",
+      "from": {
+        "componentId": "printer_board",
+        "pinId": "5v"
+      },
+      "to": {
+        "componentId": "signal_interface",
+        "pinId": "5v"
+      },
+      "label": "Controller 5v",
+      "color": "#f18c7f",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        }
+      ]
+    },
+    {
+      "id": "interface-gnd",
+      "from": {
+        "componentId": "printer_board",
+        "pinId": "gnd"
+      },
+      "to": {
+        "componentId": "signal_interface",
+        "pinId": "gnd"
+      },
+      "label": "Controller gnd",
+      "color": "#a4b5c0",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+          "title": "board"
+        }
+      ]
+    },
+    {
+      "id": "signal-pul_plus",
+      "from": {
+        "componentId": "signal_interface",
+        "pinId": "pul_plus"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "pul_plus"
+      },
+      "label": "PUL PLUS",
+      "color": "#65c5ed",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    },
+    {
+      "id": "signal-pul_minus",
+      "from": {
+        "componentId": "signal_interface",
+        "pinId": "pul_minus"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "pul_minus"
+      },
+      "label": "PUL MINUS",
+      "color": "#95a9b8",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    },
+    {
+      "id": "signal-dir_plus",
+      "from": {
+        "componentId": "signal_interface",
+        "pinId": "dir_plus"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "dir_plus"
+      },
+      "label": "DIR PLUS",
+      "color": "#d6a4ef",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    },
+    {
+      "id": "signal-dir_minus",
+      "from": {
+        "componentId": "signal_interface",
+        "pinId": "dir_minus"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "dir_minus"
+      },
+      "label": "DIR MINUS",
+      "color": "#6a8293",
+      "verification": "interface selection pending",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    },
+    {
+      "id": "motor-a_plus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "a_plus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "a_plus"
+      },
+      "label": "A PLUS",
+      "color": "#747e89",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-a_minus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "a_minus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "a_minus"
+      },
+      "label": "A MINUS",
+      "color": "#6db595",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-b_plus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "b_plus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "b_plus"
+      },
+      "label": "B PLUS",
+      "color": "#e67d6e",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-b_minus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "b_minus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "b_minus"
+      },
+      "label": "B MINUS",
+      "color": "#75a7e2",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-ea_plus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "ea_plus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "ea_plus"
+      },
+      "label": "EA PLUS",
+      "color": "#c998da",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-ea_minus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "ea_minus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "ea_minus"
+      },
+      "label": "EA MINUS",
+      "color": "#9d87cb",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-eb_plus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "eb_plus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "eb_plus"
+      },
+      "label": "EB PLUS",
+      "color": "#e3b46a",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-eb_minus",
+      "from": {
+        "componentId": "driver",
+        "pinId": "eb_minus"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "eb_minus"
+      },
+      "label": "EB MINUS",
+      "color": "#b99469",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-enc_vcc",
+      "from": {
+        "componentId": "driver",
+        "pinId": "enc_vcc"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "enc_vcc"
+      },
+      "label": "ENC VCC",
+      "color": "#ec9a9a",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-enc_gnd",
+      "from": {
+        "componentId": "driver",
+        "pinId": "enc_gnd"
+      },
+      "to": {
+        "componentId": "motor",
+        "pinId": "enc_gnd"
+      },
+      "label": "ENC GND",
+      "color": "#b5c0ca",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+          "title": "kit"
+        }
+      ]
+    },
+    {
+      "id": "motor-48v",
+      "from": {
+        "componentId": "motor_psu",
+        "pinId": "vcc"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "ac1"
+      },
+      "label": "48V motor supply",
+      "color": "#ef806e",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    },
+    {
+      "id": "motor-return",
+      "from": {
+        "componentId": "motor_psu",
+        "pinId": "gnd"
+      },
+      "to": {
+        "componentId": "driver",
+        "pinId": "ac2"
+      },
+      "label": "Motor supply return",
+      "color": "#99aab6",
+      "verification": "documented terminal mapping",
+      "documentation": [
+        {
+          "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+          "title": "driver"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "BOSYTRO B0C591QLNR is 48V, 25A, 1200W. Its DC output goes to the two CL86T AC power terminals. The V4.1 manual accepts DC on these terminals without polarity requirements.",
+    "48V must not connect to Octopus MAIN power or Raspberry Pi power. Octopus MOTOR_POWER supports a different voltage range but is unnecessary for this external CL86T setup. The 24V board supply/converter is still to be selected.",
+    "All terminal positions shown here are functional diagram positions, not a measured PCB or connector footprint. Use the linked manufacturer pinouts for physical orientation.",
+    "Pi communicates with Octopus over USB. STEP and DIR come from empty driver socket M0, with the PF13/PF12 MCU mappings documented; do not use the MOTOR0 coil output connector for these logic signals.",
+    "The Octopus uses 5V HCT buffers. CL86T signal inputs require 7\u201320mA. The drawn interface is a requirement placeholder until the actual adapter output and terminals are checked. Set the CL86T signal selector to 5V for a compatible 5V interface.",
+    "Use the matched kit motor and encoder harness. Encoder VCC is the driver 5V output to the encoder, not motor supply. ENA terminals remain unconnected in the manufacturer default enabled configuration.",
+    "Three rotations require 3 \u00d7 configured input pulses per revolution. The encoder line count is not the microstep setting. Confirm CL86T switches and firmware timing before implementing the repeating motion.",
+    "This simulator shows circuit connectivity; it does not energize hardware or validate mains installation. AC input, protective earth, fusing and enclosure are outside this low-voltage diagram."
+  ],
+  "blocker": {
+    "blocked": true,
+    "reason": "Motor/encoder/USB branches are connected. Logic power and the STEP/DIR interface still need their exact parts before this is assembly-ready.",
+    "issues": [
+      "Raspberry Pi 5 needs connections at usb_power.",
+      "Octopus Pro V1.1 \u00b7 H723 needs connections at main_vin, main_gnd."
+    ],
+    "wire_count": 21,
+    "component_count": 6
+  },
+  "followup_questions": [
+    {
+      "id": "controller-power",
+      "question": "The linked BOSYTRO is 48 V / 25 A. The Octopus MAIN input needs 15\u201328 V, and the Pi needs its own 5 V USB-C supply. Which 24 V supply or 48\u219224 V converter and Pi power adapter will you use? Paste their links.",
+      "options": [],
+      "required": true
+    },
+    {
+      "id": "pulse-interface",
+      "question": "Which external STEP/DIR adapter or buffer are you using between the Octopus driver socket and CL86T? Paste its link so its output current and terminal mapping can be checked against the CL86T 7\u201320 mA optocoupler inputs.",
+      "options": [],
+      "required": true
+    }
+  ],
+  "continuation": {
+    "prompt": "Finish this Raspberry Pi 5 \u2192 BIGTREETECH Octopus Pro V1.1 H723 \u2192 CL86T V4.1 \u2192 34HS59-6004D-E1000 NEMA34 circuit. The BOSYTRO B0C591QLNR supply is confirmed 48V 25A 1200W. Use the saved documented terminals and the follow-up answers. The eventual goal is three rotations every ten seconds; do not assume pulse/revolution settings. Preserve the documented motor, encoder and USB connections and resolve the remaining logic power and signal interface requirements.",
+    "driver_links": [
+      "https://www.amazon.com/dp/B0C591QLNR",
+      "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+      "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+      "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+      "https://github.com/bigtreetech/docs/blob/master/docs/Octopus%20Pro.md",
+      "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-V1.0/blob/master/Firmware/Klipper/README.md",
+      "https://github.com/Klipper3d/klipper/blob/master/config/generic-bigtreetech-octopus-pro-v1.1.cfg"
+    ],
+    "references": [
+      {
+        "type": "url",
+        "url": "https://www.amazon.com/dp/B0C591QLNR",
+        "label": "psu"
+      },
+      {
+        "type": "url",
+        "url": "https://www.omc-stepperonline.com/download/CL86T-V41_user_manual.pdf",
+        "label": "driver"
+      },
+      {
+        "type": "url",
+        "url": "https://www.omc-stepperonline.com/de/ts-serie-12-0-nm-1699-68-oz-in-1achsen-closed-loop-schrittmotor-nema-34-motor-und-treiber-1-cl86t-s120-v41",
+        "label": "kit"
+      },
+      {
+        "type": "url",
+        "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-Pro/blob/master/Hardware/BIGTREETECH%20Octopus%20Pro%20V1.1-sch.pdf",
+        "label": "board"
+      },
+      {
+        "type": "url",
+        "url": "https://github.com/bigtreetech/docs/blob/master/docs/Octopus%20Pro.md",
+        "label": "board_power"
+      },
+      {
+        "type": "url",
+        "url": "https://github.com/bigtreetech/BIGTREETECH-OCTOPUS-V1.0/blob/master/Firmware/Klipper/README.md",
+        "label": "usb"
+      },
+      {
+        "type": "url",
+        "url": "https://github.com/Klipper3d/klipper/blob/master/config/generic-bigtreetech-octopus-pro-v1.1.cfg",
+        "label": "pins"
+      }
+    ],
+    "mode": "wiring",
+    "model": "gpt-6-astra",
+    "speed": "fast"
+  }
+}

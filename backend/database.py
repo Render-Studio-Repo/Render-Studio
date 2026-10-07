@@ -33,6 +33,32 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_ai_keys (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                api_key_enc TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                base_url TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_ai_keys_user
+                ON user_ai_keys(user_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS auth_device_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                last_used_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_auth_device_sessions_user
+                ON auth_device_sessions(user_id);
+
             CREATE TABLE IF NOT EXISTS teams (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -103,9 +129,19 @@ def init_db() -> None:
                 user_id TEXT NOT NULL,
                 shared_by TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'editor',
                 PRIMARY KEY (project_id, user_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (shared_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_join_links (
+                token TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL UNIQUE,
+                created_by TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                enabled INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS project_share_invites (
@@ -125,6 +161,18 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (project_id, user_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS deleted_projects (
+                project_id TEXT PRIMARY KEY,
+                deleted_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS deleted_demo_templates (
+                user_id TEXT NOT NULL,
+                template_id TEXT NOT NULL,
+                deleted_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, template_id)
             );
 
             CREATE TABLE IF NOT EXISTS project_access (
@@ -364,6 +412,7 @@ def init_db() -> None:
             "ALTER TABLE agent_app_listings ADD COLUMN body_md TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE agent_app_listings ADD COLUMN license TEXT NOT NULL DEFAULT 'proprietary'",
             "ALTER TABLE agent_app_listings ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'free'",
+            "ALTER TABLE project_shares ADD COLUMN role TEXT NOT NULL DEFAULT 'editor'",
             "ALTER TABLE agent_app_listings ADD COLUMN download_enabled INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE agent_app_listings ADD COLUMN members_json TEXT NOT NULL DEFAULT '[]'",
             "ALTER TABLE agent_app_listings ADD COLUMN boost_status TEXT NOT NULL DEFAULT 'none'",
@@ -414,6 +463,10 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute("ALTER TABLE project_access ADD COLUMN public_pinned INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
             conn.execute("ALTER TABLE project_access ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
@@ -433,6 +486,10 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE users ADD COLUMN ai_model TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN active_ai_key_id TEXT")
         except sqlite3.OperationalError:
             pass
         try:
@@ -521,9 +578,37 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
         try:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN cloud_compute_interest INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN cloud_compute_interest_at TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
             from backend.services.profile_service import migrate_user_handles
 
             migrate_user_handles(conn)
+        except Exception:
+            pass
+        try:
+            from backend.services.marketplace_schema import ensure_schema
+
+            ensure_schema()
+        except Exception:
+            pass
+        try:
+            from backend.services.calendar_service import migrate_calendar_schema
+
+            migrate_calendar_schema(conn)
+        except Exception:
+            pass
+        try:
+            from backend.services.context_lab_service import migrate_context_lab_schema
+
+            migrate_context_lab_schema(conn)
         except Exception:
             pass
         try:
@@ -767,67 +852,88 @@ def init_db() -> None:
                 "category": "Robotics",
                 "license": "cc-by",
                 "thumb": _model_thumb("Robot Arm Assembly", "#f97316", "PUBLIC FREE"),
-                "files": ["robot_arm.glb", "robot_arm.step", "robot_arm.urdf"],
+                "files": [
+                    {"name": "scara_v7.glb", "project_id": "3b28bf55", "rel": "scara_v7.glb"},
+                    {"name": "scara_v7.step", "project_id": "3b28bf55", "rel": "scara_v7.step"},
+                    {"name": "print_bed_placement_robot.glb", "project_id": "3b28bf55", "rel": "print_bed_placement_robot.glb"},
+                ],
                 "featured": 1,
             },
             {
                 "id": "builtin-modular-room-kit",
                 "slug": "modular-room-kit-free",
-                "name": "Modular Room Kit",
-                "tagline": "Snap-grid walls, window panels, door insert, and floor modules for Architect mode.",
-                "description": "A free modular architecture starter kit with printable room parts and clear component naming.",
-                "body": "## Includes\n- Wall panels and floor slab\n- Window and door inserts\n- Snap-style connector ideas\n\nDesigned for quick remixing in Architect mode.",
-                "category": "Architecture",
+                "name": "SCARA Build Plate Assembly",
+                "tagline": "A real build plate assembly from Sam's SCARA printer project.",
+                "description": "Free GLB and STEP source files from an existing Render Studio project for testing marketplace delivery.",
+                "body": "## Includes\n- Build plate assembly GLB\n- Editable STEP source\n\nThese are real project files supplied by the creator.",
+                "category": "Robotics",
                 "license": "cc-by",
-                "thumb": _model_thumb("Modular Room Kit", "#38bdf8", "FREE"),
-                "files": ["modular_room.glb", "modular_room.step"],
+                "thumb": _model_thumb("SCARA Build Plate", "#38bdf8", "REAL FILES"),
+                "files": [
+                    {"name": "build_plate_v2_assembly.glb", "project_id": "3b28bf55", "rel": "build_plate_v2_assembly.glb"},
+                    {"name": "build_plate_v2_assembly.step", "project_id": "3b28bf55", "rel": "build_plate_v2_assembly.step"},
+                ],
                 "featured": 1,
             },
             {
                 "id": "builtin-gripper-toolheads",
                 "slug": "robot-gripper-toolheads",
-                "name": "Robot Gripper Toolheads",
-                "tagline": "A free set of swappable gripper and cooking-tool concepts for robot arm testing.",
-                "description": "End-effector examples for experimenting with robot arms, adapters, and tool changing.",
-                "body": "## Includes\n- Parallel jaw gripper concept\n- Spatula/cooking-tool replacement ideas\n- Mounting adapter geometry notes",
+                "name": "Robot Fork Toolhead",
+                "tagline": "A real fork end effector from Sam's robot assembly project.",
+                "description": "Downloadable GLB and STEP toolhead files for robot arm and tool changing tests.",
+                "body": "## Includes\n- Fork toolhead GLB\n- Editable STEP source\n- Real project geometry",
                 "category": "Robotics",
                 "license": "cc0",
-                "thumb": _model_thumb("Gripper Toolheads", "#22c55e", "FREE"),
-                "files": ["gripper_toolheads.glb", "gripper_toolheads.step"],
+                "thumb": _model_thumb("Robot Fork Toolhead", "#22c55e", "REAL FILES"),
+                "files": [
+                    {"name": "forks.glb", "project_id": "3b28bf55", "rel": "forks.glb"},
+                    {"name": "forks.step", "project_id": "3b28bf55", "rel": "forks.step"},
+                ],
                 "featured": 0,
             },
             {
                 "id": "builtin-fixture-clamp-set",
                 "slug": "fixture-clamp-set-free",
-                "name": "Fixture Clamp Set",
-                "tagline": "Printable clamps, brackets, and jig blocks for holding parts during builds.",
-                "description": "A practical free manufacturing starter set for fixtures, small assembly jigs, and bench testing.",
-                "body": "## Includes\n- Clamp bodies\n- Bracket blocks\n- Simple fixture plates\n\nUseful for robotics and small CAD assembly workflows.",
+                "name": "Build Plate Mounting Test",
+                "tagline": "A real printable mounting test from Sam's SCARA build.",
+                "description": "Free GLB and STEP fixture geometry for validating marketplace installs and downloads.",
+                "body": "## Includes\n- Mounting test GLB\n- Editable STEP source\n- Real project geometry",
                 "category": "Manufacturing",
                 "license": "cc-by-sa",
-                "thumb": _model_thumb("Fixture Clamp Set", "#a855f7", "FREE"),
-                "files": ["fixture_clamps.step", "fixture_clamps.3mf"],
+                "thumb": _model_thumb("Build Plate Mount", "#a855f7", "REAL FILES"),
+                "files": [
+                    {"name": "build_plate_mounting_test_1.glb", "project_id": "3b28bf55", "rel": "build_plate_mounting_test_1.glb"},
+                    {"name": "build_plate_mounting_test_1.step", "project_id": "3b28bf55", "rel": "build_plate_mounting_test_1.step"},
+                ],
                 "featured": 0,
             },
             {
                 "id": "builtin-drone-frame-mini",
                 "slug": "mini-drone-frame-free",
-                "name": "Mini Drone Frame",
-                "tagline": "Lightweight free frame concept with motor pads and electronics bay.",
-                "description": "A public mini drone frame concept for testing CAD workflows, exports, and marketplace downloads.",
-                "body": "## Includes\n- Frame plate concept\n- Motor mount pads\n- Electronics bay placeholder\n\nFree public model for early Render Studio marketplace browsing.",
-                "category": "Aerospace",
+                "name": "Duet Electronics Mount",
+                "tagline": "A real controller mount from Sam's SCARA printer assembly.",
+                "description": "Free downloadable GLB and STEP source for electronics mounting and enclosure workflows.",
+                "body": "## Includes\n- Duet controller mount GLB\n- Editable STEP source\n- Real project geometry",
+                "category": "Electronics",
                 "license": "cc-by-nc",
-                "thumb": _model_thumb("Mini Drone Frame", "#f59e0b", "FREE"),
-                "files": ["mini_drone_frame.glb", "mini_drone_frame.step"],
+                "thumb": _model_thumb("Duet Electronics Mount", "#f59e0b", "REAL FILES"),
+                "files": [
+                    {"name": "duet_mount.glb", "project_id": "3b28bf55", "rel": "duet_mount.glb"},
+                    {"name": "duet_mount.step", "project_id": "3b28bf55", "rel": "duet_mount.step"},
+                ],
                 "featured": 0,
             },
         ]
         for item in builtin_models:
             files_json = json.dumps(
                 [
-                    {"name": name, "size": 0, "media_type": "application/octet-stream", "builtin": True}
-                    for name in item["files"]
+                    {
+                        **(source if isinstance(source, dict) else {"name": source}),
+                        "size": 0,
+                        "media_type": "application/octet-stream",
+                        "builtin": True,
+                    }
+                    for source in item["files"]
                 ],
                 sort_keys=True,
             )
@@ -869,11 +975,18 @@ def init_db() -> None:
             conn.execute(
                 """
                 UPDATE model_listings
-                   SET status='approved', access_mode='free', price_cents=0, download_enabled=1,
+                   SET name=?, tagline=?, description=?, body_md=?, category=?, license=?,
+                       status='approved', access_mode='free', price_cents=0, download_enabled=1,
                        featured=?, thumbnail_json=?, files_json=?, updated_at=?
                  WHERE id=?
                 """,
                 (
+                    item["name"],
+                    item["tagline"],
+                    item["description"],
+                    item["body"],
+                    item["category"],
+                    item["license"],
                     item["featured"],
                     json.dumps({"data_url": item["thumb"], "builtin": True}, sort_keys=True),
                     files_json,
@@ -950,11 +1063,33 @@ def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS project_solidworks_mirrors (
+                project_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                last_pushed_at TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (project_id, user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             -- Short-lived OAuth state tokens (CSRF protection)
             CREATE TABLE IF NOT EXISTS oauth_state (
                 state TEXT PRIMARY KEY,
                 user_id TEXT,
                 created_at TEXT NOT NULL
+            );
+
+            -- Linked Cursor / Claude / OpenAI-Codex subscription accounts.
+            CREATE TABLE IF NOT EXISTS ai_subscriptions (
+                user_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                account_email TEXT,
+                plan_label TEXT,
+                connected_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, provider),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
             -- Google / Apple / Microsoft identities linked to Render Studio users.
@@ -968,6 +1103,13 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (provider, provider_user_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS github_tokens (
+                user_id TEXT PRIMARY KEY,
+                access_token TEXT NOT NULL,
+                login TEXT,
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
             """
@@ -1109,5 +1251,64 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE oauth_state ADD COLUMN redirect_uri TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS ai_trial_renders (
+                    user_id TEXT PRIMARY KEY,
+                    granted_at TEXT NOT NULL,
+                    used_count INTEGER NOT NULL DEFAULT 0,
+                    limit_count INTEGER NOT NULL DEFAULT 3,
+                    popup_seen_at TEXT,
+                    email_sent_at TEXT,
+                    grant_ip TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS team_shared_chatgpt (
+                    id TEXT PRIMARY KEY,
+                    team_id TEXT NOT NULL,
+                    owner_user_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (team_id, owner_user_id),
+                    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+                    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS team_chatgpt_grants (
+                    share_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    granted INTEGER NOT NULL DEFAULT 0,
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    daily_limit_usd REAL,
+                    PRIMARY KEY (share_id, user_id),
+                    FOREIGN KEY (share_id) REFERENCES team_shared_chatgpt(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS personal_chatgpt_people (
+                    id TEXT PRIMARY KEY,
+                    owner_user_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    granted INTEGER NOT NULL DEFAULT 1,
+                    daily_limit_usd REAL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (owner_user_id, user_id),
+                    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS deleted_projects (
+                    project_id TEXT PRIMARY KEY,
+                    deleted_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS deleted_demo_templates (
+                    user_id TEXT NOT NULL,
+                    template_id TEXT NOT NULL,
+                    deleted_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, template_id)
+                );
+                """
+            )
         except sqlite3.OperationalError:
             pass

@@ -1,0 +1,8 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { findAgentGeneration, runReviewedGeneration } from './xr-agent-generation.js';
+test('completion matches the submitted trace, never a concurrent latest job',()=>{assert.equal(findAgentGeneration({trace_id:'other',status:'complete'},'mine'),null);assert.equal(findAgentGeneration({jobs:[{trace_id:'mine',status:'running'}]},'mine').status,'running');});
+test('accepted is not completed; awaits exact trace and applies once',async()=>{const values=[{accepted:true,trace_id:'mine'},{trace_id:'other',status:'complete'},{jobs:[{trace_id:'mine',status:'running'}]},{jobs:[{trace_id:'mine',status:'complete'}]}];let applied=0,calls=0;const result=await runReviewedGeneration({api:async()=>{calls++;return values.shift();},projectId:'p',endpoint:'prompt',body:{},wait:async()=>{},onComplete:()=>applied++});assert.equal(result.ok,true);assert.equal(calls,4);assert.equal(applied,1);});
+test('failed job never reports success or applies result',async()=>{let i=0;await assert.rejects(runReviewedGeneration({api:async()=>++i===1?{accepted:true,trace_id:'a'}:{trace_id:'a',status:'failed',error:'bad mount'},projectId:'p',endpoint:'prompt',body:{},wait:async()=>{},onComplete:()=>assert.fail()}),/bad mount/);});
+
+test('empty or answer-only reply cannot count as applied CAD', async()=>{for(const response of [{},{answered:true,message:'Use a larger hole'}])await assert.rejects(runReviewedGeneration({api:async()=>response,projectId:'p',endpoint:'prompt',body:{},onComplete:()=>assert.fail()}),/No generated|without confirming/);});

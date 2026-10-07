@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Optional, Callable
 
 from cadpy.assembly_spec import (
     AssemblySpec,
@@ -46,7 +46,7 @@ class ResolvedPartInstance:
     transform: tuple[float, ...]
 
 
-EntryResolver = Callable[[Path], CatalogEntry | None]
+EntryResolver = Callable[[Path], Optional[CatalogEntry]]
 
 
 def filesystem_entry(source_path: Path) -> CatalogEntry | None:

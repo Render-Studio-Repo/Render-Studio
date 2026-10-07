@@ -91,7 +91,7 @@ def _card_html(*, title: str, body_html: str, cta_url: str | None = None, cta_la
   <body style="margin:0;background:#0d1117;color:#e6edf3;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:720px;margin:0 auto;padding:28px;">
       <div style="padding:24px;border:1px solid #30363d;border-radius:22px;background:#161b22;">
-        <img src="{PUBLIC_BASE}/render3d-logo.png" alt="Render Studio" width="48" height="48" style="border-radius:12px;" />
+        <img src="{PUBLIC_BASE}/render-logo-gear-still.png?v=20260915-logo1" alt="Render Studio" width="48" height="48" style="border-radius:12px;background:transparent;" />
         <h1 style="margin:16px 0 10px;font-size:22px;">{html.escape(title)}</h1>
         {body_html}
         {cta}

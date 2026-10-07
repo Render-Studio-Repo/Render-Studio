@@ -1,0 +1,131 @@
+{
+  "retrieved": "2026-09-16",
+  "usage": "Local identification marks for integrations; no endorsement implied. Assets are served locally, never fetched from third-party hosts at runtime.",
+  "sanitization": "Static SVG only. No scripts, event attributes, external resources, embedded images, foreignObject or CSS. Loaded through img tags.",
+  "assets": [
+    {
+      "file": "stripe.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/stripe.svg",
+      "brandSource": "https://stripe.com/newsroom/information",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "6278112e81e72b429593197e2307765bbb78f96f0bf54074d400eba0f7119c10"
+    },
+    {
+      "file": "paypal.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/paypal.svg",
+      "brandSource": "https://www.paypal.com/us",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "d33fe4fd3eb2ff6ae4d53340e2301d7d4dd8f2183e7b911fe92c1533dfae4ba8"
+    },
+    {
+      "file": "ethereum.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/ethereum.svg",
+      "brandSource": "https://ethereum.org/en/assets/",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "a7229c0b159b34fd21423f3f82ae9933e93403d99c34262c510a5733e25de46d"
+    },
+    {
+      "file": "bitcoin.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/bitcoin.svg",
+      "brandSource": "https://bitcoin.org",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "34965ece41307e0ee04c117762a861f9f5ff93b5a6fc0d701277ff8bdf94e14b"
+    },
+    {
+      "file": "discord.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/discord.svg",
+      "brandSource": "https://discord.com/branding",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "38e1e7350a0c4f78c53353827ee7744da2f57f16276b144898068548e710d176"
+    },
+    {
+      "file": "github.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/github.svg",
+      "brandSource": "https://github.com/logos",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "ab037f3562db961718361ab9220e48cbc87dde067b0a5924df05d55475116243"
+    },
+    {
+      "file": "twitch.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/twitch.svg",
+      "brandSource": "https://brand.twitch.tv",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "9b777e334f0818029c8390a8ccc570cc68c63f9a27d5d8fed19eafbca86f705f"
+    },
+    {
+      "file": "kick.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/kick.svg",
+      "brandSource": "https://kick.com",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "432350f2cb20ec888fbaa3f62c9353220b6163666281fc3b85db29be1c2c18b8"
+    },
+    {
+      "file": "x.svg",
+      "source": "https://raw.githubusercontent.com/simple-icons/simple-icons/4ba19240849175ab4b855a732ab98c0f87cfb714/icons/x.svg",
+      "brandSource": "https://x.com",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "b4556bff7a1d0651461b004948fcde146a00f1beab66cb6e52f0498034650357"
+    },
+    {
+      "file": "phantom.svg",
+      "source": "https://github.com/phantom/phantom-connect-sdk/blob/main/packages/constants/src/icons.ts",
+      "brandSource": "https://docs.phantom.com/resources/assets",
+      "license": "MIT (Phantom Technologies, Inc); see PHANTOM-SDK-LICENSE.txt",
+      "changes": "Decoded PHANTOM_ICON; XML normalization; artwork preserved",
+      "sha256": "29c995c2eb767797e7f07f4e18329a11af8e67d522ee837832bc03d800663206"
+    },
+    {
+      "file": "grok.svg",
+      "source": "https://unpkg.com/@lobehub/icons-static-svg@1.95.0/icons/grok.svg",
+      "brandSource": "https://x.ai/legal/brand-guidelines",
+      "license": "MIT (LobeHub); see LOBE-ICONS-LICENSE.txt",
+      "changes": "Explicit white display fill; XML normalization; brand path preserved",
+      "sha256": "a5a20d6edb738cc9bcfe1e1a8b86f0eca31b63c4338d0436827b878cf009103b"
+    },
+    {
+      "file": "google-drive.svg",
+      "source": "https://fonts.gstatic.com/s/i/productlogos/drive_2020q4/v8/192px.svg",
+      "license": "Google product logo; brand rights retained by Google",
+      "changes": "XML normalization; artwork preserved",
+      "sha256": "703d8b72dcb21d8cee1350dd3fa21f992fbcf6f120c3f51293b7829cc40259ea"
+    },
+    {
+      "file": "google-calendar.svg",
+      "source": "https://fonts.gstatic.com/s/i/productlogos/calendar_2020q4/v8/192px.svg",
+      "license": "Google product logo; brand rights retained by Google",
+      "changes": "XML normalization; artwork preserved",
+      "sha256": "53c90cc578c041f2e7fe67b94a8086258ef2d7e2d73f7e862048ba06ea2359e1"
+    },
+    {
+      "file": "outlook.svg",
+      "source": "https://res-1.cdn.office.net/files/fabric/assets/brand-icons/product/svg/outlook_48x1.svg",
+      "license": "Microsoft product logo; brand rights retained by Microsoft",
+      "changes": "XML normalization; artwork preserved",
+      "sha256": "c965f2ffb9d41cf7484e3f1ddc62a5f67bf5683f5cce6209cf0d9427795301cc"
+    },
+    {
+      "file": "app-connection.svg",
+      "source": "Render Studio original generic plug icon",
+      "license": "Render Studio project",
+      "changes": "New generic fallback only; never used for known providers",
+      "sha256": "611242065ecc0794c3a96e77f619f5604a113897e8218c0d0c8fa6f5eb648324"
+    },
+    {
+      "file": "openai.svg",
+      "source": "https://cdn.jsdelivr.net/npm/simple-icons@13.21.0/icons/openai.svg",
+      "brandSource": "https://openai.com",
+      "license": "CC0-1.0; trademarks remain with their owners",
+      "changes": "Explicit display fill; XML normalization; brand path preserved",
+      "sha256": "local"
+    }
+  ]
+}

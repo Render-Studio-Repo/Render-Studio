@@ -1,0 +1,101 @@
+name: Grok change guard
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: grok-change-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: >-
+      contains(github.actor, 'grok') ||
+      contains(github.event.pull_request.user.login, 'grok') ||
+      startsWith(github.event.pull_request.head.ref, 'grok/') ||
+      contains(github.event.pull_request.labels.*.name, 'grok-change')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Classify change and request Codex review
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number, per_page: 100,
+            });
+            const names = files.map(file => file.filename);
+            const protectedPatterns = [
+              /^backend\/(auth|database|main\.py)/,
+              /^backend\/migrations\//,
+              /^frontend\/xr\//,
+              /^frontend\/studio\/app\.js$/,
+              /^\.github\//,
+              /(^|\/)AGENTS\.md$/,
+              /^ai-context\/(feature-map\.json|receipts)\//,
+              /(^|\/)(render\.ya?ml|Dockerfile|requirements[^/]*|package-lock\.json)$/,
+              /(^|\/)(\.env|secrets?)(\.|$)/,
+            ];
+            const protectedFiles = names.filter(name => protectedPatterns.some(pattern => pattern.test(name)));
+            const docsOnly = names.length > 0 && names.every(name =>
+              (/\.(md|txt)$/i.test(name) || name.startsWith('frontend/docs/')) &&
+              !/(^|\/)AGENTS\.md$/.test(name) &&
+              name !== 'ai-context/feature-map.json'
+            );
+            const ensureLabel = async (name, color, description) => {
+              try { await github.rest.issues.getLabel({ owner, repo, name }); }
+              catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+              }
+            };
+            await ensureLabel('grok-change', '8250df', 'Change authored or updated by Grok Bot');
+            await ensureLabel('needs-codex-review', 'fbca04', 'Codex review required before merge');
+            await ensureLabel('breaking-risk', 'd93f0b', 'Touches protected or production-sensitive paths');
+            await ensureLabel('safe-to-automerge', '0e8a16', 'May auto-merge after repository requirements pass');
+            const labels = ['grok-change', 'needs-codex-review'];
+            if (protectedFiles.length) labels.push('breaking-risk');
+            if (docsOnly && !context.payload.pull_request.draft) labels.push('safe-to-automerge');
+            await github.rest.issues.addLabels({ owner, repo, issue_number: pull_number, labels });
+
+            const marker = '<!-- grok-change-guard -->';
+            const existing = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pull_number, per_page: 100,
+            });
+            const body = [
+              marker,
+              '@codex review',
+              '',
+              'Grok Bot change detected. Review for regressions, stale or duplicate work, feature-map locks, secrets, and missing verification.',
+              protectedFiles.length
+                ? `Protected paths require manual approval:\n${protectedFiles.map(name => `- \`${name}\``).join('\n')}`
+                : docsOnly
+                  ? 'Docs-only change: eligible for auto-merge after repository requirements pass.'
+                  : 'Code change: do not auto-merge until Codex or a maintainer approves it.',
+            ].join('\n');
+            const prior = existing.find(comment => comment.user?.type === 'Bot' && comment.body?.includes(marker));
+            if (prior) await github.rest.issues.updateComment({ owner, repo, comment_id: prior.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: pull_number, body });
+
+      - name: Enable guarded auto-merge
+        if: >-
+          !github.event.pull_request.draft &&
+          contains(github.event.pull_request.labels.*.name, 'safe-to-automerge')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mutation = `mutation($id: ID!) {
+              enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                pullRequest { number autoMergeRequest { enabledAt } }
+              }
+            }`;
+            await github.graphql(mutation, { id: context.payload.pull_request.node_id });
+

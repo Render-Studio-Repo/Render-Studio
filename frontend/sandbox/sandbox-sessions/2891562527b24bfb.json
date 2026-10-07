@@ -1,0 +1,224 @@
+{
+  "sessionId": "2891562527b24bfb",
+  "startedAt": "2026-09-17T14:44:40.711Z",
+  "reason": "remix_import",
+  "openArm": "2.0",
+  "token": "map1",
+  "entries": [
+    {
+      "map_id": "map-1fd89eb615",
+      "path": "remixes/remix_08852bd1ec29/tree.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_08852bd1ec29\",\n  \"source_project_id\": \"46250178\",\n  \"source_name\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"label\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"created_at\": \"2026-09-17T14:44:40.344Z\",\n  \"restore_pointers\": [\n    {\n      \"path\": \"90576A119.glb\",\n      \"url\": \"/api/projects/46250178/files/90576A119.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.glb\"\n    },\n    {\n      \"path\": \"90576A119.step\",\n      \"url\": \"/api/projects/46250178/files/90576A119.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.step\"\n    },\n    {\n      \"path\": \"91292A126.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A126.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.glb\"\n    },\n    {\n      \"path\": \"91292A126.step\",\n      \"url\": \"/api/projects/46250178/files/91292A126.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.step\"\n    },\n    {\n      \"path\": \"91292A144.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A144.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.glb\"\n    },\n    {\n      \"path\": \"91292A144.step\",\n      \"url\": \"/api/projects/46250178/files/91292A144.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.step\"\n    },\n    {\n      \"path\": \"93475A250.glb\",\n      \"url\": \"/api/projects/46250178/files/93475A250.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.glb\"\n    },\n    {\n      \"path\": \"93475A250.step\",\n      \"url\": \"/api/projects/46250178/files/93475A250.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.step\"\n    },\n    {\n      \"path\": \"94180A361.glb\",\n      \"url\": \"/api/projects/46250178/files/94180A361.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.glb\"\n    },\n    {\n      \"path\": \"94180A361.step\",\n      \"url\": \"/api/projects/46250178/files/94180A361.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.step\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\"\n    },\n    {\n      \"path\": \"xr_creations.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations.json\"\n    },\n    {\n      \"path\": \"xr_creations_2.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations_2.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations_2.json\"\n    }\n  ],\n  \"open_arm\": \"2.0\",\n  \"map_token\": \"map1\"\n}",
+      "after_tip": "remix tree 16 pointers",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-559abe1fd4",
+      "at": "2026-09-17T14:44:40.890Z"
+    },
+    {
+      "map_id": "map-063ecb20db",
+      "path": "remixes/remix_08852bd1ec29/chunks.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_08852bd1ec29\",\n  \"kind\": \"chunk_index\",\n  \"algorithm\": \"content_hash_window\",\n  \"note\": \"OpenAI-style chunk windows for snapshot compare; keep prior version on edit\",\n  \"chunks\": [\n    {\n      \"chunk_id\": \"chk_3063d486\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 0,\n      \"start\": 0,\n      \"end\": 600,\n      \"content_hash\": \"65595584\",\n      \"preview\": \"[ { \\\"path\\\": \\\"90576A119.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/90576A119.glb\\\", \\\"kind\\\": \\\"glb\\\", \\\"rest\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_a213ae87\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 1,\n      \"start\": 520,\n      \"end\": 1120,\n      \"content_hash\": \"4fd2991c\",\n      \"preview\": \"91292A126.glb\\\" }, { \\\"path\\\": \\\"91292A126.step\\\", \\\"url\\\": \\\"/api/projects/46250178/files/91292A126.step\\\", \\\"kin\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_eaf7efee\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 2,\n      \"start\": 1040,\n      \"end\": 1640,\n      \"content_hash\": \"452cbb02\",\n      \"preview\": \"jects/46250178/files/91292A144.step\\\" }, { \\\"path\\\": \\\"93475A250.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/9347\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_5cddf314\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 3,\n      \"start\": 1560,\n      \"end\": 2160,\n      \"content_hash\": \"8235e339\",\n      \"preview\": \"ore\\\": \\\"GET /api/projects/46250178/files/94180A361.glb\\\" }, { \\\"path\\\": \\\"94180A361.step\\\", \\\"url\\\": \\\"/api/projects/\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_cdac224e\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 4,\n      \"start\": 2080,\n      \"end\": 2680,\n      \"content_hash\": \"6384a234\",\n      \"preview\": \"n_Nest.glb\\\" }, { \\\"path\\\": \\\"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\\\", \\\"url\\\": \\\"/api/projects/4625\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_cae2c499\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 5,\n      \"start\": 2600,\n      \"end\": 3200,\n      \"content_hash\": \"dd89e009\",\n      \"preview\": \" \\\"restore\\\": \\\"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\\\" }, { \",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_4c055216\",\n      \"path\": \"remixes/remix_08852bd1ec29/tree.json\",\n      \"index\": 6,\n      \"start\": 3120,\n      \"end\": 3426,\n      \"content_hash\": \"2c3de550\",\n      \"preview\": \"reations.json\\\", \\\"kind\\\": \\\"json\\\", \\\"restore\\\": \\\"GET /api/projects/46250178/files/xr_creations.json\\\" }, { \\\"pa\",\n      \"version\": 1\n    }\n  ],\n  \"created_at\": \"2026-09-17T14:44:40.345Z\"\n}",
+      "after_tip": "7 chunks",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-36b86cfe8b",
+      "at": "2026-09-17T14:44:41.121Z"
+    },
+    {
+      "map_id": "map-54f0d4fd57",
+      "path": "remixes/remix_65ec47a77244/tree.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_65ec47a77244\",\n  \"source_project_id\": \"46250178\",\n  \"source_name\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"label\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"created_at\": \"2026-09-17T14:44:40.662Z\",\n  \"restore_pointers\": [\n    {\n      \"path\": \"90576A119.glb\",\n      \"url\": \"/api/projects/46250178/files/90576A119.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.glb\"\n    },\n    {\n      \"path\": \"90576A119.step\",\n      \"url\": \"/api/projects/46250178/files/90576A119.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.step\"\n    },\n    {\n      \"path\": \"91292A126.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A126.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.glb\"\n    },\n    {\n      \"path\": \"91292A126.step\",\n      \"url\": \"/api/projects/46250178/files/91292A126.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.step\"\n    },\n    {\n      \"path\": \"91292A144.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A144.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.glb\"\n    },\n    {\n      \"path\": \"91292A144.step\",\n      \"url\": \"/api/projects/46250178/files/91292A144.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.step\"\n    },\n    {\n      \"path\": \"93475A250.glb\",\n      \"url\": \"/api/projects/46250178/files/93475A250.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.glb\"\n    },\n    {\n      \"path\": \"93475A250.step\",\n      \"url\": \"/api/projects/46250178/files/93475A250.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.step\"\n    },\n    {\n      \"path\": \"94180A361.glb\",\n      \"url\": \"/api/projects/46250178/files/94180A361.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.glb\"\n    },\n    {\n      \"path\": \"94180A361.step\",\n      \"url\": \"/api/projects/46250178/files/94180A361.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.step\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\"\n    },\n    {\n      \"path\": \"xr_creations.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations.json\"\n    },\n    {\n      \"path\": \"xr_creations_2.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations_2.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations_2.json\"\n    }\n  ],\n  \"open_arm\": \"2.0\",\n  \"map_token\": \"map1\"\n}",
+      "after_tip": "remix tree 16 pointers",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-7a74c59a6e",
+      "at": "2026-09-17T14:44:41.406Z"
+    },
+    {
+      "map_id": "map-0fa4279ccb",
+      "path": "remixes/remix_65ec47a77244/chunks.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_65ec47a77244\",\n  \"kind\": \"chunk_index\",\n  \"algorithm\": \"content_hash_window\",\n  \"note\": \"OpenAI-style chunk windows for snapshot compare; keep prior version on edit\",\n  \"chunks\": [\n    {\n      \"chunk_id\": \"chk_f650c71e\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 0,\n      \"start\": 0,\n      \"end\": 600,\n      \"content_hash\": \"65595584\",\n      \"preview\": \"[ { \\\"path\\\": \\\"90576A119.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/90576A119.glb\\\", \\\"kind\\\": \\\"glb\\\", \\\"rest\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_009a65cf\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 1,\n      \"start\": 520,\n      \"end\": 1120,\n      \"content_hash\": \"4fd2991c\",\n      \"preview\": \"91292A126.glb\\\" }, { \\\"path\\\": \\\"91292A126.step\\\", \\\"url\\\": \\\"/api/projects/46250178/files/91292A126.step\\\", \\\"kin\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_fc3b9c76\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 2,\n      \"start\": 1040,\n      \"end\": 1640,\n      \"content_hash\": \"452cbb02\",\n      \"preview\": \"jects/46250178/files/91292A144.step\\\" }, { \\\"path\\\": \\\"93475A250.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/9347\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_f313796c\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 3,\n      \"start\": 1560,\n      \"end\": 2160,\n      \"content_hash\": \"8235e339\",\n      \"preview\": \"ore\\\": \\\"GET /api/projects/46250178/files/94180A361.glb\\\" }, { \\\"path\\\": \\\"94180A361.step\\\", \\\"url\\\": \\\"/api/projects/\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_64910ac6\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 4,\n      \"start\": 2080,\n      \"end\": 2680,\n      \"content_hash\": \"6384a234\",\n      \"preview\": \"n_Nest.glb\\\" }, { \\\"path\\\": \\\"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\\\", \\\"url\\\": \\\"/api/projects/4625\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_4b119d61\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 5,\n      \"start\": 2600,\n      \"end\": 3200,\n      \"content_hash\": \"dd89e009\",\n      \"preview\": \" \\\"restore\\\": \\\"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\\\" }, { \",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_a9fdd3de\",\n      \"path\": \"remixes/remix_65ec47a77244/tree.json\",\n      \"index\": 6,\n      \"start\": 3120,\n      \"end\": 3426,\n      \"content_hash\": \"2c3de550\",\n      \"preview\": \"reations.json\\\", \\\"kind\\\": \\\"json\\\", \\\"restore\\\": \\\"GET /api/projects/46250178/files/xr_creations.json\\\" }, { \\\"pa\",\n      \"version\": 1\n    }\n  ],\n  \"created_at\": \"2026-09-17T14:44:40.662Z\"\n}",
+      "after_tip": "7 chunks",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-f2249dda83",
+      "at": "2026-09-17T14:44:41.642Z"
+    },
+    {
+      "map_id": "map-331c5e8bd9",
+      "path": "remixes/remix_10afd86beaf8/tree.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_10afd86beaf8\",\n  \"source_project_id\": \"46250178\",\n  \"source_name\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"label\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"created_at\": \"2026-09-17T14:44:41.581Z\",\n  \"restore_pointers\": [\n    {\n      \"path\": \"90576A119.glb\",\n      \"url\": \"/api/projects/46250178/files/90576A119.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.glb\"\n    },\n    {\n      \"path\": \"90576A119.step\",\n      \"url\": \"/api/projects/46250178/files/90576A119.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.step\"\n    },\n    {\n      \"path\": \"91292A126.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A126.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.glb\"\n    },\n    {\n      \"path\": \"91292A126.step\",\n      \"url\": \"/api/projects/46250178/files/91292A126.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.step\"\n    },\n    {\n      \"path\": \"91292A144.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A144.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.glb\"\n    },\n    {\n      \"path\": \"91292A144.step\",\n      \"url\": \"/api/projects/46250178/files/91292A144.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.step\"\n    },\n    {\n      \"path\": \"93475A250.glb\",\n      \"url\": \"/api/projects/46250178/files/93475A250.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.glb\"\n    },\n    {\n      \"path\": \"93475A250.step\",\n      \"url\": \"/api/projects/46250178/files/93475A250.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.step\"\n    },\n    {\n      \"path\": \"94180A361.glb\",\n      \"url\": \"/api/projects/46250178/files/94180A361.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.glb\"\n    },\n    {\n      \"path\": \"94180A361.step\",\n      \"url\": \"/api/projects/46250178/files/94180A361.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.step\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\"\n    },\n    {\n      \"path\": \"xr_creations.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations.json\"\n    },\n    {\n      \"path\": \"xr_creations_2.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations_2.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations_2.json\"\n    }\n  ],\n  \"open_arm\": \"2.0\",\n  \"map_token\": \"map1\"\n}",
+      "after_tip": "remix tree 16 pointers",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-08df1dba0e",
+      "at": "2026-09-17T14:44:42.305Z"
+    },
+    {
+      "map_id": "map-4458fb3e10",
+      "path": "remixes/remix_10afd86beaf8/chunks.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_10afd86beaf8\",\n  \"kind\": \"chunk_index\",\n  \"algorithm\": \"content_hash_window\",\n  \"note\": \"OpenAI-style chunk windows for snapshot compare; keep prior version on edit\",\n  \"chunks\": [\n    {\n      \"chunk_id\": \"chk_7e263eab\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 0,\n      \"start\": 0,\n      \"end\": 600,\n      \"content_hash\": \"65595584\",\n      \"preview\": \"[ { \\\"path\\\": \\\"90576A119.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/90576A119.glb\\\", \\\"kind\\\": \\\"glb\\\", \\\"rest\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_d21d5986\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 1,\n      \"start\": 520,\n      \"end\": 1120,\n      \"content_hash\": \"4fd2991c\",\n      \"preview\": \"91292A126.glb\\\" }, { \\\"path\\\": \\\"91292A126.step\\\", \\\"url\\\": \\\"/api/projects/46250178/files/91292A126.step\\\", \\\"kin\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_ba599f05\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 2,\n      \"start\": 1040,\n      \"end\": 1640,\n      \"content_hash\": \"452cbb02\",\n      \"preview\": \"jects/46250178/files/91292A144.step\\\" }, { \\\"path\\\": \\\"93475A250.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/9347\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_0f7b1ad7\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 3,\n      \"start\": 1560,\n      \"end\": 2160,\n      \"content_hash\": \"8235e339\",\n      \"preview\": \"ore\\\": \\\"GET /api/projects/46250178/files/94180A361.glb\\\" }, { \\\"path\\\": \\\"94180A361.step\\\", \\\"url\\\": \\\"/api/projects/\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_aedf19e9\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 4,\n      \"start\": 2080,\n      \"end\": 2680,\n      \"content_hash\": \"6384a234\",\n      \"preview\": \"n_Nest.glb\\\" }, { \\\"path\\\": \\\"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\\\", \\\"url\\\": \\\"/api/projects/4625\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_9eddb58e\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 5,\n      \"start\": 2600,\n      \"end\": 3200,\n      \"content_hash\": \"dd89e009\",\n      \"preview\": \" \\\"restore\\\": \\\"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\\\" }, { \",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_99102379\",\n      \"path\": \"remixes/remix_10afd86beaf8/tree.json\",\n      \"index\": 6,\n      \"start\": 3120,\n      \"end\": 3426,\n      \"content_hash\": \"2c3de550\",\n      \"preview\": \"reations.json\\\", \\\"kind\\\": \\\"json\\\", \\\"restore\\\": \\\"GET /api/projects/46250178/files/xr_creations.json\\\" }, { \\\"pa\",\n      \"version\": 1\n    }\n  ],\n  \"created_at\": \"2026-09-17T14:44:41.581Z\"\n}",
+      "after_tip": "7 chunks",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-f87a1d6571",
+      "at": "2026-09-17T14:44:42.485Z"
+    },
+    {
+      "map_id": "map-8a4f00f684",
+      "path": "remixes/remix_15e49941d99b/tree.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_15e49941d99b\",\n  \"source_project_id\": \"46250178\",\n  \"source_name\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"label\": \"PROMPT - Quest Controller Calibration Nest\",\n  \"created_at\": \"2026-09-17T14:44:41.942Z\",\n  \"restore_pointers\": [\n    {\n      \"path\": \"90576A119.glb\",\n      \"url\": \"/api/projects/46250178/files/90576A119.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.glb\"\n    },\n    {\n      \"path\": \"90576A119.step\",\n      \"url\": \"/api/projects/46250178/files/90576A119.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/90576A119.step\"\n    },\n    {\n      \"path\": \"91292A126.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A126.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.glb\"\n    },\n    {\n      \"path\": \"91292A126.step\",\n      \"url\": \"/api/projects/46250178/files/91292A126.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A126.step\"\n    },\n    {\n      \"path\": \"91292A144.glb\",\n      \"url\": \"/api/projects/46250178/files/91292A144.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.glb\"\n    },\n    {\n      \"path\": \"91292A144.step\",\n      \"url\": \"/api/projects/46250178/files/91292A144.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/91292A144.step\"\n    },\n    {\n      \"path\": \"93475A250.glb\",\n      \"url\": \"/api/projects/46250178/files/93475A250.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.glb\"\n    },\n    {\n      \"path\": \"93475A250.step\",\n      \"url\": \"/api/projects/46250178/files/93475A250.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/93475A250.step\"\n    },\n    {\n      \"path\": \"94180A361.glb\",\n      \"url\": \"/api/projects/46250178/files/94180A361.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.glb\"\n    },\n    {\n      \"path\": \"94180A361.step\",\n      \"url\": \"/api/projects/46250178/files/94180A361.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/94180A361.step\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.glb\"\n    },\n    {\n      \"path\": \"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\",\n      \"kind\": \"glb\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\"\n    },\n    {\n      \"path\": \"vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"url\": \"/api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\",\n      \"kind\": \"step\",\n      \"restore\": \"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.step\"\n    },\n    {\n      \"path\": \"xr_creations.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations.json\"\n    },\n    {\n      \"path\": \"xr_creations_2.json\",\n      \"url\": \"/api/projects/46250178/files/xr_creations_2.json\",\n      \"kind\": \"json\",\n      \"restore\": \"GET /api/projects/46250178/files/xr_creations_2.json\"\n    }\n  ],\n  \"open_arm\": \"2.0\",\n  \"map_token\": \"map1\"\n}",
+      "after_tip": "remix tree 16 pointers",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-7af996c14e",
+      "at": "2026-09-17T14:44:42.709Z"
+    },
+    {
+      "map_id": "map-91c90d4369",
+      "path": "remixes/remix_15e49941d99b/chunks.json",
+      "status": "mapped",
+      "created": false,
+      "before_text": "{\n  \"token\": \"remix1\",\n  \"remix_id\": \"remix_15e49941d99b\",\n  \"kind\": \"chunk_index\",\n  \"algorithm\": \"content_hash_window\",\n  \"note\": \"OpenAI-style chunk windows for snapshot compare; keep prior version on edit\",\n  \"chunks\": [\n    {\n      \"chunk_id\": \"chk_5b9eae3f\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 0,\n      \"start\": 0,\n      \"end\": 600,\n      \"content_hash\": \"65595584\",\n      \"preview\": \"[ { \\\"path\\\": \\\"90576A119.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/90576A119.glb\\\", \\\"kind\\\": \\\"glb\\\", \\\"rest\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_7a6d3aba\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 1,\n      \"start\": 520,\n      \"end\": 1120,\n      \"content_hash\": \"4fd2991c\",\n      \"preview\": \"91292A126.glb\\\" }, { \\\"path\\\": \\\"91292A126.step\\\", \\\"url\\\": \\\"/api/projects/46250178/files/91292A126.step\\\", \\\"kin\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_1b691109\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 2,\n      \"start\": 1040,\n      \"end\": 1640,\n      \"content_hash\": \"452cbb02\",\n      \"preview\": \"jects/46250178/files/91292A144.step\\\" }, { \\\"path\\\": \\\"93475A250.glb\\\", \\\"url\\\": \\\"/api/projects/46250178/files/9347\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_e203bec3\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 3,\n      \"start\": 1560,\n      \"end\": 2160,\n      \"content_hash\": \"8235e339\",\n      \"preview\": \"ore\\\": \\\"GET /api/projects/46250178/files/94180A361.glb\\\" }, { \\\"path\\\": \\\"94180A361.step\\\", \\\"url\\\": \\\"/api/projects/\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_c7727a1d\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 4,\n      \"start\": 2080,\n      \"end\": 2680,\n      \"content_hash\": \"6384a234\",\n      \"preview\": \"n_Nest.glb\\\" }, { \\\"path\\\": \\\"vibecad/PROMPT_Quest_Controller_Calibration_Nest.step\\\", \\\"url\\\": \\\"/api/projects/4625\",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_8ccefeca\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 5,\n      \"start\": 2600,\n      \"end\": 3200,\n      \"content_hash\": \"dd89e009\",\n      \"preview\": \" \\\"restore\\\": \\\"GET /api/projects/46250178/files/vibecad/Quest_Nest_Wiring_Schematic_Supported_Completed_.glb\\\" }, { \",\n      \"version\": 1\n    },\n    {\n      \"chunk_id\": \"chk_e61d851d\",\n      \"path\": \"remixes/remix_15e49941d99b/tree.json\",\n      \"index\": 6,\n      \"start\": 3120,\n      \"end\": 3426,\n      \"content_hash\": \"2c3de550\",\n      \"preview\": \"reations.json\\\", \\\"kind\\\": \\\"json\\\", \\\"restore\\\": \\\"GET /api/projects/46250178/files/xr_creations.json\\\" }, { \\\"pa\",\n      \"version\": 1\n    }\n  ],\n  \"created_at\": \"2026-09-17T14:44:41.942Z\"\n}",
+      "after_tip": "7 chunks",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-a84768ceae",
+      "at": "2026-09-17T14:44:42.980Z"
+    }
+  ],
+  "voiceSteps": [],
+  "refs": [
+    {
+      "ref_id": "ref-openarm-20",
+      "kind": "product",
+      "label": "OpenArm 2.0",
+      "path": "openarm-teleop/rig.schema.json",
+      "note": "Headset avatar → OpenArm proxy; simulation only until URDF calibrated"
+    },
+    {
+      "ref_id": "ref-559abe1fd4",
+      "kind": "code",
+      "label": "remixes/remix_08852bd1ec29/tree.json",
+      "path": "remixes/remix_08852bd1ec29/tree.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:40.890Z"
+    },
+    {
+      "ref_id": "ref-36b86cfe8b",
+      "kind": "code",
+      "label": "remixes/remix_08852bd1ec29/chunks.json",
+      "path": "remixes/remix_08852bd1ec29/chunks.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:41.121Z"
+    },
+    {
+      "ref_id": "ref-7f34db5858",
+      "kind": "remix",
+      "label": "Remix PROMPT - Quest Controller Calibration Nest",
+      "path": "remixes/remix_08852bd1ec29/tree.json",
+      "note": "16 restore pointers · 7 chunks · remix1",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:41.121Z"
+    },
+    {
+      "ref_id": "ref-7a74c59a6e",
+      "kind": "code",
+      "label": "remixes/remix_65ec47a77244/tree.json",
+      "path": "remixes/remix_65ec47a77244/tree.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:41.406Z"
+    },
+    {
+      "ref_id": "ref-f2249dda83",
+      "kind": "code",
+      "label": "remixes/remix_65ec47a77244/chunks.json",
+      "path": "remixes/remix_65ec47a77244/chunks.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:41.642Z"
+    },
+    {
+      "ref_id": "ref-f9c9d754c7",
+      "kind": "remix",
+      "label": "Remix PROMPT - Quest Controller Calibration Nest",
+      "path": "remixes/remix_65ec47a77244/tree.json",
+      "note": "16 restore pointers · 7 chunks · remix1",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:41.642Z"
+    },
+    {
+      "ref_id": "ref-08df1dba0e",
+      "kind": "code",
+      "label": "remixes/remix_10afd86beaf8/tree.json",
+      "path": "remixes/remix_10afd86beaf8/tree.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.304Z"
+    },
+    {
+      "ref_id": "ref-f87a1d6571",
+      "kind": "code",
+      "label": "remixes/remix_10afd86beaf8/chunks.json",
+      "path": "remixes/remix_10afd86beaf8/chunks.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.484Z"
+    },
+    {
+      "ref_id": "ref-2f2b45ba7c",
+      "kind": "remix",
+      "label": "Remix PROMPT - Quest Controller Calibration Nest",
+      "path": "remixes/remix_10afd86beaf8/tree.json",
+      "note": "16 restore pointers · 7 chunks · remix1",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.485Z"
+    },
+    {
+      "ref_id": "ref-7af996c14e",
+      "kind": "code",
+      "label": "remixes/remix_15e49941d99b/tree.json",
+      "path": "remixes/remix_15e49941d99b/tree.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.708Z"
+    },
+    {
+      "ref_id": "ref-a84768ceae",
+      "kind": "code",
+      "label": "remixes/remix_15e49941d99b/chunks.json",
+      "path": "remixes/remix_15e49941d99b/chunks.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.980Z"
+    },
+    {
+      "ref_id": "ref-1c874576cb",
+      "kind": "remix",
+      "label": "Remix PROMPT - Quest Controller Calibration Nest",
+      "path": "remixes/remix_15e49941d99b/tree.json",
+      "note": "16 restore pointers · 7 chunks · remix1",
+      "prompt_id": "",
+      "at": "2026-09-17T14:44:42.980Z"
+    }
+  ],
+  "status": "active"
+}

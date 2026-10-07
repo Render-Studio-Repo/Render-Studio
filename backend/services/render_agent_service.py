@@ -123,6 +123,7 @@ def _thread_summary(thread: dict[str, Any], owner_id: str) -> dict[str, Any]:
         "message_count": len(thread.get("messages") or []),
         "members": thread.get("members") or [],
         "owner_id": owner_id,
+        "iterations": list(thread.get("iterations") or [])[-24:],
     }
 
 
@@ -188,6 +189,7 @@ def create_thread(user_id: str, title: str | None = None) -> dict[str, Any]:
         "updated_at": now,
         "members": [],
         "messages": [],
+        "iterations": [],
     }
     _ensure_owner_member(thread, user_id)
     data.setdefault("threads", []).append(thread)
@@ -219,6 +221,8 @@ def append_messages(user_id: str, thread_id: str, messages: list[dict[str, Any]]
                 "attachments": list(message.get("attachments") or []),
                 "media": list(message.get("media") or []),
                 "guides": list(message.get("guides") or []),
+                "debug_improve": bool(message.get("debug_improve")),
+                "apply_hint": message.get("apply_hint"),
                 "sender": sender if isinstance(sender, dict) else None,
                 "created_at": message.get("created_at") or now,
             }
@@ -228,6 +232,42 @@ def append_messages(user_id: str, thread_id: str, messages: list[dict[str, Any]]
     first_user = next((m.get("content") for m in thread["messages"] if m.get("role") == "user" and m.get("content")), "")
     if first_user and (not thread.get("title") or thread.get("title") == "New Render Agent thread"):
         thread["title"] = first_user.strip().replace("\n", " ")[:70] or "Render Agent thread"
+    _save(owner_id, data)
+    try:
+        from backend.services.render_agent_debug_adapter import maybe_record_turn
+
+        maybe_record_turn(thread, messages, user_id=user_id)
+        _save(owner_id, data)
+    except Exception:
+        pass
+    if any((message.get("role") or "") == "user" for message in messages):
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            sbusers.increment_activity(user_id, "render_agent")
+        except Exception:
+            pass
+    return thread
+
+
+def append_iteration(user_id: str, thread_id: str, iteration: dict[str, Any]) -> dict[str, Any] | None:
+    found = _find_thread_for_user(user_id, thread_id)
+    if not found:
+        return None
+    owner_id, data, thread = found
+    items = thread.setdefault("iterations", [])
+    items.append(
+        {
+            "id": str(iteration.get("id") or uuid.uuid4())[:12],
+            "description": str(iteration.get("description") or "")[:180],
+            "prompt": str(iteration.get("prompt") or "")[:8000],
+            "notes": str(iteration.get("notes") or "")[:2000],
+            "thumbnail": str(iteration.get("thumbnail") or "")[:500],
+            "created_at": iteration.get("created_at") or _now(),
+        }
+    )
+    thread["iterations"] = items[-40:]
+    thread["updated_at"] = _now()
     _save(owner_id, data)
     return thread
 

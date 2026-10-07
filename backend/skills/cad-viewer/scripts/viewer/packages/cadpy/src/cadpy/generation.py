@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Sequence
+from typing import Sequence, Optional
 
 from cadpy.analysis import selector_manifest_diff
 from cadpy.assembly_composition import (
@@ -387,7 +387,7 @@ def _apply_step_output_overrides(
         raise ValueError(f"{tool_name} output override count must match target count")
     _validate_duplicate_cli_output_overrides(output_paths, tool_name=tool_name)
     updated_specs: list[EntrySpec] = []
-    for spec, output_path in zip(selected_specs, output_paths, strict=True):
+    for spec, output_path in zip(selected_specs, output_paths):
         if output_path is None:
             updated_specs.append(spec)
             continue
@@ -440,7 +440,7 @@ def _apply_dxf_output_overrides(
         raise ValueError(f"{tool_name} output override count must match target count")
     _validate_duplicate_cli_output_overrides(output_paths, tool_name=tool_name)
     updated_specs: list[EntrySpec] = []
-    for spec, output_path in zip(selected_specs, output_paths, strict=True):
+    for spec, output_path in zip(selected_specs, output_paths):
         if output_path is None:
             updated_specs.append(spec)
             continue
@@ -1519,7 +1519,7 @@ def _generated_assembly_source_occurrence_colors(
 @dataclass(frozen=True)
 class _ArtifactJob:
     name: str
-    run: Callable[[], object]
+    run: Optional[Callable[[], object]]
 
 
 def _run_artifact_jobs(
@@ -1786,7 +1786,7 @@ def _generate_part_outputs(
         return GeneratedStepResult(spec=spec, scene=scene)
 
     glb_path = part_glb_path(spec.step_path)
-    previous_manifest: dict[str, object] | None = read_step_topology_manifest_from_glb(glb_path) if glb_path.exists() else None
+    previous_manifest: Optional[dict[str, object]] = read_step_topology_manifest_from_glb(glb_path) if glb_path.exists() else None
 
     with logger.timed(f"mesh STEP {spec.cad_ref}"):
         mesh_step_scene(
@@ -2218,7 +2218,7 @@ def _track_spec_generation(spec: EntrySpec, generator_name: str) -> contextlib.A
 def _run_with_spec_generation_status(
     spec: EntrySpec,
     generator_name: str,
-    action: Callable[[EntrySpec], object],
+    action: Optional[Callable[[EntrySpec], object]],
 ) -> object:
     with _track_spec_generation(spec, generator_name):
         return action(spec)
@@ -2235,7 +2235,7 @@ def _run_selected_specs(
     status_stream: object | None = None,
     action_stdout: object | None = None,
     logger: CliLogger | None = None,
-    success_message: Callable[[EntrySpec], str] | None = _generated_output_summary,
+    success_message: Optional[Callable[[EntrySpec], str]] = _generated_output_summary,
 ) -> list[object]:
     results: list[object] = []
     if quiet:
@@ -2406,7 +2406,7 @@ def run_tool_cli(
     *,
     prog: str,
     description: str,
-    action: Callable[..., int],
+    action: Optional[Callable[..., int]],
     target_help: str | None = None,
     output_help: str | None = None,
 ) -> int:
@@ -2434,7 +2434,7 @@ def run_tool_cli(
     return action(args.targets, verbose=bool(args.verbose))
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="CAD generation support library.")
     parser.parse_args(list(argv) if argv is not None else None)
     parser.error("cadpy.generation is a library module.")

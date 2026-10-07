@@ -1,0 +1,28 @@
+{
+  "checks": [
+    "General shows first steps and clear navigation; Advanced is a lower collapsible group",
+    "Unsaved profile values survive navigation; Save reaches the existing profile PATCH handler",
+    "All 14 sections route to their existing controls without duplicate profile forms or overflowing pages",
+    "Settings search finds Connected apps by provider name; all 15 app cards have loaded logos",
+    "Every Connect/Setup/Manage button opens a guide with no account write just from opening",
+    "Missing-configuration setup is clickable and copies a portable developer task without profile data or secrets",
+    "Stripe Finish setup starts onboarding; provider failure stays visible inside dialog; no disconnect",
+    "Theme control still applies to Studio and the new settings shell",
+    "Mobile section selector reaches Advanced pages; profile/apps/setup dialog fit 390px without overlap",
+    "Existing Authorized apps deep link opens the new top-level page",
+    "Preferences walkthrough anchors reach the new navigation and search instead of removed Advanced toggle"
+  ],
+  "pageErrors": [],
+  "mockWrites": [
+    {
+      "path": "users/me",
+      "method": "PATCH",
+      "body": "{\"display_name\":\"Alex draft\",\"handle\":\"alexdraft\",\"bio\":\"A draft that should survive switching pages.\"}"
+    },
+    {
+      "path": "marketplace/seller/connect",
+      "method": "POST",
+      "body": "{}"
+    }
+  ]
+}

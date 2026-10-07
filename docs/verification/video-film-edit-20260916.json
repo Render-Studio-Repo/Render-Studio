@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "result": {
+    "duration": 3,
+    "clips": 1,
+    "playback": true,
+    "active": true,
+    "polls": 2,
+    "inflight": 0,
+    "max_inflight": 1,
+    "downloads": 1,
+    "authorized": true
+  }
+}

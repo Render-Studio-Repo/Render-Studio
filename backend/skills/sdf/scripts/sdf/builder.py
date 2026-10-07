@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from typing import Optional, Union, Sequence
+
 from collections.abc import Callable, Mapping, Sequence
 import math
 import xml.etree.ElementTree as ET
 
-Number = int | float
-PoseValues = Sequence[Number] | ET.Element | None
+Number = Union[int, float]
+PoseValues = Optional[Union[Sequence[Number], ET.Element]]
 
 def fmt_float(value: object) -> str:
     number = _finite_float(value, "value")
@@ -173,7 +175,7 @@ def visual(
     name: str,
     *,
     pose: PoseValues = None,
-    geometry_builder: Callable[[ET.Element], object] | None = None,
+    geometry_builder: Optional[Callable[[ET.Element], object]] = None,
 ) -> ET.Element:
     owner = ET.SubElement(parent, "visual", {"name": _required_name(name, "visual")})
     _append_pose(owner, pose)
@@ -186,7 +188,7 @@ def collision(
     name: str,
     *,
     pose: PoseValues = None,
-    geometry_builder: Callable[[ET.Element], object] | None = None,
+    geometry_builder: Optional[Callable[[ET.Element], object]] = None,
 ) -> ET.Element:
     owner = ET.SubElement(parent, "collision", {"name": _required_name(name, "collision")})
     _append_pose(owner, pose)
@@ -331,7 +333,7 @@ def _append_pose(parent: ET.Element, value: PoseValues) -> None:
 
 def _call_geometry_builder(
     owner: ET.Element,
-    geometry_builder: Callable[[ET.Element], object] | None,
+    geometry_builder: Optional[Callable[[ET.Element], object]],
 ) -> None:
     if geometry_builder is None:
         return

@@ -1,0 +1,103 @@
+/* Workspace / skill / log markdown viewer. Token: ctxlink1 */
+
+.ai-ctx-docs {
+  margin: 12px 0 24px;
+  padding: 14px 16px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(13, 17, 23, 0.72);
+}
+
+.ai-ctx-docs-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.ai-ctx-kicker {
+  margin: 0 0 2px;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b9bb0;
+}
+
+.ai-ctx-docs-head h3 {
+  margin: 0 0 4px;
+}
+
+.ai-ctx-docs-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 28rem;
+}
+
+.ai-ctx-tree {
+  overflow: auto;
+  max-height: min(70vh, 820px);
+  padding-right: 4px;
+}
+
+.ai-ctx-group {
+  margin: 0 0 8px;
+}
+
+.ai-ctx-group summary {
+  cursor: pointer;
+  color: #9ecbff;
+  font-size: 0.78rem;
+}
+
+.ai-ctx-group summary span {
+  color: #8b9bb0;
+  font-weight: 500;
+}
+
+.ai-ctx-group button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e6edf3;
+  cursor: pointer;
+}
+
+.ai-ctx-group button small {
+  display: block;
+  color: #8b9bb0;
+  font-size: 0.68rem;
+}
+
+.ai-ctx-group button.is-on,
+.ai-ctx-group button:hover {
+  background: rgba(56, 139, 253, 0.14);
+}
+
+.ai-ctx-article {
+  overflow: auto;
+  max-height: min(70vh, 820px);
+}
+
+body.gs-tab-ai-context .gs-features,
+body.gs-tab-ai-context .gs-tips-section,
+body.gs-tab-ai-context .gs-closing,
+body.gs-tab-ai-context .gs-toc,
+body.gs-tab-ai-context .gs-topic-search {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .ai-ctx-docs-layout {
+    grid-template-columns: 1fr;
+  }
+  .ai-ctx-tree {
+    max-height: 12rem;
+  }
+}

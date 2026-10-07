@@ -1,0 +1,21 @@
+:root { color-scheme: dark; }
+.marketplace-roadmap-page { background: #0b0f14; color: #edf2f7; }
+.marketplace-roadmap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 30px 0 72px; font-family: Inter, system-ui, sans-serif; }
+.marketplace-roadmap-back { color: #d4a72c; text-decoration: none; }
+.marketplace-roadmap header { max-width: 790px; padding: 62px 0 34px; }
+.marketplace-roadmap h1 { margin: 8px 0 16px; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: .95; letter-spacing: -.055em; }
+.marketplace-roadmap header > p:last-child, .marketplace-inquiry p { color: #9ba7b4; font-size: 1.05rem; line-height: 1.65; }
+.marketplace-roadmap-kicker { margin: 0; color: #d4a72c; font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.marketplace-roadmap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #27313c; border-left: 1px solid #27313c; }
+.marketplace-roadmap-grid article { padding: 30px; border-right: 1px solid #27313c; border-bottom: 1px solid #27313c; background: #10161e; }
+.marketplace-roadmap-grid article > span { color: #d4a72c; font-size: .75rem; font-weight: 800; }
+.marketplace-roadmap-grid h2 { margin: 22px 0 10px; font-size: 1.35rem; }
+.marketplace-roadmap-grid p { margin: 0; color: #9ba7b4; line-height: 1.6; }
+.marketplace-inquiry { display: grid; grid-template-columns: .9fr 1.1fr; gap: 50px; margin-top: 60px; padding: 34px; border: 1px solid #55461f; background: #14130e; }
+.marketplace-inquiry h2 { margin: 8px 0 12px; font-size: 2rem; }
+.marketplace-inquiry form, .marketplace-inquiry label { display: grid; gap: 8px; }
+.marketplace-inquiry form { gap: 16px; }
+.marketplace-inquiry select, .marketplace-inquiry textarea { width: 100%; box-sizing: border-box; border: 1px solid #37414d; border-radius: 8px; background: #0b0f14; color: #edf2f7; padding: 11px; font: inherit; }
+.marketplace-inquiry button { justify-self: start; border: 0; border-radius: 8px; background: #d4a72c; color: #111; padding: 11px 16px; font-weight: 800; cursor: pointer; }
+#marketplace-inquiry-status { min-height: 1.4em; margin: 0; font-size: .9rem; }
+@media (max-width: 720px) { .marketplace-roadmap-grid, .marketplace-inquiry { grid-template-columns: 1fr; } .marketplace-roadmap-grid article { padding: 22px; } .marketplace-inquiry { gap: 20px; padding: 24px; } }

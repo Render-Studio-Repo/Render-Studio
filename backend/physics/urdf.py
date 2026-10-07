@@ -8,6 +8,7 @@ is immediately simulable. The kinematic tree is derived from the program joints
 
 from __future__ import annotations
 
+import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,10 @@ def to_urdf(sim: dict[str, Any], part_meshes: dict[str, str], name: str = "rende
         ET.SubElement(joint, "axis", {"xyz": f"{ax[0]} {ax[1]} {ax[2]}"})
         if j["type"] in ("revolute", "prismatic") and j.get("limits"):
             lo, hi = j["limits"]
+            # Render sim metadata stores revolute ranges in degrees and slide
+            # ranges in millimetres. URDF requires radians and metres.
+            scale = math.pi / 180 if j["type"] == "revolute" else 0.001
+            lo, hi = lo * scale, hi * scale
             ET.SubElement(joint, "limit", {"lower": f"{lo}", "upper": f"{hi}", "effort": "10", "velocity": "10"})
     _indent(robot)
     return ET.tostring(robot, encoding="unicode")
@@ -87,6 +92,7 @@ def to_urdf(sim: dict[str, Any], part_meshes: dict[str, str], name: str = "rende
 
 def to_mjcf(sim: dict[str, Any], part_meshes: dict[str, str], name: str = "render3d_model") -> str:
     mujoco = ET.Element("mujoco", {"model": name})
+    ET.SubElement(mujoco, "compiler", {"angle": "degree"})
     ET.SubElement(mujoco, "option", {"gravity": "0 0 -9.81"})
     asset = ET.SubElement(mujoco, "asset")
     for pid, fname in part_meshes.items():
@@ -120,7 +126,8 @@ def to_mjcf(sim: dict[str, Any], part_meshes: dict[str, str], name: str = "rende
             jkind = "slide" if joint["type"] == "prismatic" else "hinge"
             attrs = {"name": joint["id"], "type": jkind, "axis": f"{ax[0]} {ax[1]} {ax[2]}", "pos": "0 0 0"}
             if joint.get("limits"):
-                attrs["range"] = f"{joint['limits'][0]} {joint['limits'][1]}"
+                scale = 0.001 if joint["type"] == "prismatic" else 1
+                attrs["range"] = f"{joint['limits'][0] * scale} {joint['limits'][1] * scale}"
                 attrs["limited"] = "true"
             ET.SubElement(body, "joint", attrs)
         ET.SubElement(body, "geom", {"type": "mesh", "mesh": pid})

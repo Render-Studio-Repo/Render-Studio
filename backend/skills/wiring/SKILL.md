@@ -47,4 +47,8 @@ Return JSON only (see wiring_service.WIRING_SYSTEM_PROMPT):
 
 When the user attaches a photo of a breadboard or schematic, infer component positions and net connections from visible wires and labels.
 
+## Schematic sanity-check
+
+Prefer Project parts, Links-section URLs, and already-fetched datasheet excerpts. Cross-check a second supplied source (datasheet vs typical hookup or another vendor page) when two exist. Call out pinout/voltage conflicts in notes or followup_questions — do not guess. Do not crawl the web unbounded.
+
 <!-- render3d-studio -->

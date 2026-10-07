@@ -26,16 +26,15 @@ class InstallerContractTests(unittest.TestCase):
         self.assertIn("run.py", win)
 
     def test_first_run_setup_covers_account_and_ai_access(self):
-        html = (ROOT / "frontend" / "setup.html").read_text(encoding="utf-8")
-        js = (ROOT / "frontend" / "setup.js").read_text(encoding="utf-8")
+        html = (ROOT / "frontend" / "pages" / "setup.html").read_text(encoding="utf-8")
+        js = (ROOT / "frontend" / "site" / "setup-instance.js").read_text(encoding="utf-8")
 
-        self.assertIn("Create Render account", html)
-        self.assertIn("Connect a subscription", html)
-        self.assertIn("Add an API key", html)
-        self.assertIn('authenticate("/api/auth/register"', js)
-        self.assertIn('api("/api/user/ai-keys"', js)
-        self.assertIn('/?setup_ai=subscriptions', js)
-
+        self.assertIn("Sign in to Render", html)
+        self.assertIn("Set up locally", html)
+        self.assertIn("Add API keys", html)
+        self.assertIn("/api/setup/render-login-status", js)
+        self.assertIn("/api/setup/local", js)
+        self.assertIn("ecosystem_opt_in: false", js)
 
 if __name__ == "__main__":
     unittest.main()

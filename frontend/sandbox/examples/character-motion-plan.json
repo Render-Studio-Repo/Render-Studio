@@ -1,0 +1,115 @@
+{
+  "kind": "character_motion_plan",
+  "token": "smartwb1",
+  "at": "2026-09-17T15:37:22.327Z",
+  "plan": [
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "move": "approach_desk",
+      "path": [
+        "home",
+        "approach_desk",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "file loop hook"
+    },
+    {
+      "id": "pm",
+      "label": "PM",
+      "move": "circle_table",
+      "path": [
+        "home",
+        "circle_table",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    },
+    {
+      "id": "rnd",
+      "label": "RnD",
+      "move": "speak_pose",
+      "path": [
+        "home",
+        "speak_pose",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "timing/ease"
+    },
+    {
+      "id": "auditor",
+      "label": "Auditor",
+      "move": "return_home",
+      "path": [
+        "home",
+        "return_home",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    },
+    {
+      "id": "analytics",
+      "label": "Analytics",
+      "move": "whiteboard_pin",
+      "path": [
+        "home",
+        "whiteboard_pin",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "usage count"
+    },
+    {
+      "id": "mkt",
+      "label": "Marketing",
+      "move": "approach_desk",
+      "path": [
+        "home",
+        "approach_desk",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    },
+    {
+      "id": "comms",
+      "label": "Comms",
+      "move": "circle_table",
+      "path": [
+        "home",
+        "circle_table",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    },
+    {
+      "id": "sales",
+      "label": "Sales",
+      "move": "speak_pose",
+      "path": [
+        "home",
+        "speak_pose",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    },
+    {
+      "id": "clip",
+      "label": "Clip-bot",
+      "move": "return_home",
+      "path": [
+        "home",
+        "return_home",
+        "speak_pose",
+        "home"
+      ],
+      "agent_scope": "voice while move"
+    }
+  ]
+}

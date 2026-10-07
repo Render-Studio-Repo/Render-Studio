@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started — Render Studio Docs</title>
+  <meta name="description" content="Start generating CAD with AI, referencing files, selecting geometry, and asking Render Agent in Render Studio." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:title" content="Getting Started — Render Studio Docs" />
+  <meta property="og:description" content="Generate CAD with AI, reference files, pick geometry, and ask Render Agent." />
+  <meta property="og:url" content="https://render3d.app/getting-started.html" />
+  <meta property="og:image" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <meta property="og:image:secure_url" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Render Studio Getting Started docs banner with a small orange robot arm and Render Studio logo." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Getting Started — Render Studio Docs" />
+  <meta name="twitter:description" content="Generate CAD with AI, reference files, pick geometry, and ask Render Agent." />
+  <meta name="twitter:image" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <link rel="image_src" href="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-gs-visible-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/boot/welcome-robot-arm.css?v=20260715-welcome-arm-v3" />
+  <link rel="stylesheet" href="/site/getting-started-hero.css?v=20260914-docslayout1-lanip1-xrmap1-docui1-docui2" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/docs-marketplace-ui.css?v=20260715-mkt-payments" />
+  <link rel="stylesheet" href="/site/context-wiki-links.css?v=ctxlink1" />
+  <link rel="stylesheet" href="/site/ai-context-docs.css?v=ctxlink1" />
+</head>
+<body class="info-page gs-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab active" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+      <div class="toolbar-spacer"></div>
+      <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Sign in">
+        <span class="auth-icon" aria-hidden="true">👤</span>
+        <span id="auth-avatar" class="auth-avatar hidden" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main class="info-main gs-main">
+      <article class="gs-page">
+        <header class="gs-hero" data-cms-root="gs-hero">
+          <div class="gs-hero-banner">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker" data-cms-kicker>Getting Started</p>
+              <h2 class="gs-hero-title gs-hero-title--chrome">
+                <span class="visually-hidden" data-cms-title>Render Studio</span>
+                <img class="docs-chrome-wordmark" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="" width="979" height="148" decoding="async" aria-hidden="true" />
+              </h2>
+              <p class="gs-hero-lead" data-cms-lead>
+                Watch a short demo, follow the steps, then ask Render Agent — a movable help panel opens on the right.
+              </p>
+              <div class="gs-hero-actions">
+                <a class="btn accent" id="gs-ask-tour" href="#">Ask Render Agent for a tour</a>
+                <a class="btn secondary" href="#tips-library">Tips &amp; tricks</a>
+                <a class="btn secondary" href="/database.html">Open database setup</a>
+              </div>
+            </div>
+            <div class="gs-hero-photo hidden" id="gs-hero-photo" hidden>
+              <img alt="" />
+            </div>
+            <img class="docs-hero-gear" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="168" height="168" decoding="async" aria-hidden="true" />
+            <div class="gs-hero-visual" aria-hidden="true">
+              <div class="gs-hero-robot-wrap">
+                <div class="gs-hero-robot welcome-robot">
+                  <div class="welcome-robot-base-unit">
+                    <span class="welcome-robot-plate"></span>
+                    <span class="welcome-robot-pedestal"></span>
+                    <span class="welcome-robot-column"></span>
+                  </div>
+                  <div class="welcome-robot-shoulder">
+                    <span class="welcome-robot-pivot"></span>
+                    <div class="welcome-robot-boom">
+                      <span class="welcome-robot-link welcome-robot-link--a"></span>
+                      <span class="welcome-robot-elbow"></span>
+                      <span class="welcome-robot-link welcome-robot-link--b"></span>
+                      <div class="welcome-robot-hand">
+                        <span class="welcome-robot-wrist"></span>
+                        <span class="welcome-robot-grip">
+                          <span class="welcome-robot-jaw welcome-robot-jaw--a"></span>
+                          <span class="welcome-robot-jaw welcome-robot-jaw--b"></span>
+                        </span>
+                        <span class="welcome-robot-held"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="welcome-robot-placed"></span>
+                </div>
+              </div>
+            </div>
+            <a class="docs-hero-github" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+              <span class="docs-hero-github-copy">
+                <strong>Interested in contributing?</strong>
+                <small>Developers welcome on GitHub</small>
+              </span>
+            </a>
+          </div>
+          <nav class="docs-category-tabs gs-hero-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab docs-category-tab--started active" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+            <a class="docs-category-tab" href="/database.html">Database configuration</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="#tips-library">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="#ai-context">START HERE</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+          </nav>
+          <section class="docs-topic-search gs-topic-search" aria-label="Search Getting Started topics">
+            <div>
+              <p class="docs-topic-search-kicker">Search guides and tips</p>
+              <label>
+                <span class="visually-hidden">Search Getting Started topics</span>
+                <input id="gs-topic-search" type="search" placeholder="Search prompting, files, Fusion, wiring, picks, sharing..." autocomplete="off" />
+              </label>
+            </div>
+            <p id="gs-topic-search-status" class="docs-topic-search-status muted small">Type what you are trying to do and matching guides/tips stay visible.</p>
+          </section>
+        </header>
+
+        <div class="gs-shell">
+          <nav class="gs-toc" aria-label="Feature index" id="gs-toc"></nav>
+          <div class="gs-stream">
+            <div id="gs-features" class="gs-features"></div>
+            <section id="ai-context-docs" class="ai-ctx-docs" hidden></section>
+
+            <section id="tips-library" class="gs-tips-section" aria-labelledby="tips-library-title">
+              <div class="gs-tips-head">
+                <div>
+                  <p class="gs-feature-index">Docs category</p>
+                  <h3 id="tips-library-title">Tips &amp; tricks</h3>
+                  <p class="gs-summary">
+                    Browse short workflow tips by topic — prompting, DXF, references, collaboration, and more.
+                    Ask Agent about any tip to get a walkthrough.
+                  </p>
+                </div>
+                <nav class="docs-category-tabs gs-tips-tabs" aria-label="Docs categories">
+                  <a class="docs-category-tab docs-category-tab--started" href="/getting-started.html">Getting Started</a>
+                  <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+                  <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+                  <a class="docs-category-tab" href="/database.html">Database configuration</a>
+                  <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+                  <a class="docs-category-tab active" href="#tips-library">Tips &amp; tricks</a>
+                  <a class="docs-category-tab" href="#ai-context">START HERE</a>
+                  <a class="docs-category-tab" href="/updates.html">Updates</a>
+                </nav>
+              </div>
+              <div id="gs-tips-grid" class="gs-tips-grid"></div>
+            </section>
+
+            <section class="gs-closing">
+              <h3>Still stuck?</h3>
+              <p>Open the agent panel anytime, or keep reading the full docs.</p>
+              <div class="gs-hero-actions">
+                <button type="button" class="btn accent" id="gs-ask-again">Ask Render Agent</button>
+                <a class="btn secondary" href="/">Open Studio</a>
+              </div>
+            </section>
+          </div>
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <button type="button" id="render-agent-fab" class="render-agent-fab" title="Ask Render Agent" aria-label="Ask Render Agent">
+    <img src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" />
+    <span>Ask Agent</span>
+  </button>
+
+  <section id="render-agent-panel" class="render-agent-panel render-agent-panel--docs hidden" aria-label="Render Agent assistant">
+    <header class="render-agent-head">
+      <button type="button" id="render-agent-thread-menu" class="render-agent-menu-btn" aria-label="Open Render Agent threads" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="render-agent-title">
+        <strong>Render Agent</strong>
+        <span id="render-agent-active-thread-label">Drag header to move · drag edges to resize</span>
+      </div>
+      <img class="render-agent-head-logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="Render Studio" />
+      <button type="button" id="render-agent-close" class="render-agent-close" aria-label="Close Render Agent">&times;</button>
+    </header>
+    <div id="render-agent-thread-popover" class="render-agent-thread-popover hidden">
+      <div id="render-agent-thread-list" class="render-agent-thread-list"></div>
+      <button type="button" id="render-agent-new-thread" class="btn secondary btn-compact">New</button>
+    </div>
+    <div class="render-agent-people-row render-agent-people-row--docs">
+      <div id="render-agent-members" class="render-agent-members" aria-label="Thread members"></div>
+      <select id="render-agent-invite-select" class="render-agent-invite-select" aria-label="Invite teammate to thread">
+        <option value="">Invite teammate…</option>
+      </select>
+      <button type="button" id="render-agent-invite-btn" class="btn secondary btn-compact">Invite</button>
+    </div>
+    <div id="render-agent-onboarding" class="render-agent-onboarding hidden">
+      <strong>Need help?</strong>
+      <span>Ask about any Getting Started topic — matching demos appear as GIFs in the reply.</span>
+    </div>
+    <div id="render-agent-messages" class="render-agent-messages" aria-live="polite"></div>
+    <div id="render-agent-attachments" class="render-agent-attachments"></div>
+    <form id="render-agent-form" class="render-agent-form">
+      <label class="render-agent-upload">
+        Upload
+        <input type="file" id="render-agent-file-input" multiple accept="image/png,image/jpeg,image/webp,.txt,.md,.csv,.json,.svg,.dxf,.step,.stp,.pdf" hidden />
+      </label>
+      <textarea id="render-agent-input" rows="2" placeholder="Ask about Generate, workspaces, folders, markup, Fusion…"></textarea>
+      <button type="submit" class="btn accent btn-compact">Ask</button>
+    </form>
+    <p id="render-agent-status" class="render-agent-status muted small"></p>
+  </section>
+
+  <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="auth-backdrop" data-auth-close></div>
+    <div class="auth-card">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <div class="auth-card-header">
+        <img class="auth-logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="48" height="48" />
+        <div>
+          <h2 id="auth-title">Welcome back</h2>
+          <p class="auth-subtitle">Sign in to ask Render Agent</p>
+        </div>
+      </div>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Log in</button>
+        <button type="button" class="auth-tab" data-tab="register">Create account</button>
+      </div>
+      <p id="auth-error" class="auth-error"></p>
+      <form id="auth-form-login" class="auth-form">
+        <label>Email<input type="email" id="login-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="login-password" required autocomplete="current-password" placeholder="••••••••" /></label>
+        <p class="auth-forgot-row">
+          <button type="button" class="auth-forgot-link" id="btn-forgot-password">Forgot password?</button>
+        </p>
+        <button type="submit" class="btn accent auth-submit">Log in</button>
+      </form>
+      <form id="auth-form-forgot" class="auth-form hidden">
+        <p class="muted small">We’ll email a reset link if that address has an account.</p>
+        <label>Email<input type="email" id="forgot-email" required autocomplete="username" placeholder="you@company.com" /></label>
+        <button type="submit" class="btn accent auth-submit">Email reset link</button>
+        <button type="button" class="btn secondary auth-submit" id="btn-forgot-back">Back to log in</button>
+      </form>
+      <form id="auth-form-reset" class="auth-form hidden">
+        <p class="muted small">Choose a new password for your Render Studio account.</p>
+        <label>New password<input type="password" id="reset-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <label>Confirm password<input type="password" id="reset-password-confirm" required minlength="6" autocomplete="new-password" placeholder="Repeat new password" /></label>
+        <button type="submit" class="btn accent auth-submit">Save new password</button>
+      </form>
+      <form id="auth-form-register" class="auth-form hidden">
+        <label>Name<input type="text" id="register-name" required autocomplete="name" placeholder="Your name" /></label>
+        <label>Email<input type="email" id="register-email" required autocomplete="email" placeholder="you@company.com" /></label>
+        <label>Password<input type="password" id="register-password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" /></label>
+        <button type="submit" class="btn accent auth-submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <a class="docs-credibility-corner" href="/credibility.html">Credibility</a>
+
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/getting-started.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

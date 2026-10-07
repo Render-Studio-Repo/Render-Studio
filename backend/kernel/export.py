@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import numpy as np
 import trimesh
@@ -22,6 +22,7 @@ from build123d import Compound, export_step, export_stl
 
 from backend.kernel.builder import BuildResult
 from backend.services.cad_service import _parse_color, export_scene_3mf  # reuse color parsing / 3MF writer
+from backend.services.live_preview import preview_payload, should_publish_part_preview
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def export_stl_file(result: BuildResult, path: Path) -> Path:
     return path
 
 
-def export_glb_file(result: BuildResult, path: Path, progress: Callable[[dict[str, Any]], None] | None = None) -> Path:
+def export_glb_file(result: BuildResult, path: Path, progress: Optional[Callable[[dict[str, Any]], None]] = None) -> Path:
     """Build a glTF scene with one named node per part."""
     scene = trimesh.Scene()
     colors = {p.id: p.color for p in result.program.parts}
@@ -121,13 +122,40 @@ def export_glb_file(result: BuildResult, path: Path, progress: Callable[[dict[st
             )
         mesh = body_to_trimesh(body, colors.get(part_id))
         scene.add_geometry(mesh, geom_name=part_id, node_name=part_id)
+        if progress and should_publish_part_preview(idx + 1, total) and scene.geometry:
+            tmp = path.with_name(path.name + ".tmp")
+            try:
+                scene.export(str(tmp), file_type="glb")
+                tmp.replace(path)
+            except Exception:
+                try:
+                    if tmp.is_file():
+                        tmp.unlink()
+                except OSError:
+                    pass
+                try:
+                    scene.export(str(path), file_type="glb")
+                except Exception:
+                    pass
+            extra = preview_payload(path, part_index=idx + 1, part_count=total, append=False) or {}
+            if extra:
+                progress(
+                    {
+                        "stage": "export_glb",
+                        "part": part_id,
+                        "index": idx + 1,
+                        "total": total,
+                        "label": f"Drawing {part_id.replace('_', ' ')} in viewport ({idx + 1}/{total})…",
+                        **extra,
+                    }
+                )
     if not scene.geometry:
         raise ValueError("no geometry to export to GLB")
     scene.export(str(path), file_type="glb")
     return path
 
 
-def export_3mf_file(result: BuildResult, path: Path, progress: Callable[[dict[str, Any]], None] | None = None) -> Path:
+def export_3mf_file(result: BuildResult, path: Path, progress: Optional[Callable[[dict[str, Any]], None]] = None) -> Path:
     """Export a multi-object 3MF print bundle (one object per part)."""
     scene = trimesh.Scene()
     colors = {p.id: p.color for p in result.program.parts}
@@ -158,12 +186,12 @@ def export_all(
     result: BuildResult,
     out_dir: Path,
     basename: str,
-    progress: Callable[[dict[str, Any]], None] | None = None,
+    progress: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> dict[str, Path]:
-    """Write STEP + STL + GLB for a build result.
+    """Write STEP + GLB for a build result. STL is a user download, not live-draw.
 
     Returns a mapping of format -> path. GLB is always produced (viewer needs
-    it); STEP/STL failures are logged but do not abort the GLB export.
+    it); STEP failures are logged but do not abort the GLB export.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs: dict[str, Path] = {}
@@ -179,13 +207,6 @@ def export_all(
         outputs["step"] = export_step_file(result, out_dir / f"{basename}.step")
     except Exception as exc:  # pragma: no cover - format edge cases
         logger.warning("STEP export failed for %s: %s", basename, exc)
-
-    try:
-        if progress:
-            progress({"stage": "export_stl", "label": "Exporting STL mesh…"})
-        outputs["stl"] = export_stl_file(result, out_dir / f"{basename}.stl")
-    except Exception as exc:  # pragma: no cover
-        logger.warning("STL export failed for %s: %s", basename, exc)
 
     try:
         if progress:

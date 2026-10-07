@@ -10,7 +10,8 @@ Identify from the full image (all panels, not just the hero render):
 - Primary mechanical or electromechanical function
 - Assembly type (single part, multi-part assembly, kinematic mechanism, appliance, fixture, etc.)
 - Manufacturing intent (sheet metal, machined, molded, welded, purchased COTS + custom frame, etc.)
-- Input modality (concept iso, orthographic blueprint, exploded view, infographic workflow sheet, hand sketch)
+- Input modality (concept iso, orthographic blueprint, exploded view, infographic workflow sheet, hand sketch, **canvas layout sketch**, **mate-target photo**)
+- When multiple images are attached: classify each as layout sketch vs mate-target photo vs product-to-reproduce. A canvas sketch explains hanging-off / beside / offset relative to other photos. Do not flatten that into “new part sitting on the mate-target object.”
 
 **Output shape:**
 
@@ -99,6 +100,7 @@ Determine assembly hierarchy and mates:
 - Parent/child tree (what mounts to what)
 - Mate types: fixed, revolute, sliding, concentric, coincident, tangent
 - Functional constraints (shaft centered in bowl, bridge spans columns, motor drives shaft)
+- Offset / hang-off / beside / cantilever when a canvas sketch or prompt shows the new part next to a mate target rather than stacked on it (e.g. motor body beside a 2060 rail, shaft horizontal and clear of the extrusion)
 
 **Output shape:**
 

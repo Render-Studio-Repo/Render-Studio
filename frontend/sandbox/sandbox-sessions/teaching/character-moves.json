@@ -1,0 +1,39 @@
+{
+  "kind": "character_moves_book",
+  "token": "charmove1",
+  "workshop": "any workshop",
+  "at": "2026-09-17T17:16:40.056Z",
+  "basics": [
+    "idle",
+    "approach_desk",
+    "circle_table",
+    "speak_pose",
+    "return_home"
+  ],
+  "taught": [
+    {
+      "ok": true,
+      "token": "charmove1",
+      "kind": "taught_basic",
+      "teach_id": "tb_02141a1338f8",
+      "move": "idle",
+      "trainee": "astra",
+      "note": "Sam demonstrated idle in any workshop",
+      "at": "2026-09-17T17:16:38.931Z"
+    },
+    {
+      "ok": true,
+      "token": "charmove1",
+      "kind": "taught_basic",
+      "teach_id": "tb_89877e62c8bb",
+      "move": "idle",
+      "trainee": "astra",
+      "note": "Sam demonstrated idle in any workshop",
+      "at": "2026-09-17T17:16:39.680Z"
+    }
+  ],
+  "self_learned": [],
+  "self_learn_after": 3,
+  "ready": false,
+  "path": "sandbox-sessions/teaching/character-moves.json"
+}

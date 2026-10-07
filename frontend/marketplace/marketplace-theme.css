@@ -1,0 +1,275 @@
+/* Marketplace chrome follows Studio :root in styles.css.
+   Code bots: do NOT pull colors from Supabase / marketplace_settings.json.
+   That DB is catalog, payments, and install mode only. */
+
+body.mkt2,
+body.info-page.mkt2 {
+  /* These must be concrete values. marketplace-shopping.css aliases the
+     Studio variables back to --shop-*, so var(--bg) here creates a cycle and
+     Chrome falls back to stark black/white. */
+  --shop-bg: #0d1117;
+  --shop-surface: #161b22;
+  --shop-ink: #e6edf3;
+  --shop-muted: #8b949e;
+  --shop-accent: #58a6ff;
+  --shop-border: #30363d;
+  --bg: #0d1117;
+  --panel: #161b22;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --border: #30363d;
+  --mkt-bg: #0d1117;
+  --mkt-panel: #161b22;
+  --mkt-panel-2: #21262d;
+  --mkt-line: #30363d;
+  --mkt-text: #e6edf3;
+  --mkt-muted: #8b949e;
+  --mkt-accent: #58a6ff;
+  --mkt-green: #3fb950;
+  --mkt-gold: #d29922;
+  --mkt-orange: #f78166;
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+html:has(body.mkt2),
+body.info-page.mkt2,
+body.mkt2 #app.app-info {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body.mkt2 input,
+body.mkt2 select,
+body.mkt2 textarea {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--border);
+}
+
+body.mkt2 .btn.secondary {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+body.mkt2 .btn.accent {
+  background: var(--accent);
+  color: #0d1117;
+  border-color: var(--accent);
+}
+
+body.mkt2 .mkt2-store-search input {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+body.mkt2 .mkt2-wordmark {
+  color: var(--text);
+}
+
+.shop-departments button {
+  color: var(--muted);
+}
+
+.shop-departments button:hover,
+.shop-departments button.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.shop-hero {
+  background: linear-gradient(135deg, var(--panel) 0%, color-mix(in srgb, var(--accent) 18%, var(--bg)) 100%);
+}
+
+.shop-eyebrow,
+.shop-hero-tags,
+.shop-hero-copy > p {
+  color: var(--muted);
+}
+
+.shop-hero h1 {
+  color: var(--text);
+}
+
+.shop-hero-art {
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 28%, var(--panel)), var(--bg));
+}
+
+.shop-hero-caption {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.shop-hero-glyph {
+  color: var(--accent);
+}
+
+.shop-card,
+.shop-empty,
+.shop-buybox,
+body.mkt2 .mkt2-page,
+.shop-custom-section {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.shop-card-image,
+.shop-no-image,
+.shop-gallery-main {
+  background: var(--bg);
+}
+
+.shop-kind {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  color: var(--text);
+}
+
+.shop-product-name,
+.shop-card-bottom strong,
+.shop-hero-caption strong,
+.shop-section-head h2 {
+  color: var(--text);
+}
+
+.shop-creator,
+.shop-card-copy p,
+.shop-tagline,
+.shop-product-description {
+  color: var(--muted) !important;
+}
+
+.shop-agent-callout,
+.shop-seller-banner,
+.shop-layout-promo,
+.shop-tone-mist,
+.shop-tone-accent {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.shop-agent-callout button,
+.shop-reset,
+body.mkt2 a {
+  color: var(--accent);
+}
+
+.shop-sponsored {
+  background: var(--accent);
+  color: #0d1117;
+}
+
+.shop-stars,
+.shop-rating b {
+  color: var(--warn);
+}
+
+.shop-edit-toolbar,
+.shop-tone-dark {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shop-code-sample {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Topbar + discovery: same studio rail, not gray-teal */
+header.toolbar.mkt-topbar {
+  background: var(--panel);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.mkt-topbar .toolbar-nav .nav-tab {
+  color: var(--muted);
+}
+
+.mkt-topbar .toolbar-nav .nav-tab.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.mkt-topbar-action {
+  color: var(--text);
+}
+
+.mkt-topbar-action:hover,
+.mkt-topbar-action:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+
+.mkt-topbar-agent {
+  background: var(--accent);
+  color: #0d1117;
+}
+
+.mkt-topbar-agent:hover {
+  background: color-mix(in srgb, var(--accent) 80%, #fff);
+}
+
+.mkt-topbar-profile summary {
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.mkt-topbar-profile-menu {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.mkt-topbar-profile-menu p {
+  color: var(--muted);
+}
+
+.mkt-topbar-profile-menu a,
+.mkt-topbar-profile-menu button {
+  color: var(--text);
+}
+
+.mkt-topbar-profile-menu a:hover,
+.mkt-topbar-profile-menu button:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.mkt-community-dialog,
+.mkt-messages {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.mkt-community-dialog a,
+.mkt-discovery-eyebrow,
+.mkt-discovery-view,
+.mkt-messages a {
+  color: var(--accent);
+}
+
+.mkt-discovery-search button {
+  background: var(--accent);
+  color: #0d1117;
+}
+
+.marketplace-futuristic,
+.marketplace-hub-page,
+.marketplace-store-page {
+  --mkt-orange: var(--accent);
+  --mkt-orange-2: var(--accent);
+  --mkt-green: var(--accent2);
+  --mkt-blue: var(--accent);
+  --mkt-bg: var(--bg);
+  --mkt-panel: var(--panel);
+  --mkt-text: var(--text);
+  --mkt-muted: var(--muted);
+}

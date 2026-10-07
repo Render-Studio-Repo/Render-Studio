@@ -1,0 +1,45 @@
+{
+  "id": "viewport-replica-kill-20260917",
+  "at": "2026-09-17T11:34:00-05:00",
+  "action": "kill_sandbox_mujoco_primary_port_real_studio_viewport",
+  "sam": "fuck it — kill instance; replica real viewport + files into sandbox; keep logs; never bots overwrite me",
+  "killed_as_primary": {
+    "mujoco_iframe": "/sandbox/openarm-mujoco/index.html?embed=1",
+    "teleop_panel_token_was": "mujoco1",
+    "nw_tab_was": "OpenArm MuJoCo"
+  },
+  "kept_logs": [
+    "frontend/sandbox/openarm-mujoco/runs/",
+    "frontend/sandbox/openarm-mujoco/episodes/",
+    "frontend/sandbox/openarm-teleop/runs/",
+    "frontend/sandbox/sandbox-sessions/",
+    "frontend/sandbox/live-feed.js"
+  ],
+  "ported": {
+    "studio_iframe": "/?sandboxViewport=1&robot=1&v=sbvp1",
+    "modules": [
+      "frontend/sandbox/studio-viewport-replica.js",
+      "frontend/sandbox/teleop-panel.js",
+      "frontend/sandbox/openarm-viser-pane.js"
+    ],
+    "studio_embed": [
+      "frontend/index.html html.sandbox-viewport-embed",
+      "frontend/studio/app.js bootSandboxViewportEmbed"
+    ]
+  },
+  "legacy_links": [
+    "/sandbox/openarm-mujoco/index.html",
+    "/sandbox/openarm-teleop/"
+  ],
+  "bot_lock": {
+    "profile": "sam-y-engage-v2",
+    "rule": ".cursor/rules/sam-control-profile-lock.mdc",
+    "files": [
+      "frontend/xr/xr-dimos-controls.js",
+      "frontend/xr/robotics-default-profile.json",
+      "frontend/xr/robotics-profile.js",
+      "frontend/xr/xr-pi-ui-input.js"
+    ]
+  },
+  "rollback": "Restore teleop-panel.js + openarm-viser-pane.js from git before this change; MuJoCo labs untouched on disk."
+}

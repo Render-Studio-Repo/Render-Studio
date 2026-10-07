@@ -1,0 +1,33 @@
+{
+  "checkpoint": "enactic/act-openarm-2-cell-pick_up_cube_mujoco",
+  "checkpoint_revision": "main",
+  "scene": "/Users/sam/Render-Studio/frontend/sandbox/openarm-mujoco/v2/cell/demo.xml",
+  "device": "mps",
+  "success": true,
+  "reason": "cube_lifted_and_held",
+  "steps": 67,
+  "sim_seconds": 2.7109999999998124,
+  "wall_seconds": 5.363947542005917,
+  "initial_cube_z": 1.024993168965999,
+  "peak_cube_z": 1.203084363129431,
+  "success_threshold_z": 1.084993168965999,
+  "max_abs_joint_change": 0.926728490060867,
+  "min_left_tool_distance_m": 0.21756112446455944,
+  "min_right_tool_distance_m": 0.09981928994898467,
+  "max_cube_contacts": 5,
+  "closest_tool_side": "right",
+  "closest_tool_distance_m": 0.09981928994898467,
+  "closest_tool_vertical_offset_m": 0.052817860677677464,
+  "closest_cube_xyz_m": [
+    0.44999999959240067,
+    5.651536319818361e-09,
+    1.024993168965999
+  ],
+  "closest_tool_xyz_m": [
+    0.44125740027646837,
+    -0.08424802813296209,
+    1.0778110296436765
+  ],
+  "right_tool_z_correction_m": 0.0,
+  "settle_seconds": 0.5
+}

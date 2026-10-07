@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {shopCard,productImages,mediaUrl,renderShoppingBrowse,renderProductShopping} from './shopping-view.js';
+test('product cards use separate safe links and escaped seller content',()=>{const html=shopCard({id:'1',kind:'model',name:'<script>bad</script>',owner:{handle:'maker',name:'Maker'}});assert.ok(!html.includes('<script>'));assert.equal((html.match(/<a /g)||[]).length,3);assert.ok(html.includes('/u/maker'));});
+test('gallery filters active URLs and deduplicates preview images',()=>{assert.equal(mediaUrl('javascript:alert(1)'), '');assert.deepEqual(productImages({thumbnail_url:'/a.png',gallery:[{url:'/a.png'},{url:'https://example.test/b.png'},{url:'javascript:x'}]}),['/a.png','https://example.test/b.png']);});
+test('marketplace filtering isolates local and connected catalogs',()=>{const html=renderShoppingBrowse({filters:{source:'hub',category:'all',access:'all'},config:{},listings:[{id:'a',name:'Local'},{id:'b',name:'Remote',from_hub:true}]},i=>`RESULT:${i.name}`);assert.ok(html.includes('RESULT:Remote'));assert.ok(!html.includes('RESULT:Local'));});
+test('view-only products never show get or checkout when delivery denied',()=>{const html=renderProductShopping({id:'a',name:'Preview',kind:'model',access_mode:'view_only'}, {owned:true,config:{},presentation:{can_download:false,files:[],page:{}}});assert.ok(!html.includes('data-delivery>'));assert.ok(!html.includes('data-buy>'));});
+test('metadata-only catalog entries explain missing downloads',()=>{const html=renderProductShopping({id:'a',name:'Example',kind:'model',access_mode:'free'}, {owned:false,config:{},presentation:{can_download:true,has_downloads:false,files:[{name:'demo.glb',download_available:false}],page:{}}});assert.ok(html.includes('has not attached downloadable files'));assert.ok(!html.includes('data-delivery>'));assert.ok(!html.includes('data-buy>'));});
+test('free downloadable listings name their creator and download action',()=>{const item={id:'a',name:'Real part',kind:'model',access_mode:'free',owner:{name:'Sam W',handle:'SamW'},files:[{name:'part.glb',download_available:true}]};assert.match(shopCard(item),/By Sam W/);assert.match(shopCard(item),/Free download/);const html=renderProductShopping(item,{owned:false,config:{},presentation:{can_download:true,has_downloads:true,files:item.files,page:{}}});assert.match(html,/Free download/);});
+test('public profile reuses marketplace cards and replaces failed model images with a descriptive preview state',()=>{const src=readFileSync(new URL('./public-profile-showcase.js',import.meta.url),'utf8');assert.match(src,/shopCard\(product/);assert.match(src,/3D preview unavailable/);assert.match(src,/img\.replaceWith\(fallback\)/);});
+test('shippable product uses existing shipping fulfillment',()=>{const html=renderProductShopping({id:'a',name:'Part',kind:'model',fulfillment:'shippable',access_mode:'paid',price_cents:1000},{owned:false,config:{},presentation:{can_download:false,has_downloads:false,page:{}}});assert.ok(html.includes('Physical product'));assert.ok(html.includes('data-buy>'));assert.ok(html.includes('Shipping'));});
+test('viewport layouts install without a project picker',()=>{
+  const listing={id:'layout-1',name:'Viewport + Wiring',kind:'model',category:'viewport-layouts',access_mode:'free',tagline:'Wiring beside 3D',files:[{product_type:'viewport_layout'}]};
+  const browse=renderShoppingBrowse({filters:{category:'viewport-layouts',access:'all'},config:{},listings:[listing,{id:'house',name:'House',category:'architecture'}]},i=>`CARD:${i.name}`);
+  assert.ok(browse.includes('CARD:Viewport + Wiring'));
+  assert.ok(!browse.includes('CARD:House'));
+  assert.ok(browse.includes('FREE VIEWPORT LAYOUTS'));
+  const page=renderProductShopping(listing,{owned:false,config:{},presentation:{can_download:true,files:[{name:'viewport-layout.json'}],page:{}}});
+  assert.ok(page.includes('data-install-layout'));
+  assert.ok(page.includes('Install layout'));
+  assert.ok(!page.includes('Choose a project'));
+});

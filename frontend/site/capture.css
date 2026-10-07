@@ -1,0 +1,157 @@
+:root {
+  color-scheme: dark;
+  --bg: #070b12;
+  --panel: #121821;
+  --text: #eef3f8;
+  --muted: #9aa7b5;
+  --accent: #3d8bfd;
+  --accent-2: #1f6feb;
+  --danger: #f85149;
+  --border: rgba(148, 163, 184, 0.28);
+  font-family: "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(61, 139, 253, 0.22), transparent 55%),
+    var(--bg);
+  color: var(--text);
+}
+
+.cap {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px calc(28px + env(safe-area-inset-bottom));
+}
+
+.cap-head { margin-bottom: 16px; }
+.cap-eyebrow {
+  margin: 0 0 4px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: #79b8ff;
+}
+.cap-head h1 {
+  margin: 0 0 6px;
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+}
+.cap-sub {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.4;
+  font-size: 0.92rem;
+}
+
+.cap-stage {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #000;
+  aspect-ratio: 3 / 4;
+  margin-bottom: 14px;
+}
+
+.cap-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  display: block;
+}
+
+.cap-status {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.82rem;
+  backdrop-filter: blur(8px);
+}
+
+.cap-label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.cap-label input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.cap-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.cap-btn {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  min-height: 48px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.cap-btn.accent {
+  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+  color: #fff;
+}
+
+.cap-btn.danger {
+  background: rgba(248, 81, 73, 0.18);
+  border-color: rgba(248, 81, 73, 0.45);
+  color: #ffb4af;
+}
+
+.cap-btn.hidden { display: none; }
+
+.cap-alt {
+  margin-bottom: 16px;
+}
+
+.cap-upload span {
+  display: block;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.cap-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.muted { color: var(--muted); }

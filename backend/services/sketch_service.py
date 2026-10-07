@@ -7,8 +7,9 @@ import math
 from typing import Any
 
 from backend.services.ai_service import AIService
+from backend.services.prompt_language import with_multilingual_prompt_rule
 
-SKETCH_SYSTEM_PROMPT = """You are Render Studio's 2D sketch engine (Fusion 360 style).
+SKETCH_SYSTEM_PROMPT = with_multilingual_prompt_rule("""You are Render Studio's 2D sketch engine (Fusion 360 style).
 
 Given a user brief (and optional reference photo), produce sketch entities on a work plane
 that form a closed profile suitable for extrusion.
@@ -44,7 +45,7 @@ Entity types: line, rect, circle, arc, point, spline.
 - Dimension on lines sets length in mm; on circles sets radius in mm.
 - If editing an existing sketch, preserve entity ids when possible.
 - Keep sketches practical for CAD — typical sizes 5–200 mm unless specified.
-"""
+""")
 
 
 def _normalize_point(raw: Any) -> dict[str, float]:

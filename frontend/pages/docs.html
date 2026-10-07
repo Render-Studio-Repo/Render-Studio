@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docs — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-catgrid1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/getting-started-hero.css?v=20260914-docslayout1-lanip1-catgrid1-docui1-docui2" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/docs-marketplace-ui.css?v=20260715-mkt-payments" />
+</head>
+<body class="info-page docs-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab active" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main docs-main">
+      <article class="info-content docs-content">
+        <header class="info-hero docs-hero" data-cms-root="docs-hero">
+          <div class="gs-hero-banner gs-hero-banner--plain">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker" data-cms-kicker>Documentation</p>
+              <h2 class="gs-hero-title gs-hero-title--chrome">
+                <span class="visually-hidden" data-cms-title>Render Studio CAD Visualizer</span>
+                <img class="docs-chrome-wordmark" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="" width="979" height="148" decoding="async" aria-hidden="true" />
+              </h2>
+              <p class="gs-hero-lead" data-cms-lead>
+                Complete product documentation for Studio — AI CAD, modeling, sketch, rigging/URDF,
+                wiring, cloud sync, collaboration, and more — with how-tos and demo GIFs.
+                New here? Start with <a href="/getting-started.html">Getting Started</a>.
+              </p>
+              <div class="docs-hero-actions gs-hero-actions">
+                <a class="btn secondary" href="/updates.html">Recent Updates</a>
+              </div>
+            </div>
+            <div class="docs-hero-photo hidden" id="docs-hero-photo" hidden>
+              <img alt="" />
+            </div>
+            <img class="docs-hero-gear" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="168" height="168" decoding="async" aria-hidden="true" />
+            <a class="docs-hero-github" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+              <span class="docs-hero-github-copy">
+                <strong>Interested in contributing?</strong>
+                <small>Developers welcome on GitHub</small>
+              </span>
+            </a>
+          </div>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab docs-category-tab--started" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab active" href="#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+            <a class="docs-category-tab" href="/database.html">Database configuration</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="/getting-started.html#tips-library-20260915-xrdispatch4">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="/getting-started.html#ai-context">START HERE</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+            <a class="docs-category-tab" href="/privacy.html">Privacy</a>
+          </nav>
+          <section class="docs-topic-search" aria-label="Search documentation topics">
+            <div>
+              <p class="docs-topic-search-kicker">Find a workflow</p>
+              <label>
+                <span class="visually-hidden">Search all documentation topics</span>
+                <input id="docs-topic-search" type="search" placeholder="Ask for Bambu, URDF, delete object, Fusion export, wiring..." autocomplete="off" />
+              </label>
+            </div>
+            <p id="docs-topic-search-status" class="docs-topic-search-status muted small">Type what you are trying to do and similar docs will surface below.</p>
+          </section>
+        </header>
+
+        <section class="info-section docs-callout" id="getting-started-callout">
+          <h3>New here?</h3>
+          <p>
+            The <a href="/getting-started.html">Getting Started</a> page lists major features with
+            quick looping demos, step-by-step detail, and a button to ask the Render Agent about each one.
+            See <a href="/updates.html">Recent Updates</a> for milestone features and tools as they ship.
+          </p>
+        </section>
+
+        <section class="info-section docs-complete-section" id="complete-docs">
+          <header class="docs-complete-header">
+            <div class="docs-complete-brand">
+              <img class="docs-chrome-wordmark docs-chrome-wordmark--compact" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="Render Studio" width="979" height="148" decoding="async" />
+              <a class="docs-hero-github docs-hero-github--inline" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+                <span class="docs-hero-github-copy">
+                  <strong>Interested in contributing?</strong>
+                  <small>Developers welcome on GitHub</small>
+                </span>
+              </a>
+            </div>
+            <p class="info-eyebrow">Feature catalog</p>
+            <h3>Full Documentation</h3>
+            <p class="muted docs-complete-lead">
+              Choose a category to open how-tos, where to click, and demo GIFs.
+            </p>
+          </header>
+          <div id="docs-catalog" class="docs-catalog"></div>
+        </section>
+
+        <div class="docs-reference-band">
+          <header class="docs-reference-header">
+            <p class="info-eyebrow">Reference</p>
+            <h3>Workflows, prompts, API &amp; setup</h3>
+          </header>
+
+          <section class="info-section">
+            <h3>What changed today</h3>
+            <p>
+              Render Studio now has a more complete electronics-to-CAD workflow: source parts, wire them,
+              generate real mounting fixtures, draw routes between objects, and inspect AI cost usage
+              by project, person, prompt, tokens, or calls.
+            </p>
+            <div class="info-feature-grid">
+              <article class="info-feature-card">
+                <strong>Component-aware CAD</strong>
+                <span>Imported STEP/GLB parts can be profiled, measured, referenced, mounted, and automatically placed into generated fixtures.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Draw mode upgrades</strong>
+                <span>Selected-face hole patterns, blind depths, and line-tool ducts/wire loops now run as local geometry edits.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Wiring simulator intelligence</strong>
+                <span>Components can be dragged into the simulator, drivers are validated for motors, and code/simulation flows are documented.</span>
+              </article>
+              <article class="info-feature-card">
+                <strong>Workspace quality of life</strong>
+                <span>Stop generation, hide objects from the context menu, keep prompt drafts per project, and use expanded AI cost analytics.</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="info-section">
+            <h3>Visual workflows</h3>
+          <div class="info-visual-grid">
+            <div class="info-visual-card">
+              <h4>Line tool to route geometry</h4>
+              <pre class="info-code"><code>Line tool
+  click object A
+      ↓
+  click bend / midpoint(s)
+      ↓
+  click object B
+      ↓
+  Enter / double-click → @path-1
+      ↓
+Draw prompt: "create wire loops along this path"</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>Component fixture prompt</h4>
+              <pre class="info-code"><code>@component:arduino_nano_r4
+@component:adafruit_858_stepper_motor_5vdc
+      ↓
+component_specs + measured bounds
+      ↓
+deterministic fixture generator
+      ↓
+mount plate + board pocket + motor posts
+      ↓
+component meshes moved into the mounts</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>AI cost analytics</h4>
+              <pre class="info-code"><code>Range filter: 7d / 30d / 90d / year
+View filter: mine / shared / individual
+Metric: cost / tokens / prompts / calls
+Chart: bars / line / area / user / project / prompts
+Prompt chart: "compare project token usage last 90 days"</code></pre>
+            </div>
+            <div class="info-visual-card">
+              <h4>Wiring validation</h4>
+              <pre class="info-code"><code>Stepper motor requested
+      ↓
+validator checks coils + current path
+      ↓
+Arduino pins must feed driver inputs
+      ↓
+ULN2003 / driver outputs feed motor coils
+      ↓
+simulation animates actuator when valid</code></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Prompt examples — using skills</h3>
+          <p>
+            Enable skills on the <a href="/skills.html">Skills Library</a> page, then reference them in Studio prompts.
+            Active skills appear as <code>@skill:cad</code> chips; you can also name the skill in plain language.
+            <strong>Blueprint Vision</strong> turns on automatically when you attach an image to a prompt.
+          </p>
+
+          <h4 class="prompt-example-title">CAD — parametric block with holes</h4>
+          <pre class="info-code"><code>Use the CAD skill to generate a parametric STEP model.
+
+Create a 100mm x 60mm x 20mm rectangular block with four 8mm vertical through-holes. Add a 2mm chamfer only on the top outer perimeter.
+
+Output:
+- STEP file
+- STL file
+- Preview in CAD Viewer</code></pre>
+
+          <h4 class="prompt-example-title">Blueprint Vision — schematic to CAD model</h4>
+          <p>Attach a schematic, blueprint, or concept drawing image to the prompt. <strong>Blueprint Vision</strong> enables automatically; also enable <strong>CAD</strong> to generate geometry.</p>
+          <pre class="info-code"><code>Use the Blueprint Vision skill to analyze this schematic, then model it with the CAD skill.
+
+Extract all dimensions and labels from the image text. Produce the full 7-stage analysis
+(understanding, dimensions, components, relationships, reconstruction plan, model tree),
+then generate a parametric STEP assembly.
+
+Example target: countertop automated cooking appliance, 420×360×520 mm envelope,
+bowl, support columns, bridge, motor, mixing shaft, hopper, spice dispensers, control panel.
+
+Output:
+- Structured analysis summary
+- STEP assembly
+- STL meshes
+- Preview in CAD Viewer</code></pre>
+
+          <h4 class="prompt-example-title">Mesh Checkup — repair and smooth a selected region</h4>
+          <p>
+            Use the <strong>◈ Checkup</strong> tool in the Direct modeling panel (Tools tab). Pick a face (<kbd>F</kbd>) or lasso a region (<kbd>L</kbd>) first to scope smoothing; repair runs on the whole mesh.
+          </p>
+          <pre class="info-code"><code>1. Upload or load an STL/GLB mesh with rough or noisy geometry.
+2. Press F and click a bumpy face, or press L and lasso the area to smooth.
+3. Open Tools → ◈ Checkup.
+4. Click Check — review topology report (non-manifold edges, open boundaries, degenerate triangles).
+5. Enable Repair topology + Smooth selection.
+   Method: Taubin (shape-preserving) · Iterations: 8
+6. Click Apply cleanup.
+
+Optional AI prompt (after cleanup) for further edits on the same region:
+At @face-1 fillet the outer edge 2mm and keep the smoothed surface unchanged.</code></pre>
+
+          <h4 class="prompt-example-title">Wiring Simulator — breadboard schematic from prompt or photo</h4>
+          <p>
+            Switch workspace to <strong>⎍ Wiring Simulator</strong>. Drag components, drag wires pin-to-pin on the grid,
+            or describe the circuit in the left <strong>Wiring AI</strong> panel. Attach a breadboard photo to match an existing build.
+            Click <strong>Example</strong> to load a filled blink-LED circuit with color-coded wires.
+          </p>
+          <pre class="info-code"><code>Arduino Uno blink LED on pin 13:
+- Half breadboard centered on canvas
+- 220Ω resistor between D13 row and LED anode
+- LED cathode to GND rail
+- 5V and GND from Arduino to breadboard power rails
+Use red for 5V, gray for GND, blue for D13 signal.
+
+Then prompt edits:
+Move the LED one column right and add a second red LED on pin 12 with its own 220Ω resistor.</code></pre>
+
+          <h4 class="prompt-example-title">Component-aware fixture — real parts, real mounts</h4>
+          <p>
+            Drag components from the project browser into the prompt or copy their <code>@component</code>
+            reference. Render Studio measures the current mesh, uses known part profiles when available,
+            and can place the component models into deterministic mounting geometry.
+          </p>
+          <pre class="info-code"><code>@component:adafruit_858_stepper_motor_5vdc
+@component:arduino_nano_r4
+
+Generate a flat open breadboard-style test fixture.
+Mount the Arduino Nano in a pocket with corner holes and USB clearance.
+Hold the stepper motor by its bracket ears with two posts and a body clearance opening.
+Move the referenced STEP/GLB components into the generated mounts.</code></pre>
+
+          <h4 class="prompt-example-title">Draw mode — selected-face hole pattern</h4>
+          <p>
+            Switch prompt mode to <strong>Draw</strong>, press <kbd>F</kbd>, pick a face, then describe
+            the local edit. Draw mode now separates hole count, diameter, pattern, and blind depth.
+          </p>
+          <pre class="info-code"><code>put 5 holes in a circle evenly apart 4 mm 3mm deep
+
+Result:
+- 5 blind holes
+- 4 mm diameter
+- 3 mm deep
+- evenly spaced around the selected face center</code></pre>
+
+          <h4 class="prompt-example-title">Draw mode — ducts and wire loops from the Line tool</h4>
+          <p>
+            Press <kbd>N</kbd> or click <strong>Line</strong>, click path points between objects, then
+            double-click or press Enter to finish. The path becomes an <code>@path-N</code> reference
+            that Draw mode can turn into route geometry.
+          </p>
+          <pre class="info-code"><code>create a 6mm wire duct along this path
+
+make 2mm wire loops 10mm high along this path
+
+add wire clips between these two objects using @path-1</code></pre>
+        </section>
+
+
+        <section class="info-section">
+          <h3>Draw mode local edits</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Reference</th><th>Prompt</th><th>Result</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Selected face</td><td><code>put a 4 mm hole in the middle of this face</code></td><td>Through-hole at selected face center</td></tr>
+                <tr><td>Selected face</td><td><code>put 5 holes in a circle evenly apart 4 mm 3mm deep</code></td><td>Blind circular hole pattern</td></tr>
+                <tr><td>Line path</td><td><code>create a wire duct along this path</code></td><td>Raised duct/conduit along <code>@path-N</code></td></tr>
+                <tr><td>Line path</td><td><code>make wire loops along this path</code></td><td>Repeated hoop clips following <code>@path-N</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Component and wiring workflow</h3>
+          <ul class="info-list">
+            <li><strong>Drag to prompt</strong> — drag a component from the workspace browser into the AI prompt to create a component reference chip.</li>
+            <li><strong>Drag to Wiring Simulator</strong> — drop a component into the wiring viewport to create a recognized wiring part with pins.</li>
+            <li><strong>Profile / source</strong> — right-click a component and choose Profile / source to identify an imported STEP/GLB part, collect specs, and seed datasheets or pinout data.</li>
+            <li><strong>Driver picker</strong> — if a motor needs a driver, the simulator can prompt for a compatible driver board and import/source the supporting STEP file.</li>
+            <li><strong>Validation</strong> — stepper coil inputs, Arduino control pins, power rails, and driver outputs are checked before simulation.</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>AI cost analytics</h3>
+          <p>
+            Open the account/profile menu and choose <strong>View analytics</strong>. The popup is wide
+            enough for chart comparison and includes quick buttons plus a prompt-style chart builder.
+          </p>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Control</th><th>Options</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Range</td><td>Last 7, 14, 30, 60, 90, 180, or 365 days</td></tr>
+                <tr><td>View</td><td>Mine + shared, mine only, shared only, or a specific shared-key user</td></tr>
+                <tr><td>Metric</td><td>Cost, tokens, prompt count, AI calls</td></tr>
+                <tr><td>Chart</td><td>Stacked bars, line, area, by person, by project, recent prompts</td></tr>
+                <tr><td>Prompt chart</td><td><code>compare project token usage last 90 days</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3 id="quick-start">Quick start</h3>
+          <pre class="info-code"><code>cd Render Studio
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and set OPENAI_API_KEY
+python run.py
+# Then open http://127.0.0.1:8001/database.html (or /setup.html) to connect YOUR Supabase
+# (or Store it locally — sqlite users). SQL: integrations/supabase/install_users.sql</code></pre>
+          <p>Open <strong>http://127.0.0.1:8001</strong> (default port; set <code>PORT</code> in <code>.env</code> if needed).</p>
+        </section>
+
+        <section class="info-section">
+          <h3>Viewer controls</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Input</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>LMB</kbd></td><td>Orbit</td></tr>
+                <tr><td><kbd>RMB</kbd></td><td>Pan</td></tr>
+                <tr><td><kbd>Scroll</kbd></td><td>Zoom</td></tr>
+                <tr><td><kbd>C</kbd> / <kbd>F</kbd> / <kbd>E</kbd></td><td>Pick corner / face / edge</td></tr>
+                <tr><td><kbd>L</kbd></td><td>Lasso a surface region for scoped cleanup or references</td></tr>
+                <tr><td><kbd>N</kbd></td><td>Line / path tool for ducts, wire loops, and route references</td></tr>
+                <tr><td><kbd>G</kbd> / <kbd>M</kbd></td><td>Toggle gizmo (Transform)</td></tr>
+                <tr><td><kbd>T</kbd></td><td>Transparent / ghost view</td></tr>
+                <tr><td><kbd>W</kbd></td><td>Toggle wireframe</td></tr>
+                <tr><td>Right-click component</td><td>Open, attach to wiring, profile/source, hide/show, export, rename, delete</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Return to orbit mode</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Configuration</h3>
+          <div class="info-table-wrap">
+            <table class="info-table">
+              <thead>
+                <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>OPENAI_API_KEY</code></td><td>—</td><td>Required for AI prompts</td></tr>
+                <tr><td><code>OPENAI_MODEL</code></td><td><code>gpt-5.5</code></td><td>Fast OpenAI model id</td></tr>
+                <tr><td><code>OPENAI_MODEL_QUALITY</code></td><td><code>gpt-5.5-pro</code></td><td>Quality model for slower prompts</td></tr>
+                <tr><td><code>HOST</code></td><td><code>127.0.0.1</code></td><td>Bind address</td></tr>
+                <tr><td><code>PORT</code></td><td><code>8000</code></td><td>HTTP port</td></tr>
+                <tr><td><code>SUPABASE_URL</code></td><td>—</td><td>Your project URL (<code>https://YOUR_PROJECT_REF.supabase.co</code>)</td></tr>
+                <tr><td><code>SUPABASE_SERVICE_ROLE_KEY</code></td><td>—</td><td>Origin only. Never in the browser.</td></tr>
+                <tr><td><code>SUPABASE_PUBLISHABLE_KEY</code></td><td>—</td><td>Optional anon / publishable key</td></tr>
+                <tr><td><code>USERS_BACKEND</code></td><td>blank</td><td><code>local</code> = sqlite users; <code>supabase</code> or blank with URL = remote Users</td></tr>
+                <tr><td><code>DATABASE_URL</code></td><td>—</td><td>Optional DSN for your own Postgres tooling — not an auto user-table switch</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h3>Skills Library</h3>
+          <p>
+            Render Studio ships agent skills from
+            <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener">text-to-cad</a>
+            under <code>backend/skills/</code>. Enable skills on the
+            <a href="/skills.html">Skills Library</a> page; active skills appear as
+            <code>@skill:cad</code> chips in Studio and are sent with each prompt.
+          </p>
+          <ul class="info-list">
+            <li><code>GET /api/skills</code> — List installed skills (tools, references, provenance)</li>
+            <li><code>GET /api/skills/{id}</code> — Full SKILL.md content</li>
+            <li><code>GET /api/skills/{id}/tools</code> — Python CLI tools for a skill</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>API</h3>
+          <ul class="info-list api-list">
+            <li><code>GET /api/health</code> — Status and model</li>
+            <li><code>GET /api/projects</code> — List saved projects</li>
+            <li><code>POST /api/projects</code> — Create project</li>
+            <li><code>POST /api/projects/{id}/upload</code> — Upload CAD file</li>
+            <li><code>POST /api/projects/{id}/prompt</code> — AI generate geometry</li>
+            <li><code>POST /api/projects/{id}/generation/cancel</code> — Stop an in-flight generation</li>
+            <li><code>POST /api/projects/{id}/files/{name}/transform</code> — Apply transform</li>
+            <li><code>POST /api/projects/{id}/files/{name}/paint</code> — Paint an object or selected face</li>
+            <li><code>POST /api/projects/{id}/files/{name}/draw-hole</code> — Draw selected-face holes and hole patterns</li>
+            <li><code>POST /api/projects/{id}/files/{name}/draw-route</code> — Draw ducts or wire loops along a line-tool path</li>
+            <li><code>POST /api/projects/{id}/files/{name}/mesh-cleanup</code> — Topology checkup, repair, and selection smoothing</li>
+            <li><code>GET /api/projects/{id}/timeline</code> — Edit history timeline</li>
+            <li><code>GET /api/projects/{id}/prompt-history</code> — Past prompts</li>
+            <li><code>GET /api/user/ai-costs</code> — Cost, token, project, user, and prompt analytics</li>
+          </ul>
+        </section>
+
+        <section class="info-section">
+          <h3>Security</h3>
+          <p>Never commit <code>.env</code> or API keys. If a key was shared in chat or logs, rotate it in the OpenAI dashboard.</p>
+        </section>
+        </div>
+      </article>
+    </main>
+  </div>
+  <a class="docs-credibility-corner" href="/credibility.html">Credibility</a>
+<script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script>
+    (function () {
+      var RETURN_KEY = "render3d:lastStudioUrl:v1";
+      var SKIP_BOOT_KEY = "render3d:skipStudioBootOnce:v1";
+      var studioUrl = "/";
+      try {
+        studioUrl = sessionStorage.getItem(RETURN_KEY) || "/";
+      } catch (e) {}
+      document.querySelectorAll('a[href="/"]').forEach(function (link) {
+        link.setAttribute("href", studioUrl);
+        link.addEventListener("click", function () {
+          try { sessionStorage.setItem(SKIP_BOOT_KEY, "1"); } catch (e) {}
+        });
+      });
+    })();
+  </script>
+  <script type="module" src="/site/docs-catalog.js?v=20260916-gifs40"></script>
+  <script type="module" src="/site/docs-agent.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

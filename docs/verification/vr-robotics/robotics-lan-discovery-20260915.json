@@ -1,0 +1,50 @@
+{
+  "browser": "148.0.7778.96",
+  "lanPermission": "granted in isolated verification context",
+  "liveStatus": "Loaded current controls and UI. Save to use this profile.",
+  "liveUrl": "http://192.168.1.77:8450/robotics/config",
+  "liveApiCalls": [],
+  "teleopLink": {
+    "url": "https://192.168.1.77:8443/teleop",
+    "target": null
+  },
+  "iframeCount": 0,
+  "cloudInstallStatus": "ZIP installation needs a Render server on the Pi\u2019s LAN. From this cloud page, use Load from Pi or import the configuration JSON; the cloud server cannot download from your private IP.",
+  "blockedStatus": "Could not read the Pi configuration from this browser. Use the Pi's Wi-Fi and allow local-network access if prompted. If blocked, open the config page and import or paste its JSON below. A missing HTTPS config endpoint does not mean teleop is down. http://192.168.1.77:8450/robotics/config: Failed to fetch; https://192.168.1.77:8443/robotics/config: HTTP 404",
+  "pasteStatus": "JSON profile ready to save.",
+  "invalidStatus": "Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+  "pageErrors": [],
+  "piRequests": [
+    {
+      "method": "GET",
+      "url": "http://192.168.1.77:8450/robotics/config"
+    },
+    {
+      "method": "GET",
+      "url": "http://192.168.1.77:8450/robotics/config"
+    },
+    {
+      "method": "GET",
+      "url": "https://192.168.1.77:8443/robotics/config"
+    }
+  ],
+  "robotMotion": "Not exercised; no controller WebSocket opened.",
+  "date": "2026-09-15",
+  "node_tests": {
+    "passed": 20,
+    "failed": 0
+  },
+  "reachability": {
+    "http_config": 200,
+    "https_config": 404,
+    "https_teleop": 200,
+    "http_trust": 200,
+    "https_trust": 200
+  },
+  "headset_verified": false,
+  "notes": [
+    "HTTPS reachability probes used curl -k; Quest certificate trust still requires verification.",
+    "Browser module verification ran at the public origin in an isolated fixture, with real Pi discovery GETs; subsequent failure responses were mocked.",
+    "No controller WebSocket, robot command, preference save, or setup installation was performed."
+  ]
+}

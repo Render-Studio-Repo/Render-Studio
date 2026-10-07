@@ -1,0 +1,103 @@
+{
+  "ok": true,
+  "who": {
+    "sam": {
+      "role": "founder",
+      "nick": "Sam",
+      "avatar": "",
+      "talks_to": "everyone",
+      "agent": "sam"
+    },
+    "cursor-engineer": {
+      "role": "harness/RM",
+      "nick": "Cursor",
+      "avatar": "/docs/media/employees/avatar-cursor-engineer.png",
+      "talks_to": "ledger",
+      "agent": "cursor-engineer"
+    },
+    "project-manager": {
+      "role": "PM",
+      "nick": "Bender",
+      "avatar": "/docs/media/employees/avatar-project-manager.png",
+      "talks_to": "crew",
+      "agent": "project-manager"
+    },
+    "vibe-rnd": {
+      "role": "RnD",
+      "nick": "Rick",
+      "avatar": "/docs/media/employees/avatar-vibe-rnd.png",
+      "talks_to": "crew",
+      "agent": "vibe-rnd"
+    },
+    "vibe-marketing": {
+      "role": "marketing",
+      "nick": "Fry",
+      "avatar": "/docs/media/employees/avatar-vibe-marketing.png",
+      "talks_to": "crew",
+      "agent": "vibe-marketing"
+    },
+    "vibe-sales": {
+      "role": "sales",
+      "nick": "Closer",
+      "avatar": "/docs/media/employees/avatar-sales.png",
+      "talks_to": "crew",
+      "agent": "vibe-sales"
+    },
+    "clip-bot": {
+      "role": "clips",
+      "nick": "Leela",
+      "avatar": "/docs/media/employees/avatar-clip-bot.png",
+      "talks_to": "crew",
+      "agent": "clip-bot"
+    },
+    "analytics": {
+      "role": "analytics",
+      "nick": "Clerk",
+      "avatar": "/docs/media/employees/avatar-analytics.png",
+      "talks_to": "crew",
+      "agent": "analytics"
+    },
+    "instruction-auditor": {
+      "role": "auditor",
+      "nick": "Visor",
+      "avatar": "/docs/media/employees/avatar-auditor.png",
+      "talks_to": "crew",
+      "agent": "instruction-auditor"
+    },
+    "comms-bridge": {
+      "role": "comms",
+      "nick": "Headset",
+      "avatar": "/docs/media/employees/avatar-comms.png",
+      "talks_to": "crew",
+      "agent": "comms-bridge"
+    },
+    "ledger": {
+      "role": "relay+face-check",
+      "nick": "Ledger",
+      "avatar": "/docs/media/employees/avatar-auditor.png",
+      "talks_to": "mcp+crew",
+      "agent": "ledger"
+    },
+    "grok-bot": {
+      "role": "mcp host",
+      "nick": "GrokBot",
+      "avatar": "",
+      "talks_to": "mcp",
+      "agent": "grok-bot"
+    },
+    "algo-scout": {
+      "role": "scout",
+      "nick": "Scout",
+      "avatar": "",
+      "talks_to": "crew",
+      "agent": "algo-scout"
+    },
+    "discord": {
+      "role": "discord",
+      "nick": "Discord",
+      "avatar": "",
+      "talks_to": "crew",
+      "agent": "discord"
+    }
+  }
+}

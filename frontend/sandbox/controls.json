@@ -1,0 +1,49 @@
+{
+  "v": 1,
+  "token": "xrctrl2",
+  "rev": 9,
+  "simulate": false,
+  "listen": false,
+  "poll_ms": 800,
+  "apply_scene": false,
+  "wire_status": "idle",
+  "headset": "quest3",
+  "profiles": {
+    "quest3": {
+      "trigger": {
+        "btn": 0,
+        "kind": "button",
+        "source": "poll"
+      },
+      "squeeze": {
+        "btn": 1,
+        "kind": "button",
+        "source": "grip"
+      },
+      "menu": {
+        "btn": 4,
+        "kind": "button"
+      },
+      "laser": {
+        "btn": 5,
+        "kind": "button"
+      },
+      "stickClick": {
+        "btn": 3,
+        "kind": "button"
+      },
+      "restart": {
+        "btn": 7,
+        "kind": "left-menu"
+      }
+    }
+  },
+  "session": {
+    "selectstart": "ui-then-poll",
+    "grab": "squeeze-or-trigger",
+    "dimos": "ui-beats-overlay",
+    "windows": "near-head"
+  },
+  "how": "Poll this JSON while the XR session is up. Changing bindings updates selectstart/squeeze/UI in the current session when simulate or listen is on. Wire-to-scene stays queued until Sam Approves.",
+  "updated": "2026-09-17T15:33:05Z"
+}

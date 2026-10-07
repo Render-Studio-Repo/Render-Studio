@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT_DIR / ".env"
+DEFAULT_OPENAI_MODEL = "gpt-6-astra"
 
 
 def _absolute_under_root(value: str) -> str:
@@ -29,8 +30,8 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str = ""
-    openai_model: str = "gpt-5.5"
-    openai_model_quality: str = "gpt-5.5-pro"
+    openai_model: str = DEFAULT_OPENAI_MODEL
+    openai_model_quality: str = DEFAULT_OPENAI_MODEL
     openai_reasoning_effort: str = "low"
     # Comma-separated emails that use the shared server OPENAI_API_KEY
     openai_owner_emails: str = ""
@@ -44,8 +45,12 @@ class Settings(BaseSettings):
     xai_api_key: str = ""
     xai_model: str = "grok-4.5"
     xai_model_quality: str = "grok-4.5"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    qwen_api_key: str = ""
+    qwen_model: str = "qwen3-coder-plus"
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 8001
     projects_dir: str = "projects"
     data_dir: str = "data"
     jwt_secret: str = "change-me-in-production-render3d"
@@ -59,7 +64,7 @@ class Settings(BaseSettings):
     # Onshape OAuth
     onshape_client_id: str = ""
     onshape_client_secret: str = ""
-    onshape_redirect_uri: str = "https://smartcallusa.com/oauth/callback"
+    onshape_redirect_uri: str = "https://render3d.app/oauth/callback"
 
     # Autodesk / Fusion 360 OAuth
     autodesk_client_id: str = ""
@@ -90,10 +95,17 @@ class Settings(BaseSettings):
     capacity_alert_from: str = "info@render3d.app"
     capacity_alert_to: str = ""
 
-    # Supabase — server-only. Secret key must never ship to the browser.
+    # Supabase — server-only. Secret / service_role / PAT never ship to the browser.
     supabase_url: str = ""
     supabase_publishable_key: str = ""
     supabase_secret_key: str = ""
+    supabase_key: str = ""  # REST alias (service_role JWT or sb_secret)
+    supabase_service_role_key: str = ""  # JWT, server only
+    supabase_access_token: str = ""  # Management PAT (sbp_…), not for REST
+    # local = sqlite users/passwords/keys (old method). supabase / blank = remote when URL+role set.
+    users_backend: str = ""
+    # Optional DSN for your own Postgres tooling. This app does not auto-map Users onto it.
+    database_url: str = ""
     # Dedicated key for encrypting user BYOK at rest (Fernet). Prefer over jwt_secret.
     secrets_fernet_key: str = ""
 
@@ -106,11 +118,26 @@ class Settings(BaseSettings):
     stripe_ai_credits_payment_link_url: str = ""
     stripe_ai_credits_payment_link_id: str = ""
     marketplace_platform_fee_bps: int = 1000  # 10%
-    public_base_url: str = "https://render3d.app"
+    public_base_url: str = ""
+    grok_mcp_token: str = ""
+    grok_mcp_url: str = "https://render3d.app/mcp"
+    grok_music_api_key: str = ""
+    grok_music_library_dir: str = "Marketing/Music/library"
+    prompt_trace_api_key: str = ""
+    marketplace_hub_url: str = "https://render3d.app"
+    marketplace_hub_token: str = ""
+    # AutoPrep (autoprep.render3d.app) proxies LLM calls to this Studio process.
+    health_studio_service_token: str = ""
+    health_studio_owner_user_id: str = ""
+    # PayPal Login with PayPal (receive-money / Authorized apps). No fake connect without these.
+    paypal_client_id: str = ""
+    paypal_client_secret: str = ""
+    paypal_mode: str = "live"
+    paypal_redirect_uri: str = "https://render3d.app/oauth/paypal/callback"
 
     # Discord product-update announcements
     discord_bot_token: str = ""
-    discord_updates_channel_id: str = ""
+    discord_updates_channel_id: str = "1512906649822560508"
     discord_public_models_channel_id: str = ""
     discord_application_id: str = "1527052867742076958"
     discord_client_id: str = "1527052867742076958"
@@ -125,6 +152,28 @@ class Settings(BaseSettings):
     twitter_client_secret: str = ""
     twitter_redirect_uri: str = "https://render3d.app/oauth/twitter/callback"
     twitter_oauth_mode: str = "auto"
+    twitter_bearer_token: str = ""
+    twitter_access_token: str = ""
+    twitter_access_token_secret: str = ""
+    # Optional aliases for the same X developer app (Grok bot / Account Activity).
+    x_consumer_key: str = ""
+    x_consumer_secret: str = ""
+    x_webhook_path: str = "/api/webhooks/x"
+    x_webhook_env: str = ""
+    x_webhook_auto_reply: bool = False
+
+    # GitHub authorized-app link (Foundry). Not a second login identity.
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    github_redirect_uri: str = "https://render3d.app/oauth/github/callback"
+    github_token: str = ""
+    github_bugs_repo: str = ""
+    github_bugs_branch: str = "bugs"
+
+    twitch_client_id: str = ""
+    twitch_client_secret: str = ""
+    kick_client_id: str = ""
+    kick_client_secret: str = ""
 
     # LinkedIn product-update announcements (member or organization URN)
     linkedin_client_id: str = ""
@@ -138,5 +187,25 @@ class Settings(BaseSettings):
     linkedin_schedule_sunday_hours: str = "10,16"
     linkedin_schedule_recent_window: int = 10
 
+    # WebRTC ICE for Quest voice. Empty = Google STUN only. No vendor signup.
+    xr_ice_servers_json: str = ""
+    xr_turn_urls: str = ""
+    xr_turn_username: str = ""
+    xr_turn_credential: str = ""
+
+    # Local Bambu LAN (gitignored .env only — never commit the access code).
+    bambu_printer_host: str = ""
+    bambu_printer_access_code: str = ""
+    bambu_printer_serial: str = ""
+    bambu_printer_name: str = ""
+
+    # Optional scp of incident PDFs to a MacBook Downloads folder.
+    incident_export_ssh: str = ""
+    incident_export_ssh_dir: str = "Downloads"
+
 
 settings = Settings()
+
+# CAD generate / Improve-with-AI: production specs (OpenArm-scale) routinely exceed 8k.
+# Chat, wiring, and render-agent messages stay at 8k on those request models.
+CAD_PROMPT_MAX_CHARS = 100_000

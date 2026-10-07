@@ -1,0 +1,81 @@
+{
+  "receipt_id": "RCPT-20260918-TELEOP-Y-IDLE",
+  "log_id": "prm_y_idle_20260918",
+  "at": "2026-09-18T08:59:30.232Z",
+  "author": "codex",
+  "scope": "studio-xr-and-receipt-persistence",
+  "pr": {
+    "number": null,
+    "url": "",
+    "ready": false
+  },
+  "summary": "Fix inactive VR frame skipping Y activation; reject unsupported holds and held-release rearm; preserve receipt history/database evidence. Quest confirmation pending.",
+  "files_touched": [
+    "frontend/xr/xr-dimos-teleop.js",
+    "frontend/xr/viewport-xr.js",
+    "frontend/xr/xr-controls-debug.js",
+    "frontend/sandbox/update-receipt.js",
+    "frontend/sandbox/agent-knowledge.js",
+    "backend/services/agent_knowledge_lake.py"
+  ],
+  "feature_board": {},
+  "golden_before": "unknown",
+  "tests": [
+    {
+      "name": "Node targeted controller/reset/debug/receipt regressions",
+      "pass": 55,
+      "fail": 0
+    },
+    {
+      "name": "Python SQLite receipt identity/revisions",
+      "pass": 1,
+      "fail": 0
+    },
+    {
+      "name": "Browser actual frame block before/after",
+      "pass": 1,
+      "fail": 0
+    }
+  ],
+  "locks_ok": {
+    "sam-y-engage-v2": true,
+    "one_webgl_viewport": null,
+    "dimos_8443_untouched": true,
+    "mcp_jail_sandbox": true
+  },
+  "promote_map": [],
+  "bot_verdict": "yellow",
+  "bot_verdict_at": null,
+  "bot_checks": [
+    "Independent code review completed; issues covered by regression tests.",
+    "No Quest/physical validation; not a confirmed fix."
+  ],
+  "status": "unverified",
+  "environment": {
+    "browser": "Playwright Chromium; mocked xr-standard Quest pad",
+    "headset": "Quest device validation pending",
+    "robot": "read-only config observed; no actuation"
+  },
+  "build": {
+    "marker": "teleop-y=20260918-1",
+    "hashes": "ai-context/evidence/2026-09-18-teleop-y/build-hashes.json"
+  },
+  "evidence": [
+    "ai-context/evidence/2026-09-18-teleop-y/fix-card.md",
+    "ai-context/evidence/2026-09-18-teleop-y/browser-frame.json",
+    "ai-context/evidence/2026-09-18-teleop-y/node-tests.tap"
+  ],
+  "feature_checks": {
+    "vr.y.dispatch": "mock_pass",
+    "vr.y.hold_reset": "protocol_test_pass; device_unknown",
+    "vr.y.after_disable": "mock_pass",
+    "vr.trigger.menu_ownership": "test_pass",
+    "quest.viewport.models": "unknown",
+    "quest.fps": "unknown",
+    "receipt.catalog": "test_pass"
+  },
+  "golden_after": "",
+  "rollback": "ai-context/evidence/2026-09-18-teleop-y/patch.diff and before/; preserve subsequent edits",
+  "revision_id": "REV-20260918-Y-IDLE-1",
+  "token": "rcpt1"
+}

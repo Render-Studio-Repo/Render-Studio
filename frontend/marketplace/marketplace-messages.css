@@ -1,0 +1,96 @@
+.mkt-messages {
+  --message-bg: #fff;
+  --message-header: #f6f8fa;
+  --message-surface: #fff;
+  --message-surface-soft: #f0f3f5;
+  --message-surface-active: #edf6f7;
+  --message-mine: #e7f3f4;
+  --message-text: #182b3a;
+  --message-muted: #647582;
+  --message-faint: #81939e;
+  --message-accent: #087f8c;
+  --message-accent-text: #fff;
+  --message-border: #dce3e8;
+  --message-divider: #edf1f4;
+  width: min(930px, calc(100% - 24px));
+  height: min(720px, 90dvh);
+  max-height: 90dvh;
+  border: 1px solid var(--message-border);
+  border-radius: 16px;
+  background: var(--message-bg);
+  color: var(--message-text);
+  padding: 0;
+  box-shadow: 0 24px 90px #14293840;
+  font: 14px/1.5 system-ui, sans-serif;
+}
+
+body.mkt2 .mkt-messages {
+  --message-bg: var(--market-raised);
+  --message-header: linear-gradient(180deg, #191b20, #111318);
+  --message-surface: var(--market-metal);
+  --message-surface-soft: var(--market-soft);
+  --message-surface-active: color-mix(in srgb, var(--market-gold) 14%, var(--market-raised));
+  --message-mine: color-mix(in srgb, var(--market-gold) 16%, var(--market-soft));
+  --message-text: var(--market-ink);
+  --message-muted: var(--market-muted);
+  --message-faint: color-mix(in srgb, var(--market-muted) 78%, transparent);
+  --message-accent: var(--market-gold-bright);
+  --message-accent-text: #17130a;
+  --message-border: var(--market-gold-line);
+  --message-divider: var(--market-line);
+  box-shadow: 0 28px 90px rgb(0 0 0 / 68%);
+}
+
+.mkt-messages::backdrop { background: #08090ccc; backdrop-filter: blur(6px); }
+.mkt-messages * { box-sizing: border-box; }
+.mkt-messages button { font: inherit; background: var(--message-surface); color: var(--message-text); border: 1px solid var(--message-border); border-radius: 7px; padding: 7px 11px; cursor: pointer; }
+.mkt-messages button:hover { border-color: var(--message-accent); }
+.mkt-messages button:disabled { opacity: .5; cursor: default; }
+.mkt-messages a { color: var(--message-accent); text-decoration: none; }
+.mkt-messages > header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; background: var(--message-header); border-bottom: 1px solid var(--message-border); height: 93px; }
+.mkt-messages h2 { color: var(--message-text); font-size: 22px; margin: 0; letter-spacing: -.03em; }
+.mkt-messages header p { font-size: 12px; color: var(--message-muted); margin: 3px 0 0; }
+.mkt-messages header > button { font-size: 24px; border: 0; background: none; }
+.mkt-messages-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); height: calc(100% - 93px); }
+.mkt-messages aside { border-right: 1px solid var(--message-border); padding: 14px; overflow: auto; }
+.mkt-messages aside > button { font-size: 12px; width: 100%; margin-bottom: 14px; }
+.mkt-inbox-person { display: flex; flex-direction: column; text-align: left; width: 100%; gap: 3px !important; border: 0 !important; background: transparent !important; padding: 12px !important; margin-bottom: 5px; }
+.mkt-inbox-person.active { background: var(--message-surface-active) !important; }
+.mkt-inbox-person span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; color: var(--message-muted); }
+.mkt-inbox-person small { font-size: 10px; color: var(--message-faint); }
+.mkt-inbox-unread { float: right; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--message-accent); color: var(--message-accent-text); font-size: 10px; text-align: center; }
+.mkt-messages section { display: flex; flex-direction: column; min-width: 0; height: 100%; padding: 0 20px 16px; }
+.mkt-messages [data-thread-head] { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--message-divider); padding: 16px 0; gap: 10px; min-height: 74px; }
+.mkt-messages h3 { color: var(--message-text); font-size: 16px; margin: 0; }
+.mkt-messages [data-thread-head] span { font-size: 11px; color: var(--message-muted); }
+.mkt-messages [data-thread-head] > div:last-child { display: flex; gap: 5px; }
+.mkt-messages [data-thread-head] button { font-size: 12px; padding: 5px 9px; }
+.mkt-message-history { flex: 1; min-height: 0; overflow: auto; padding: 15px 0; display: flex; flex-direction: column; gap: 12px; }
+.mkt-dm { align-self: flex-start; max-width: 86%; background: var(--message-surface-soft); border-radius: 12px 12px 12px 3px; padding: 11px 14px; flex: 0 0 auto; }
+.mkt-dm.mine { align-self: flex-end; background: var(--message-mine); border-radius: 12px 12px 3px 12px; }
+.mkt-dm p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 5px; font-size: 13px; }
+.mkt-dm time { font-size: 9px; color: var(--message-muted); }
+.mkt-messages [data-message-status] { font-size: 11px; color: var(--message-accent); min-height: 16px; margin: 6px 0; }
+.mkt-messages [data-compose] { border-top: 1px solid var(--message-divider); padding-top: 12px; }
+.mkt-messages [data-compose][hidden] { display: none; }
+.mkt-message-label { position: absolute; clip-path: inset(50%); height: 1px; width: 1px; overflow: hidden; }
+.mkt-messages textarea { resize: vertical; max-height: 160px; width: 100%; font: 13px/1.5 system-ui, sans-serif; padding: 10px; border: 1px solid var(--message-border); border-radius: 8px; color: var(--message-text); background: var(--message-surface); }
+.mkt-messages textarea::placeholder { color: var(--message-muted); }
+.mkt-messages [data-compose] > div { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 8px; }
+.mkt-messages [data-compose] span { font-size: 10px; color: var(--message-faint); max-width: 250px; }
+.mkt-messages [data-compose] button { background: var(--message-accent); color: var(--message-accent-text); border-color: transparent; white-space: nowrap; font-size: 12px; }
+.mkt-messages-empty { padding: 25px 10px; font-size: 13px; color: var(--message-muted); text-align: center; }
+.mkt-message-signin { align-self: center; border: 1px solid var(--message-accent); border-radius: 8px; padding: 8px 15px; }
+.mkt-dm-older { align-self: center; font-size: 11px !important; }
+
+@media (max-width: 620px) {
+  .mkt-messages-layout { grid-template-columns: 1fr; display: flex; flex-direction: column; }
+  .mkt-messages aside { height: 85px; border-right: 0; border-bottom: 1px solid var(--message-border); padding: 8px; display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; }
+  .mkt-messages aside > button { width: auto; flex-shrink: 0; margin: 0; }
+  .mkt-messages [data-inbox] { display: flex; gap: 4px; }
+  .mkt-inbox-person { min-width: 150px; padding: 7px !important; margin: 0; }
+  .mkt-inbox-person small { display: none; }
+  .mkt-messages section { height: calc(100% - 85px); padding: 0 14px 12px; }
+  .mkt-messages > header { padding: 15px 18px; }
+  .mkt-messages [data-compose] span { display: none; }
+}

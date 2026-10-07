@@ -1,0 +1,5 @@
+Cover PNGs and printer thumbnail SVGs copied from Orca Slicer
+https://github.com/SoftFever/OrcaSlicer (AGPL-3.0)
+resources/profiles/{BBL,Prusa,Creality,Voron}/*_cover.png
+resources/images/printer_thumbnail_*_dark.svg
+Used as machine catalog thumbnails in Context Lab. Not the OrcaSlicer binary.

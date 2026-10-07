@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenArm headset capture · Render Sandbox</title>
+  <link rel="stylesheet" href="./style.css?v=quest-input-1">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">SANDBOX · SIMULATION ONLY</span><h1>OpenArm headset capture</h1></div>
+    <div class="tag">Agent feed <span id="connection">LOCAL</span></div>
+  </header>
+  <main>
+    <section class="view-panel" aria-label="Teleoperation viewport">
+      <div class="view-top"><strong>Quest pose → avatar → OpenArm proxy</strong><span id="mode">Desktop pose control</span></div>
+      <div id="viewport"></div>
+      <div class="view-foot"><span id="controller-status" role="status">Enter headset to check controllers</span><span id="scene-status" role="status">Ready</span></div>
+    </section>
+    <aside>
+      <section class="card">
+        <strong>Capture</strong>
+        <p class="small">This page records headset and controller references for simulation. It does not command the robot. The MuJoCo view currently uses keyboard controls.</p>
+        <label for="goal">Training prompt</label>
+        <textarea id="goal">Pick up the cube and place it in the tray.</textarea>
+        <div class="actions">
+          <button id="xr" type="button">Enter headset</button>
+          <button id="record" type="button">Record demo</button>
+          <button id="reset" type="button" class="secondary">Reset</button>
+        </div>
+        <p class="small">After entering VR, move both Quest controllers and press the right trigger. The controller status should show a right gamepad and a trigger event before you record.</p>
+      </section>
+      <section class="card">
+        <strong>Desktop reference</strong>
+        <div class="sliders">
+          <label>X <input id="hand-x" type="range" min="-1" max="1" step="0.01" value="0.52"></label>
+          <label>Y <input id="hand-y" type="range" min="0" max="2" step="0.01" value="1.22"></label>
+          <label>Z <input id="hand-z" type="range" min="-1.5" max="1" step="0.01" value="-0.4"></label>
+          <label>Gripper <input id="grip" type="range" min="0" max="1" step="0.01" value="0"></label>
+        </div>
+        <div class="actions">
+          <button id="example" type="button" class="secondary">Load example</button>
+          <button id="rollout" type="button" class="secondary">Run retargeting baseline</button>
+          <button id="send-agent" type="button" class="secondary">Send to agent</button>
+        </div>
+      </section>
+      <section class="card">
+        <strong>Training reference</strong>
+        <div class="metrics">
+          <div><b id="demos">0</b><span>demos</span></div>
+          <div><b id="trials">0</b><span>trials</span></div>
+          <div><b id="lower">0%</b><span>lower bound</span></div>
+        </div>
+        <p id="recommendation" class="callout"></p>
+        <p id="frame" class="small">0 frames</p>
+        <pre id="packet" aria-label="Latest sample">Awaiting observations…</pre>
+      </section>
+    </aside>
+  </main>
+  <script type="module" src="./main.js?v=quest-input-1"></script>
+</body>
+</html>

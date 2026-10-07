@@ -64,6 +64,30 @@ def clear_user_key(user_id: str) -> None:
 
 
 def get_user_key(user_id: str) -> str | None:
+    try:
+        from backend.services import supabase_users_store as sbusers
+        from backend.services.user_ai_keys_service import _decrypt
+
+        if sbusers.prefer_supabase():
+            if not sbusers.source_of_truth():
+                return None
+            settings_row = None
+            try:
+                from backend.services.user_ai_keys_service import get_user_settings
+
+                settings_row = get_user_settings(user_id)
+            except Exception:
+                settings_row = None
+            if settings_row and settings_row.get("api_key"):
+                return settings_row["api_key"]
+            keys = sbusers.personal_keys(user_id)
+            for item in reversed(keys):
+                plain = _decrypt(str(item.get("ciphertext") or ""))
+                if plain:
+                    return plain
+            return None
+    except Exception:
+        pass
     with get_conn() as conn:
         row = conn.execute(
             "SELECT openai_api_key_enc FROM users WHERE id = ?",

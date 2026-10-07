@@ -1,0 +1,2330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#070b12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <!-- SHARE_META_START -->
+  <title>Render Studio: All-in-one robotics collaborative workspace</title>
+  <meta name="description" content="Shared 3D model preview on Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:title" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta name="twitter:title" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?oglogo=20260916-1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?oglogo=20260916-1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?oglogo=20260916-1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?oglogo=20260916-1" />
+  <meta property="og:image" content="/render-logo-gear-og.png?oglogo=20260916-1" />
+  <meta property="og:image:secure_url" content="/render-logo-gear-og.png?oglogo=20260916-1" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <link rel="image_src" href="/render-logo-gear-og.png?oglogo=20260916-1" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="/render-logo-gear-og.png?oglogo=20260916-1" />
+  <!-- SHARE_META_END -->
+  <link rel="stylesheet" href="/components/user-profile.css?v=20260909-measkeep1-shareov1-settings-redesign2" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b12;
+      --panel: rgba(13, 17, 23, 0.94);
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-soft: rgba(56, 139, 253, 0.18);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    .hidden { display: none !important; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 100dvh;
+      min-height: 100vh;
+    }
+    body.share-video .share-tool#btn-share-rotate,
+    body.share-video .share-tool#btn-share-section,
+    body.share-video .share-tool#btn-share-inspector,
+    body.share-video .share-tool#btn-share-wireframe,
+    body.share-video .share-tool#btn-share-transparent,
+    body.share-video .share-tool#btn-share-measure,
+    body.share-video .share-tool#btn-share-fit {
+      display: none;
+    }
+    body.share-video #share-viewer,
+    html.share-video #share-viewer {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      overflow: auto;
+      touch-action: pan-y;
+    }
+    body.share-video #share-viewer > canvas,
+    html.share-video #share-viewer > canvas {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    body.share-video .share-bottom .share-timeline,
+    html.share-video .share-bottom .share-timeline {
+      display: none;
+    }
+    #share-video-stage {
+      position: relative;
+      z-index: 4;
+      flex: 0 1 auto;
+      width: min(1100px, calc(100% - 24px));
+      margin: 12px auto 0;
+      pointer-events: auto;
+    }
+    #share-video-stage video {
+      display: block;
+      width: 100%;
+      max-height: calc(100dvh - 280px);
+      background: #000;
+      border-radius: 12px;
+    }
+    .share-video-pin {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      margin: -9px 0 0 -9px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: #f0883e;
+      cursor: pointer;
+    }
+    .share-video-frame {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    #share-video-markup {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+    }
+    #share-video-markup.is-drawing {
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    #share-video-markup-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    #share-video-markup-logos,
+    #share-video-markup-notes {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .share-video-mark-logo {
+      position: absolute;
+      transform: translate(-10%, -110%);
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .share-video-mark-logo.is-selected .share-video-mark-logo-face,
+    .share-video-note.is-selected {
+      box-shadow: 0 0 0 2px #58a6ff;
+    }
+    .share-video-mark-logo-face {
+      display: block;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid #0d1117;
+      box-shadow: 0 0 0 1px #f0883e;
+      background: #1f6feb center/cover no-repeat;
+      color: #fff;
+      font-size: 0.62rem;
+      font-weight: 800;
+      line-height: 18px;
+      text-align: center;
+    }
+    body.share-hide-markups #share-video-markup-svg,
+    body.share-hide-markups #share-video-markup-notes,
+    body.share-hide-markups #share-video-markup-logos,
+    body.share-hide-markups .share-waveform-markers,
+    body.share-hide-markups .sv-history-card[data-share-seek] {
+      display: none !important;
+    }
+    .share-video-timeline {
+      width: min(1100px, calc(100% - 24px));
+      margin: 8px auto 0;
+    }
+    .share-markup-undo {
+      margin: 0 0 6px;
+      padding: 6px 8px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(13, 17, 23, 0.72);
+    }
+    .share-markup-undo-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+    .share-markup-undo-track {
+      position: relative;
+      height: 28px;
+      border-radius: 8px;
+      background: #161b22;
+    }
+    .share-markup-undo-pt {
+      position: absolute;
+      top: 4px;
+      width: 10px;
+      height: 20px;
+      margin-left: -5px;
+      border: 0;
+      border-radius: 4px;
+      background: #f0883e;
+      cursor: pointer;
+    }
+    .share-waveform-row {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+    }
+    #btn-share-markup-view {
+      flex: 0 0 auto;
+      align-self: center;
+      min-height: 36px;
+    }
+    #share-video-waveform { flex: 1 1 auto; width: auto; margin: 0; }
+    .share-link-perms {
+      position: relative;
+      margin-right: 6px;
+    }
+    .share-link-perms-pop {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 20;
+      width: min(320px, 86vw);
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #161b22;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    }
+    .share-link-perms-pop label {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin: 6px 0;
+      font-size: 0.78rem;
+    }
+    .sv-history-card--seek,
+    .sv-history-time {
+      cursor: pointer;
+    }
+    .sv-history-time {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font-weight: 700;
+      padding: 0;
+    }
+    .share-video-note {
+      position: absolute;
+      transform: translate(-50%, -120%);
+      max-width: min(200px, 70%);
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      background: rgba(13, 17, 23, 0.94);
+      color: var(--text);
+      font-size: 0.72rem;
+      font-weight: 650;
+      text-align: left;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    .share-markup-tools {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    body.share-video .share-markup-tools:not(.hidden) {
+      display: flex;
+    }
+    .share-markup-btn {
+      min-height: 32px;
+      padding: 6px 9px;
+      font-size: 0.72rem;
+    }
+    #btn-share-fullscreen { display: none; }
+    #btn-share-mobile-fullscreen {
+      display: none !important;
+    }
+    html.share-no-fs #btn-share-fullscreen,
+    html.share-no-fs #btn-share-mobile-fullscreen,
+    body.share-no-fs #btn-share-fullscreen,
+    body.share-no-fs #btn-share-mobile-fullscreen {
+      display: none !important;
+    }
+    @media (hover: none) and (pointer: coarse) {
+      #btn-share-fullscreen,
+      #btn-share-mobile-fullscreen {
+        display: none !important;
+      }
+    }
+    #share-markup-note {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: grid;
+      place-items: center;
+      background: rgba(1, 4, 9, 0.55);
+      padding: 16px;
+    }
+    #share-markup-note.hidden { display: none !important; }
+    .share-markup-note-card {
+      width: min(420px, calc(100vw - 32px));
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.45);
+    }
+    .share-markup-note-card textarea {
+      min-height: 88px;
+      resize: vertical;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      font: inherit;
+    }
+    .share-markup-note-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .share-waveform {
+      position: relative;
+      z-index: 5;
+      flex: 0 0 auto;
+      width: min(1100px, calc(100% - 24px));
+      margin: 4px auto 0;
+      pointer-events: auto;
+    }
+    .share-waveform-track {
+      --played: 0%;
+      position: relative;
+      height: 78px;
+      padding-top: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.72);
+      cursor: pointer;
+      outline: none;
+    }
+    .share-waveform-track:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .share-waveform-layers {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      top: 22px;
+      bottom: 10px;
+      pointer-events: none;
+    }
+    .share-waveform-bars {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      gap: 1.5px;
+    }
+    .share-waveform-bars span {
+      flex: 1 1 0;
+      height: calc(var(--h, 0.4) * 100%);
+      min-height: 4px;
+      border-radius: 1px;
+      background: #30363d;
+    }
+    .share-waveform-bars--played {
+      clip-path: inset(0 calc(100% - var(--played, 0%)) 0 0);
+    }
+    .share-waveform-bars--played span {
+      background: #58a6ff;
+    }
+    .share-waveform-playhead {
+      position: absolute;
+      top: -4px;
+      bottom: -2px;
+      left: var(--played, 0%);
+      width: 2px;
+      margin-left: -1px;
+      background: #79c0ff;
+      box-shadow: 0 0 0 1px rgba(13, 17, 23, 0.45);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .share-waveform-markers {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      top: 0;
+      bottom: 0;
+      z-index: 3;
+      pointer-events: none;
+    }
+    .share-wave-mark {
+      position: absolute;
+      top: 2px;
+      transform: translateX(-50%);
+      width: auto;
+      min-width: 24px;
+      height: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      pointer-events: auto;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .share-wave-faces {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+    }
+    .share-wave-faces .share-wave-avatar {
+      margin-left: -8px;
+    }
+    .share-wave-faces .share-wave-avatar:first-child {
+      margin-left: 0;
+    }
+    .share-wave-more {
+      margin-left: -6px;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 2px solid #0d1117;
+      background: #21262d;
+      color: #e6edf3;
+      font-size: 0.58rem;
+      font-weight: 800;
+      line-height: 18px;
+      text-align: center;
+    }
+    .share-wave-time {
+      color: #c9d1d9;
+      font-size: 0.58rem;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .share-wave-avatar {
+      display: block;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid #0d1117;
+      box-shadow: 0 0 0 1px #58a6ff;
+      background: #30363d center/cover no-repeat;
+      color: #e6edf3;
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 18px;
+      text-align: center;
+      flex: 0 0 auto;
+    }
+    .share-wave-avatar--initial { background-color: #1f6feb; }
+    .share-wave-mark.is-pin .share-wave-avatar { box-shadow: 0 0 0 1px #f0883e; }
+    .share-wave-pop {
+      display: none;
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      transform: translateX(-50%);
+      min-width: 156px;
+      max-width: 240px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.96);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+      text-align: left;
+      color: var(--text);
+      z-index: 6;
+    }
+    .share-wave-pop strong {
+      display: block;
+      font-size: 0.74rem;
+    }
+    .share-wave-pop em {
+      display: block;
+      margin: 1px 0 4px;
+      color: var(--muted);
+      font-style: normal;
+      font-size: 0.64rem;
+    }
+    .share-wave-pop span {
+      display: block;
+      color: #c9d1d9;
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .share-wave-mark:hover .share-wave-pop,
+    .share-wave-mark:focus-visible .share-wave-pop,
+    .share-wave-mark.is-open .share-wave-pop {
+      display: block;
+    }
+    .share-wave-mark.is-start .share-wave-pop {
+      left: 0;
+      transform: none;
+    }
+    .share-wave-mark.is-end .share-wave-pop {
+      left: auto;
+      right: 0;
+      transform: none;
+    }
+    #share-comment-form {
+      position: relative;
+      z-index: 4;
+      flex: 0 0 auto;
+      width: min(1100px, calc(100% - 24px));
+      margin: 8px auto 0;
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+    #share-comment-form input {
+      flex: 1;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      padding: 8px 10px;
+    }
+    html.share-embed body {
+      display: grid;
+      grid-template-rows: 1fr;
+    }
+    body.share-embed .share-top,
+    body.share-embed .share-tools,
+    body.share-embed .share-toolbar,
+    body.share-embed .share-hint,
+    body.share-embed .share-drawer,
+    body.share-embed .share-fab,
+    body.share-embed .share-status,
+    body.share-embed #share-status,
+    body.share-embed .share-bottom,
+    body.share-embed .share-mobile-controls,
+    body.share-embed footer,
+    body.share-embed #share-section-panel,
+    body.share-embed #share-inspector-panel,
+    body.share-embed #share-download-sheet,
+    body.share-embed #share-transparent-tip,
+    body.share-embed #share-measure-readout {
+      display: none !important;
+    }
+    body.share-embed #share-viewer,
+    body.share-embed .share-stage {
+      position: absolute;
+      inset: 0;
+    }
+    body.share-embed #share-viewer canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    html.share-hero,
+    body.share-hero,
+    html.share-hero body,
+    body.share-hero #share-viewer,
+    body.share-hero .share-stage {
+      background: #0d1117 !important;
+    }
+    body.share-hero #share-viewer canvas {
+      background: #0d1117 !important;
+    }
+    /* Rigged model shares keep the live 3D canvas — never a 2D poster overlay. */
+    body:not(.share-layout):not(.share-code-ide) #share-viewer > canvas {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+    header.share-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: calc(10px + var(--safe-top)) 14px 10px;
+      border-bottom: 1px solid #21262d;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      z-index: 5;
+    }
+    .share-brand-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .share-brand-row img {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      object-fit: contain;
+      background: #0d1117;
+    }
+    .share-brand {
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .share-top h1 {
+      margin: 2px 0 0;
+      font-size: 1.05rem;
+      line-height: 1.25;
+      max-width: min(70vw, 520px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .share-top p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 0.75rem;
+      max-width: min(70vw, 520px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .share-top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+      align-items: center;
+      flex-shrink: 1;
+      margin-left: auto;
+    }
+    .share-top-account {
+      display: flex;
+      align-items: center;
+      margin-left: 4px;
+      flex-shrink: 0;
+    }
+    #share-auth-avatar {
+      width: 36px;
+      height: 36px;
+      min-height: 36px;
+      min-width: 36px;
+      padding: 0;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #161b22 center / cover no-repeat;
+      color: var(--text);
+      font-weight: 800;
+      cursor: pointer;
+    }
+    #share-auth-avatar.hidden,
+    #btn-share-signin.hidden { display: none; }
+    .share-tool {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      min-height: 36px;
+    }
+    .share-tool.active,
+    .share-tool[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #79c0ff;
+    }
+    .share-tool--primary {
+      border-color: rgba(46, 160, 67, 0.7);
+      background: linear-gradient(135deg, #238636, #2ea043);
+      color: #fff;
+    }
+    .share-play-wrap { display: inline-flex; align-items: stretch; gap: 4px; }
+    .share-play-wrap.hidden { display: none; }
+    .cad-rig-picker {
+      position: fixed; z-index: 80; width: min(280px, calc(100vw - 16px));
+      max-height: min(360px, 50vh); padding: 8px; border-radius: 12px;
+      border: 1px solid rgba(255, 160, 80, 0.35); background: rgba(18, 14, 10, 0.96);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    }
+    .cad-rig-picker.hidden { display: none; }
+    .cad-rig-picker-search {
+      width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 8px;
+      border-radius: 8px; border: 1px solid rgba(255, 160, 80, 0.3);
+      background: rgba(0, 0, 0, 0.28); color: #ffe8d2; font: inherit; font-size: 0.8rem;
+    }
+    .cad-rig-picker-list { overflow: auto; max-height: 280px; display: flex; flex-direction: column; gap: 4px; }
+    .cad-rig-picker-item {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      padding: 7px 8px; border: 0; border-radius: 8px; background: transparent;
+      color: #f4e6d6; text-align: left; cursor: pointer; font: inherit;
+    }
+    .cad-rig-picker-item:hover, .cad-rig-picker-item[aria-selected="true"] { background: rgba(255, 140, 60, 0.18); }
+    .cad-rig-picker-item small { color: #c9a078; font-size: 0.7rem; }
+    body.share-viewer-expanded header.share-top > div:first-child {
+      display: none !important;
+    }
+    #share-viewer {
+      position: relative;
+      min-height: 0;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 139, 253, 0.12), transparent 35%),
+        radial-gradient(circle at 80% 90%, rgba(35, 134, 54, 0.08), transparent 40%),
+        var(--bg);
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    #share-code-host {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      min-width: 0;
+      min-height: 0;
+    }
+    #share-doc-tab-bar {
+      position: relative;
+      z-index: 7;
+    }
+    body.share-code-split #share-viewer {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    body.share-code-split #share-doc-tab-bar { grid-column: 1 / -1; grid-row: 1; }
+    body.share-code-split #share-viewer canvas {
+      grid-column: 1;
+      grid-row: 2;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    body.share-code-split #share-code-host {
+      position: relative;
+      inset: auto;
+      grid-column: 2;
+      grid-row: 2;
+    }
+    }
+    #share-viewer canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .share-mobile-controls {
+      display: none;
+    }
+    #webgl-fallback,
+    .webgl-fallback-message {
+      display: none !important;
+    }
+    #share-status {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      text-align: center;
+      padding: 12px 16px;
+      max-width: 80vw;
+      pointer-events: none;
+      z-index: 8;
+    }
+    #share-status.hidden,
+    #share-status[hidden] { display: none !important; }
+    #share-status-copy {
+      margin: 0;
+      color: var(--text);
+      font-weight: 650;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+    }
+    .share-load-track {
+      width: min(220px, 70vw);
+      height: 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(88, 166, 255, 0.55);
+      background: rgba(13, 17, 23, 0.72);
+      overflow: hidden;
+    }
+    .share-load-track[hidden] { display: none !important; }
+    .share-load-fill {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #388bfd, #79c0ff);
+    }
+    #share-transparent-tip {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 6;
+      width: min(320px, calc(100vw - 28px));
+      padding: 12px 42px 12px 14px;
+      border: 1px solid rgba(88, 166, 255, 0.36);
+      border-radius: 14px;
+      background: rgba(13, 17, 23, 0.94);
+      color: var(--text);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(12px);
+    }
+    #share-transparent-tip.hidden { display: none; }
+    #share-measure-readout.hidden { display: none !important; }
+    #share-measure-readout {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      z-index: 7;
+      min-width: 168px;
+      max-width: min(280px, calc(100vw - 28px));
+      padding: 10px 12px;
+      border: 1px solid rgba(88, 166, 255, 0.36);
+      border-radius: 14px;
+      background: rgba(13, 17, 23, 0.94);
+      color: var(--text);
+      box-shadow: 0 14px 44px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(12px);
+      overflow: visible;
+    }
+    .viewport-measure-toast {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: calc(100% + 8px);
+      padding: 8px 10px;
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      border-radius: 10px;
+      background: rgba(13, 17, 23, 0.96);
+      color: var(--text);
+      font-size: 0.75rem;
+      font-weight: 650;
+      text-align: center;
+      pointer-events: none;
+    }
+    .viewport-measure-toast.hidden { display: none; }
+    .measure-label-layer { position: absolute; inset: 0; z-index: 20; pointer-events: none; overflow: visible; }
+    .measure-label-leaders { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+    .measure-label-leaders line { stroke: #3fb950; stroke-width: 1.25; stroke-dasharray: 4 3; fill: none; }
+    .measure-label {
+      position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 5px;
+      max-width: min(280px, 70vw); padding: 3px 6px 3px 3px; border: 1px solid rgba(63,185,80,.7);
+      border-radius: 999px; background: rgba(13,17,23,.94); color: var(--text); font-size: 12px; font-weight: 650;
+      box-shadow: 0 6px 18px rgba(0,0,0,.35); pointer-events: none; white-space: nowrap;
+      opacity: 0; visibility: hidden;
+    }
+    .measure-label.is-visible { opacity: 1; visibility: visible; pointer-events: auto; }
+    .measure-label.is-offscreen { visibility: hidden; pointer-events: none; }
+    .measure-label-avatar, .measure-label-avatar-img {
+      width: 20px; height: 20px; border-radius: 50%; border: 0; padding: 0; background: #388bfd; color: #fff;
+      font-size: 10px; font-weight: 700; display: grid; place-items: center; cursor: pointer;
+    }
+    .measure-label-avatar-img { display: block; background-size: cover; background-position: center; }
+    .measure-label-avatar--guest { cursor: default; background: #6e7681; }
+    .measure-label-x, .measure-label-kebab, .measure-label-move {
+      display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 50%;
+      background: rgba(110,118,129,.35); color: #e6edf3; cursor: pointer; padding: 0; font-size: 12px;
+    }
+    .measure-label-x:hover { background: #f85149; }
+    .measure-label-menu {
+      position: absolute; top: calc(100% + 4px); right: 0; min-width: 120px; padding: 4px;
+      border: 1px solid #30363d; border-radius: 8px; background: #161b22; z-index: 2;
+    }
+    .measure-label-menu.hidden { display: none; }
+    .measure-label-menu button {
+      display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text);
+      padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    }
+    #share-measure-readout [data-share-measure-value] {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #79c0ff;
+      letter-spacing: -0.02em;
+    }
+    #share-measure-readout [data-share-measure-meta] {
+      margin: 2px 0 8px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.35;
+    }
+    .share-measure-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .share-measure-row button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: rgba(22, 27, 34, 0.9);
+      color: var(--text);
+      border-radius: 7px;
+      padding: 3px 7px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .share-measure-row button.active {
+      border-color: rgba(88, 166, 255, 0.75);
+      background: rgba(56, 139, 253, 0.2);
+      color: #79c0ff;
+    }
+    #share-transparent-tip strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #79c0ff;
+      font-size: 0.84rem;
+    }
+    #share-transparent-tip span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    #share-transparent-tip button {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(48, 54, 61, 0.88);
+      border-radius: 999px;
+      background: #161b22;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    #share-transparent-tip button:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .share-bottom {
+      border-top: 1px solid #21262d;
+      background: var(--panel);
+      padding: 10px 14px calc(12px + var(--safe-bottom));
+      z-index: 5;
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      min-height: 64px;
+    }
+    .share-timeline {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .share-timeline-label,
+    .share-downloads-label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    #share-timeline-track {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+    .share-timeline-chip {
+      flex: 0 0 auto;
+      max-width: 220px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }
+    .share-timeline-chip:hover,
+    .share-timeline-chip.is-active {
+      border-color: var(--accent);
+    }
+    .share-timeline-chip strong {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .share-timeline-chip span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+    .share-timeline-empty {
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 6px 0;
+    }
+    .share-download-wrap {
+      position: relative;
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .share-download-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 132px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(88, 166, 255, 0.45);
+      background: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .share-download-trigger:hover {
+      border-color: var(--accent);
+    }
+    .share-download-menu {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      width: min(280px, calc(100vw - 28px));
+      max-width: calc(100vw - 16px);
+      max-height: min(70vh, calc(100dvh - 24px));
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 8px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.98);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 40;
+    }
+    .share-download-menu.is-below {
+      bottom: auto;
+    }
+    .share-download-menu.hidden { display: none; }
+    .share-dl-menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+    .share-dl-menu-item:hover {
+      border-color: var(--border);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .share-dl-menu-item.is-active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .share-dl-menu-item.is-disabled,
+    .share-dl-menu-item:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    .share-dl-menu-item--go {
+      border-color: rgba(88, 166, 255, 0.45);
+      background: linear-gradient(180deg, rgba(88, 166, 255, 0.18), rgba(88, 166, 255, 0.08));
+      font-weight: 700;
+    }
+    .share-dl-error {
+      margin: 4px 10px 6px;
+      color: #f85149;
+      font-size: 0.72rem;
+    }
+    .share-dl-menu-item.is-preparing,
+    .share-dl-menu-item.is-preparing:hover {
+      opacity: 0.55;
+      cursor: wait;
+      filter: grayscale(0.35);
+      pointer-events: none;
+      border-color: transparent;
+      background: transparent;
+    }
+    .share-dl-menu-item.is-preparing strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #8b949e;
+    }
+    .share-dl-spinner {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid rgba(139, 148, 158, 0.35);
+      border-top-color: #8b949e;
+      flex: 0 0 auto;
+      animation: share-dl-spin 0.8s linear infinite;
+    }
+    @keyframes share-dl-spin {
+      to { transform: rotate(360deg); }
+    }
+    .share-dl-menu-item strong {
+      font-size: 0.88rem;
+      color: #79c0ff;
+    }
+    .share-dl-menu-item span { color: var(--muted); font-size: 0.72rem; }
+    .share-dl-menu-item--bambu strong { color: #00ae42; }
+    .share-dl-menu-sep {
+      height: 1px;
+      margin: 4px 2px;
+      background: var(--border);
+    }
+    #share-downloads,
+    #share-download-list {
+      display: none;
+    }
+    .share-dl-btn {
+      display: none;
+    }
+    #share-section-panel {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 4;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #share-section-panel.hidden { display: none; }
+    #share-inspector-panel {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      z-index: 4;
+      width: min(390px, calc(100vw - 24px));
+      max-height: min(520px, calc(100% - 24px));
+      overflow: auto;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #share-inspector-panel.hidden { display: none; }
+    .sv-panel-section.hidden { display: none; }
+    .sv-tree-node {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 2px 0;
+      padding-left: calc(var(--depth, 0) * 12px);
+    }
+    .sv-tree-btn {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .sv-tree-btn:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--border);
+    }
+    .sv-tree-glyph {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(88, 166, 255, 0.12);
+      color: #79c0ff;
+      font-size: 0.68rem;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+    .sv-tree-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .sv-tree-main strong {
+      font-size: 0.84rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sv-tree-actions {
+      display: inline-flex;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    .sv-mini-btn {
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font: inherit;
+      font-size: 0.68rem;
+      cursor: pointer;
+    }
+    .sv-mini-btn:hover,
+    .sv-mini-btn.active {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .sv-history-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #161b22;
+      margin-bottom: 8px;
+    }
+    .sv-history-card strong {
+      font-size: 0.86rem;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+    .sv-history-meta {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    .sv-history-built {
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 6px;
+    }
+    .sv-history-built summary {
+      cursor: pointer;
+      color: #79c0ff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      list-style: none;
+    }
+    .sv-history-built summary::-webkit-details-marker { display: none; }
+    .sv-history-built a {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 0.78rem;
+      word-break: break-all;
+    }
+    .sv-rigging-card {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .sv-joint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow: auto;
+      margin-top: 8px;
+    }
+    .sv-joint-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 8px;
+      align-items: center;
+    }
+    .sv-joint-row label {
+      font-size: 0.74rem;
+      color: var(--text);
+      grid-column: 1 / -1;
+    }
+    .sv-joint-row input[type="range"] {
+      width: 100%;
+      grid-column: 1;
+    }
+    .sv-joint-row em {
+      font-style: normal;
+      color: var(--muted);
+      font-size: 0.68rem;
+      min-width: 42px;
+      text-align: right;
+    }
+    .sv-rigging-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .sv-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .sv-top strong { font-size: 0.9rem; }
+    .sv-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .sv-row label {
+      width: 58px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+    .sv-axes { display: inline-flex; gap: 6px; }
+    .sv-axes button,
+    .sv-actions button,
+    .sv-top button {
+      border: 1px solid var(--border);
+      background: #161b22;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      cursor: pointer;
+      min-height: 34px;
+    }
+    .sv-axes button.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: #79c0ff;
+    }
+    #share-section-slider {
+      flex: 1;
+      min-width: 0;
+      accent-color: var(--accent);
+    }
+    #share-section-pct {
+      width: 42px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .sv-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sv-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .sv-tree-node {
+      position: relative;
+      padding-left: calc(var(--depth, 0) * 14px);
+    }
+    .sv-tree-node::before {
+      content: "";
+      position: absolute;
+      left: calc((var(--depth, 0) * 14px) + 10px);
+      top: -6px;
+      bottom: 14px;
+      width: 1px;
+      background: rgba(88, 166, 255, 0.16);
+      display: none;
+    }
+    .sv-tree-node[style*="--depth:1"]::before,
+    .sv-tree-node[style*="--depth:2"]::before,
+    .sv-tree-node[style*="--depth:3"]::before,
+    .sv-tree-node[style*="--depth:4"]::before,
+    .sv-tree-node[style*="--depth:5"]::before {
+      display: block;
+    }
+    .sv-tree-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      border: 1px solid rgba(48, 54, 61, 0.82);
+      background:
+        linear-gradient(135deg, rgba(22, 27, 34, 0.94), rgba(13, 17, 23, 0.88)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.12), transparent 34%);
+      color: var(--text);
+      border-radius: 13px;
+      padding: 9px 10px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 0.78rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .sv-tree-btn:hover {
+      border-color: rgba(88, 166, 255, 0.42);
+      background:
+        linear-gradient(135deg, rgba(24, 32, 43, 0.98), rgba(13, 17, 23, 0.92)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.18), transparent 38%);
+    }
+    .sv-tree-node.is-transparent .sv-tree-btn {
+      border-color: rgba(121, 192, 255, 0.62);
+      background:
+        linear-gradient(135deg, rgba(22, 27, 34, 0.72), rgba(13, 17, 23, 0.64)),
+        radial-gradient(circle at 0% 0%, rgba(88, 166, 255, 0.2), transparent 42%);
+    }
+    .sv-tree-glyph {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 26px;
+      height: 26px;
+      border-radius: 9px;
+      background: rgba(88, 166, 255, 0.14);
+      color: #79c0ff;
+      font-size: 0.68rem;
+      font-weight: 900;
+      border: 1px solid rgba(88, 166, 255, 0.22);
+    }
+    .sv-tree-main {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .sv-tree-main strong,
+    .sv-tree-main em {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sv-tree-main strong {
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+    .sv-tree-main em {
+      font-style: normal;
+      font-size: 0.66rem;
+      color: var(--muted);
+    }
+    .sv-tree-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin: 5px 0 8px;
+      padding-left: calc((var(--depth, 0) * 14px) + 36px);
+    }
+    .sv-mini-btn {
+      border: 1px solid rgba(48, 54, 61, 0.86);
+      background: rgba(13, 17, 23, 0.9);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-weight: 700;
+      font-size: 0.66rem;
+      cursor: pointer;
+    }
+    .sv-mini-btn.active {
+      border-color: var(--accent);
+      color: #79c0ff;
+      background: var(--accent-soft);
+    }
+    .sv-tree-btn small {
+      color: var(--muted);
+      font-size: 0.68rem;
+      flex: 0 0 auto;
+    }
+    .sv-motion-card {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(48, 54, 61, 0.7);
+    }
+    .sv-detail-card {
+      padding: 9px 10px;
+      border: 1px solid rgba(48, 54, 61, 0.78);
+      border-radius: 12px;
+      background: rgba(22, 27, 34, 0.72);
+    }
+    .sv-detail-card strong,
+    .sv-history-card strong {
+      display: block;
+      font-size: 0.78rem;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .sv-detail-card span,
+    .sv-history-card span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      line-height: 1.35;
+    }
+    .sv-generated-by,
+    .sv-history-who {
+      display: flex !important;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 6px;
+      color: var(--text) !important;
+      font-size: 0.74rem !important;
+      font-weight: 600;
+    }
+    .sv-generated-by strong,
+    .sv-history-who strong {
+      display: inline;
+      font-size: inherit;
+    }
+    .sv-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: #30363d center/cover no-repeat;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #e6edf3;
+    }
+    .sv-avatar--initial {
+      background: #1f6feb;
+    }
+    button.sv-avatar,
+    .sv-avatar--profile {
+      border: 0;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      display: inline-flex !important;
+    }
+    button.sv-avatar:hover,
+    .sv-avatar--profile:hover,
+    button.sv-avatar:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .sv-history-who .sv-avatar {
+      margin-top: 0 !important;
+    }
+    .sv-section-title {
+      margin: 12px 0 6px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+    }
+    .sv-history-card {
+      display: block;
+      padding: 9px 10px;
+      border: 1px solid rgba(48, 54, 61, 0.78);
+      border-radius: 12px;
+      background: rgba(22, 27, 34, 0.72);
+    }
+    .sv-history-card + .sv-history-card { margin-top: 6px; }
+    .sv-hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    #share-download-sheet {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      align-items: end;
+      background: rgba(0, 0, 0, 0.45);
+    }
+    #share-download-sheet.hidden { display: none; }
+    .share-sheet-card {
+      background: #0d1117;
+      border-radius: 18px 18px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      padding: 14px 14px calc(16px + var(--safe-bottom));
+      max-height: 70vh;
+      overflow: auto;
+    }
+    .share-sheet-card header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #share-remix-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 50% 10%, rgba(88, 166, 255, 0.18), transparent 34%),
+        rgba(0, 0, 0, 0.62);
+      backdrop-filter: blur(8px);
+    }
+    #share-remix-modal.hidden { display: none; }
+    .share-remix-card {
+      width: min(520px, 100%);
+      border: 1px solid rgba(88, 166, 255, 0.32);
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98)),
+        radial-gradient(circle at 15% 0%, rgba(88, 166, 255, 0.16), transparent 38%);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.62);
+      overflow: hidden;
+    }
+    .share-remix-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.8);
+    }
+    .share-remix-head h2 {
+      margin: 0;
+      font-size: 1.18rem;
+      letter-spacing: -0.02em;
+    }
+    .share-remix-head p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+    .share-remix-close {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #161b22;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+    .share-remix-body {
+      display: grid;
+      gap: 12px;
+      padding: 16px 18px 18px;
+    }
+    .share-remix-option {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding: 13px;
+      border: 1px solid rgba(48, 54, 61, 0.88);
+      border-radius: 16px;
+      background: rgba(13, 17, 23, 0.78);
+      cursor: pointer;
+    }
+    .share-remix-option:has(input:checked) {
+      border-color: rgba(88, 166, 255, 0.72);
+      background: rgba(88, 166, 255, 0.12);
+    }
+    .share-remix-option input {
+      margin-top: 3px;
+      accent-color: var(--accent);
+    }
+    .share-remix-option strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+    .share-remix-option span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .share-remix-project-select {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+    }
+    .share-remix-collab.hidden { display: none; }
+    .share-remix-collab {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+      padding: 2px 4px;
+    }
+    .share-remix-collab input {
+      margin-top: 2px;
+      accent-color: var(--accent);
+    }
+    .share-ws-picker {
+      margin: 0;
+      padding: 12px;
+      border: 1px solid rgba(48, 54, 61, 0.88);
+      border-radius: 16px;
+      background: rgba(13, 17, 23, 0.78);
+      display: grid;
+      gap: 8px;
+    }
+    .share-ws-picker legend {
+      padding: 0 4px;
+      color: var(--text);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .share-ws-option {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: start;
+      margin: 0;
+      cursor: pointer;
+    }
+    .share-ws-option strong { display: block; font-size: 0.86rem; }
+    .share-ws-option small, .share-ws-option span small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.74rem;
+      line-height: 1.35;
+    }
+    .share-ws-existing, .share-ws-new-name {
+      width: 100%;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+    }
+    .share-ws-invite {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+    #share-remix-workspace-host.hidden { display: none; }
+    .share-remix-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    .share-remix-status {
+      min-height: 1.2em;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .share-remix-status.error { color: #ff7b72; }
+    .muted { color: var(--muted); }
+    @media (max-width: 720px) {
+      body {
+        display: block;
+      }
+      header.share-top {
+        position: fixed;
+        top: max(8px, var(--safe-top));
+        left: 8px;
+        right: 8px;
+        z-index: 12;
+        align-items: center;
+        padding: 8px 10px;
+        border: 1px solid rgba(48, 54, 61, 0.78);
+        border-radius: 16px;
+        background: rgba(13, 17, 23, 0.74);
+      }
+      .share-brand-row { gap: 6px; }
+      .share-brand-row img {
+        width: 18px;
+        height: 18px;
+      }
+      .share-brand { font-size: 0.66rem; }
+      .share-top h1 {
+        max-width: calc(100vw - 138px);
+        font-size: 0.84rem;
+      }
+      .share-top p {
+        max-width: calc(100vw - 138px);
+        font-size: 0.66rem;
+      }
+      .share-top-actions {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 18;
+        display: none;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid rgba(88, 166, 255, 0.24);
+        border-radius: 18px;
+        background: rgba(13, 17, 23, 0.94);
+        box-shadow: 0 -18px 54px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(16px);
+      }
+      body.share-mobile-tools-open .share-top-actions {
+        display: grid;
+      }
+      .share-top-account {
+        position: absolute;
+        right: 10px;
+        top: 8px;
+        z-index: 14;
+        display: flex !important;
+      }
+      .share-tool {
+        min-height: 42px;
+        padding: 9px 10px;
+        text-align: center;
+      }
+      .share-top-actions .share-tool {
+        border-radius: 14px;
+        font-size: 0.72rem;
+      }
+      #share-viewer {
+        position: fixed;
+        inset: 0;
+        min-height: 100dvh;
+        min-height: 100vh;
+      }
+      body.share-video #share-viewer,
+      html.share-video #share-viewer {
+        padding: calc(64px + var(--safe-top)) 0 calc(72px + var(--safe-bottom));
+      }
+      body.share-video #share-video-stage video {
+        max-height: calc(100dvh - 340px);
+      }
+      .share-mobile-controls {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + var(--safe-bottom));
+        z-index: 19;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid rgba(48, 54, 61, 0.78);
+        border-radius: 18px;
+        background: rgba(13, 17, 23, 0.88);
+        box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(16px);
+      }
+      #btn-share-fullscreen,
+      #btn-share-mobile-fullscreen {
+        display: none !important;
+      }
+      body.share-video .share-markup-tools:not(.hidden) {
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .share-mobile-controls .share-tool {
+        min-height: 44px;
+        border-radius: 14px;
+        font-size: 0.74rem;
+      }
+      body.share-viewer-expanded header.share-top {
+        position: static;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+      body.share-viewer-expanded header.share-top > div:first-child {
+        display: none;
+      }
+      body.share-viewer-expanded .share-bottom {
+        display: none;
+      }
+      body.share-viewer-expanded .share-mobile-controls {
+        grid-template-columns: 1fr 1fr;
+      }
+      body.share-viewer-expanded #btn-share-mobile-fit {
+        display: none;
+      }
+      .share-bottom {
+        display: none;
+      }
+      .share-download-wrap {
+        width: 100%;
+      }
+      .share-download-trigger {
+        width: 100%;
+      }
+      .share-download-menu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: calc(12px + var(--safe-bottom));
+        width: auto;
+        max-height: min(70dvh, calc(100dvh - 24px));
+      }
+      #share-section-panel {
+        position: fixed;
+        top: auto;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 17;
+        max-height: min(42dvh, 360px);
+        overflow: auto;
+      }
+      #share-inspector-panel {
+        position: fixed;
+        top: auto;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        z-index: 17;
+        width: auto;
+        max-height: min(48dvh, 420px);
+      }
+      #share-download-sheet {
+        z-index: 21;
+      }
+      .share-sheet-card {
+        max-height: min(52dvh, 460px);
+        padding-bottom: calc(16px + var(--safe-bottom));
+      }
+      #share-transparent-tip {
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + var(--safe-bottom));
+        width: auto;
+      }
+      body.share-mobile-tools-open #share-section-panel,
+      body.share-mobile-tools-open #share-inspector-panel,
+      body.share-mobile-tools-open #share-transparent-tip {
+        bottom: calc(166px + var(--safe-bottom));
+      }
+    }
+    @media (min-width: 721px) {
+      #btn-share-download { display: none; }
+      #btn-share-fullscreen { display: inline-flex; }
+      html.share-no-fs #btn-share-fullscreen,
+      body.share-no-fs #btn-share-fullscreen {
+        display: none !important;
+      }
+      body.share-view-only #btn-share-open,
+      body.share-view-only #btn-share-download,
+      body.share-view-only .share-download-wrap,
+      body.share-view-only #share-download-sheet,
+      body.share-view-only #share-remix-modal {
+        display: none !important;
+      }
+      body.share-view-only.share-video .share-download-wrap {
+        display: flex !important;
+      }
+      #share-download-sheet { display: none !important; }
+    }
+    body.share-layout .share-tool#btn-share-rotate,
+    body.share-layout .share-tool#btn-share-section,
+    body.share-layout .share-tool#btn-share-inspector,
+    body.share-layout .share-tool#btn-share-wireframe,
+    body.share-layout .share-tool#btn-share-transparent,
+    body.share-layout .share-tool#btn-share-measure,
+    body.share-layout .share-tool#btn-share-fit {
+      display: none;
+    }
+    body.share-layout #share-viewer > canvas {
+      display: none !important;
+    }
+    #share-layout-stage {
+      position: relative;
+      z-index: 4;
+      width: min(920px, calc(100% - 24px));
+      margin: 24px auto 0;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(13, 17, 23, 0.92);
+    }
+    #share-layout-stage.hidden { display: none !important; }
+    #share-layout-diagram { min-height: 280px; }
+    #share-layout-stage h1 { margin: 16px 0 8px; font-size: 1.4rem; }
+    #share-layout-desc { color: var(--muted); margin: 0 0 16px; }
+    .vp-layout-diagram { position: relative; width: 100%; height: 280px; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; }
+    .vp-layout-cell { position: absolute; display: flex; align-items: center; justify-content: center; border: 1px solid #30363d; border-radius: 8px; background: #161b22; color: #e6edf3; font-size: 12px; padding: 6px; }
+    .vp-layout-cell-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  </style>
+</head>
+<body>
+  <header class="share-top">
+    <div>
+      <div class="share-brand-row">
+        <img src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?oglogo=20260916-1" alt="" width="22" height="22" />
+        <div class="share-brand">Render Studio</div>
+      </div>
+      <h1 id="share-title">Loading shared model…</h1>
+      <p id="share-subtitle">with Render Studio</p>
+    </div>
+    <div class="share-top-actions">
+      <button type="button" class="share-tool active" id="btn-share-rotate" aria-pressed="true">Rotate</button>
+      <span id="share-play-wrap" class="share-play-wrap hidden">
+        <button type="button" class="share-tool" id="btn-share-play" aria-pressed="false">Play</button>
+        <button type="button" class="share-tool hidden" id="btn-share-play-menu" aria-expanded="false" title="Search and choose a rig">▾</button>
+      </span>
+      <button type="button" class="share-tool hidden" id="btn-share-drag-open" aria-pressed="false" title="Toggle: click and drag the model to open/close">Toggle</button>
+      <div id="share-rig-picker" class="cad-rig-picker hidden" role="dialog" aria-label="Choose a rig">
+        <input id="share-rig-picker-search" class="cad-rig-picker-search" type="search" placeholder="Search rigs…" autocomplete="off" />
+        <div id="share-rig-picker-list" class="cad-rig-picker-list"></div>
+      </div>
+      <button type="button" class="share-tool" id="btn-share-section" aria-pressed="false">Section</button>
+      <button type="button" class="share-tool" id="btn-share-inspector" aria-pressed="false">Part Tree</button>
+      <button type="button" class="share-tool" id="btn-share-history" aria-pressed="false">History</button>
+      <button type="button" class="share-tool" id="btn-share-wireframe" aria-pressed="false">Wireframe</button>
+      <button type="button" class="share-tool" id="btn-share-transparent" aria-pressed="false">Transparent</button>
+      <button type="button" class="share-tool" id="btn-share-measure" aria-pressed="false">Measure</button>
+      <button type="button" class="share-tool" id="btn-share-fit">Fit</button>
+      <button type="button" class="share-tool" id="btn-share-fullscreen" aria-pressed="false">Full screen</button>
+      <div id="share-markup-tools" class="share-markup-tools hidden" role="toolbar" aria-label="Video markup tools">
+        <button type="button" class="share-tool share-markup-btn active" data-share-markup="select" aria-pressed="true" title="Select / pan video">Select</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="pen" aria-pressed="false" title="Circle or mark with a marker">Marker</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="circle" aria-pressed="false" title="Circle something">Circle</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="oval" aria-pressed="false">Oval</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="rect" aria-pressed="false">Box</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="line" aria-pressed="false">Line</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="arrow" aria-pressed="false">Arrow</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="view-mark" aria-pressed="false" title="View tag">View</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="face-mark" aria-pressed="false" title="Face of interest">Face</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="edge-mark" aria-pressed="false" title="Edge of interest">Edge</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="split-mark" aria-pressed="false" title="Split region">Split</button>
+        <button type="button" class="share-tool share-markup-btn" data-share-markup="note" aria-pressed="false" title="Add a note">Note</button>
+      </div>
+      <button type="button" class="share-tool share-tool--primary hidden" id="btn-share-open-project">Open project</button>
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-open">Remix model</button>
+      <button type="button" class="share-tool" id="btn-share-download">Download</button>
+    </div>
+    <div class="share-top-account">
+      <div id="share-link-perms" class="share-link-perms hidden">
+        <button type="button" class="share-tool share-link-perms-btn" id="btn-share-link-perms" aria-expanded="false" aria-haspopup="dialog">
+          <span data-share-perms-label>View only</span>
+        </button>
+        <div id="share-link-perms-pop" class="share-link-perms-pop hidden" role="dialog" aria-label="Link permissions">
+          <strong>Who can use this link</strong>
+          <label><input type="radio" name="share-live-mode" value="view" data-share-live-mode="view"> <span><strong>View only</strong><small> Watch and comment</small></span></label>
+          <label><input type="radio" name="share-live-mode" value="remix" data-share-live-mode="remix"> <span><strong>Remix only</strong><small> Download and copy</small></span></label>
+          <label><input type="radio" name="share-live-mode" value="edit" data-share-live-mode="edit"> <span><strong>Remix and edit</strong><small> Edit the live project</small></span></label>
+          <label><input type="checkbox" data-share-live-join> <span><strong>Anyone can join this project</strong></span></label>
+          <p class="muted small" data-share-live-status></p>
+        </div>
+      </div>
+      <button type="button" class="share-tool" id="btn-share-signin">Sign in</button>
+      <button type="button" class="share-auth-avatar hidden" id="share-auth-avatar" title="Account" aria-label="Account"></button>
+    </div>
+  </header>
+
+  <main id="share-viewer">
+    <div id="share-status" role="status" aria-live="polite">
+      <p id="share-status-copy">Loading preview…</p>
+      <div class="share-load-track" hidden>
+        <span class="share-load-fill"></span>
+      </div>
+    </div>
+    <div id="share-video-stage" class="hidden">
+      <div class="share-video-frame">
+        <video id="share-video" controls playsinline></video>
+        <div id="share-video-markup" aria-hidden="true">
+          <svg id="share-video-markup-svg" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+          <div id="share-video-markup-notes"></div>
+          <div id="share-video-markup-logos"></div>
+        </div>
+      </div>
+    </div>
+    <div id="share-layout-stage" class="hidden">
+      <div id="share-layout-diagram"></div>
+      <h1 id="share-layout-title">Viewport layout</h1>
+      <p id="share-layout-desc"></p>
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-import-layout">Import to your workspace</button>
+    </div>
+    <div class="share-video-timeline hidden" id="share-video-timeline">
+      <div class="share-markup-undo hidden" id="share-markup-undo">
+        <div class="share-markup-undo-head">
+          <strong>Markup timeline</strong>
+          <span>Right-click a point to restore that moment</span>
+        </div>
+        <div class="share-markup-undo-track" id="share-markup-undo-track" aria-label="Markup undo strip"></div>
+      </div>
+      <div class="share-waveform-row">
+        <button type="button" class="share-tool" id="btn-share-markup-view" aria-pressed="true" title="Show or hide markups while watching">Markups on</button>
+        <div id="share-video-waveform" class="share-waveform hidden" aria-label="Playback timeline">
+          <div class="share-waveform-track" id="share-waveform-track" role="slider" aria-label="Seek recording" aria-valuemin="0" aria-valuenow="0" aria-valuemax="0" tabindex="0">
+            <div class="share-waveform-layers" aria-hidden="true">
+              <div class="share-waveform-bars" id="share-waveform-bars"></div>
+              <div class="share-waveform-bars share-waveform-bars--played" id="share-waveform-played"></div>
+              <div class="share-waveform-playhead" id="share-waveform-playhead"></div>
+            </div>
+            <div class="share-waveform-markers" id="share-waveform-markers"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <form id="share-comment-form" class="hidden">
+      <input id="share-comment-input" maxlength="2000" placeholder="Write a comment others can see…" />
+      <button type="submit" class="share-tool share-tool--primary">Comment</button>
+    </form>
+    <div class="share-mobile-controls">
+      <button type="button" class="share-tool share-tool--primary" id="btn-share-mobile-fullscreen" aria-pressed="false" hidden>Full screen</button>
+      <button type="button" class="share-tool" id="btn-share-mobile-tools" aria-expanded="false">Tools</button>
+      <button type="button" class="share-tool" id="btn-share-mobile-fit">Fit</button>
+    </div>
+    <div id="share-transparent-tip" class="hidden" role="status" aria-live="polite">
+      <strong>Transparent tool on</strong>
+      <span>Click a part to toggle transparency. Dragging is paused while this tool is active.</span>
+      <button type="button" id="btn-share-transparent-tip-close" aria-label="Dismiss transparent tool tip">&times;</button>
+    </div>
+    <div id="share-measure-readout" class="hidden" aria-live="polite">
+      <div class="viewport-measure-toast hidden" data-measure-toast role="status"></div>
+      <div data-share-measure-value>—</div>
+      <div data-share-measure-meta>Click an edge, face, or corner</div>
+      <div class="share-measure-row" role="group" aria-label="Measure units">
+        <button type="button" data-share-measure-unit="mm" class="active">mm</button>
+        <button type="button" data-share-measure-unit="in">in</button>
+        <button type="button" data-share-measure-unit="ft">ft</button>
+      </div>
+      <div class="share-measure-row" role="toolbar" aria-label="Measure tools" style="margin-top:6px">
+        <button type="button" data-share-measure-pick="edge" class="active">Edge</button>
+        <button type="button" data-share-measure-pick="face">Face</button>
+        <button type="button" data-share-measure-pick="corner">Corner</button>
+        <button type="button" data-share-measure-clear>Clear</button>
+        <button type="button" data-share-measure-done>Done</button>
+      </div>
+    </div>
+    <div id="share-section-panel" class="hidden" aria-label="Section analysis">
+      <div class="sv-top">
+        <strong>Section analysis</strong>
+        <button type="button" id="btn-share-section-close" aria-label="Close section">Close</button>
+      </div>
+      <div class="sv-row">
+        <label>Axis</label>
+        <div class="sv-axes">
+          <button type="button" data-axis="X">X</button>
+          <button type="button" data-axis="Y" class="active">Y</button>
+          <button type="button" data-axis="Z">Z</button>
+        </div>
+      </div>
+      <div class="sv-row">
+        <label>Cut</label>
+        <input id="share-section-slider" type="range" min="0" max="100" value="50" step="1" aria-label="Section position" />
+        <span id="share-section-pct">50%</span>
+      </div>
+      <div class="sv-row sv-actions">
+        <button type="button" id="btn-share-section-flip">Flip side</button>
+      </div>
+      <p class="sv-hint">Drag to rotate · pinch to zoom · slide to cut through the model</p>
+    </div>
+    <div id="share-inspector-panel" class="hidden" aria-label="Component and motion inspector">
+      <div class="sv-top">
+        <strong id="share-inspector-title">Part Tree</strong>
+        <button type="button" id="btn-share-inspector-close" aria-label="Close panel">Close</button>
+      </div>
+      <div id="share-panel-parts" class="sv-panel-section">
+        <div class="sv-rigging-actions" style="margin:0 0 8px">
+          <button type="button" class="sv-mini-btn" id="btn-share-show-all-parts">Show all parts</button>
+        </div>
+        <div id="share-component-list" class="sv-list"></div>
+        <div id="share-motion-card" class="sv-rigging-card hidden">
+          <div class="sv-top" style="margin-bottom:6px">
+            <strong>Rigging</strong>
+            <button type="button" id="btn-share-motion-play" class="sv-mini-btn">Play</button>
+          </div>
+          <p id="share-motion-status" class="sv-hint">URDF motion available for this shared model.</p>
+          <div id="share-joint-list" class="sv-joint-list"></div>
+          <div class="sv-rigging-actions">
+            <button type="button" id="btn-share-motion-reset" class="sv-mini-btn">Reset pose</button>
+          </div>
+        </div>
+      </div>
+      <div id="share-panel-history" class="sv-panel-section hidden">
+        <label class="sv-hint"><input type="checkbox" id="share-hist-comments" checked /> User comments</label>
+        <label class="sv-hint"><input type="checkbox" id="share-hist-prompts" checked /> Prompts</label>
+        <div id="share-comment-history" class="sv-list"></div>
+        <div id="share-prompt-history" class="sv-list"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="share-bottom">
+    <div class="share-timeline" aria-label="Edit timeline">
+      <p class="share-timeline-label">Timeline</p>
+      <div id="share-timeline-track"></div>
+    </div>
+    <div class="share-download-wrap">
+      <p class="share-downloads-label">Download</p>
+      <button type="button" class="share-download-trigger" id="btn-share-download-menu" aria-haspopup="menu" aria-expanded="false">
+        Download
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div id="share-download-menu" class="share-download-menu hidden" role="menu"></div>
+      <div id="share-downloads" hidden></div>
+    </div>
+  </footer>
+
+  <div id="share-download-sheet" class="hidden" role="dialog" aria-modal="true" aria-label="Download formats">
+    <div class="share-sheet-card">
+      <header>
+        <strong>Download</strong>
+        <button type="button" class="share-tool" data-close-downloads>Close</button>
+      </header>
+      <div id="share-download-list"></div>
+    </div>
+  </div>
+
+  <div id="share-remix-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-remix-title">
+    <div class="share-remix-card">
+      <header class="share-remix-head">
+        <div>
+          <h2 id="share-remix-title">Remix shared model</h2>
+          <p id="share-remix-subtitle">Import this model into an editable Render Studio project.</p>
+        </div>
+        <button type="button" class="share-remix-close" data-remix-close aria-label="Close remix options">&times;</button>
+      </header>
+      <div class="share-remix-body">
+        <label class="share-remix-option">
+          <input type="radio" name="share-remix-target" value="new" checked />
+          <span>
+            <strong>Create a new project</strong>
+            <span>Copies the shared model and all preview/download files into a fresh editable project.</span>
+          </span>
+        </label>
+        <label class="share-remix-option">
+          <input type="radio" name="share-remix-target" value="existing" />
+          <span>
+            <strong>Import into an existing project</strong>
+            <span>Adds these shared files to a project you already own or can edit.</span>
+            <select id="share-remix-project-select" class="share-remix-project-select" disabled>
+              <option value="">Loading projects…</option>
+            </select>
+          </span>
+        </label>
+        <div id="share-remix-workspace-host"></div>
+        <p id="share-remix-status" class="share-remix-status"></p>
+        <div class="share-remix-actions">
+          <button type="button" class="share-tool" data-remix-close>Cancel</button>
+          <button type="button" class="share-tool share-tool--primary" id="btn-share-remix-confirm">Create project & open editor</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-markup-note" class="hidden" role="dialog" aria-modal="true" aria-labelledby="share-markup-note-title">
+    <div class="share-markup-note-card">
+      <strong id="share-markup-note-title">Add note</strong>
+      <textarea id="share-markup-note-text" maxlength="2000" placeholder="Write a note for this moment in the video…"></textarea>
+      <div class="share-markup-note-actions">
+        <button type="button" class="share-tool" data-markup-note-cancel>Cancel</button>
+        <button type="button" class="share-tool share-tool--primary" data-markup-note-save>Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    if (new URLSearchParams(location.search).get("embed") === "1") {
+      document.documentElement.classList.add("share-embed");
+      document.addEventListener("DOMContentLoaded", () => document.body.classList.add("share-embed"));
+    }
+    (function () {
+      const ua = navigator.userAgent || "";
+      const iOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+      const small = window.innerWidth <= 720;
+      const coarse = !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
+      if (iOS || small || coarse) document.documentElement.classList.add("share-no-fs");
+    })();
+  </script>
+  <script type="module">
+    import("/viewport/share-viewer.js?v=share-resilience-20260918-2-20260916-wiring-repair-2-harness2-webgl1-harness3-gpu-recovery3-gpu-recovery4-gpu-recovery5-settings-redesign2-webglfb1&webglfix=2&vplayout=20260916-1&layui1&sharethumb1&webgl1=1&ogtitle1&20260915-shareviddl3&20260915-sharemarkup1-20260915-sharelive1&20260915-histprof1-webgl2fix-webgl3&webglrevert2&gpu=20260916-startup2&gpu=20260916-startup3&shareplay1&rigpick1&rig1&shareplay2&sharepause1&clipperf1&leakfix7&leakfix34&share3mf1").catch((error) => {
+      const status = document.getElementById("share-status");
+      status?.classList.remove("hidden");
+      if (status) status.hidden = false;
+      const copy = document.getElementById("share-status-copy") || status;
+      if (copy) copy.textContent = "The share viewer could not load. Check your connection and reload this page.";
+      status?.querySelector(".share-load-track")?.setAttribute("hidden", "");
+      console.error("Share viewer module failed", error);
+    });
+  </script>
+</body>
+</html>

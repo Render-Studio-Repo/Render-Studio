@@ -1,0 +1,90 @@
+/* Boot-stage robot: SVG arm (SMIL pick cycle in index.html)-20260915-contact2-20260915-xrdispatch4-20260915-finepointer2-20260915-toolcontext1-20260915-xragent3 */
+
+.studio-boot-robot,
+.studio-boot-drop-zone,
+.studio-boot-transfer-part,
+.studio-boot-part {
+  display: none !important;
+  animation: none !important;
+}
+
+.studio-boot-print-part {
+  position: absolute;
+  left: 58px;
+  bottom: 18px;
+  width: 36px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(135deg, #7dd3fc, #0284c7);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+  animation: studio-boot-print-grow 7s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes studio-boot-print-grow {
+  0%, 8% { transform: scaleY(0.15); opacity: 0.35; }
+  28%, 55% { transform: scaleY(1); opacity: 1; }
+  72%, 100% { transform: scaleY(0.2); opacity: 0.2; }
+}
+
+.studio-boot-arm {
+  position: absolute;
+  right: 2px;
+  bottom: 6px;
+  width: 268px;
+  height: 180px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.studio-boot-arm-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
+}
+
+@media (max-width: 640px) {
+  .studio-boot-arm {
+    right: -10px;
+    width: 220px;
+    height: 150px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-boot-print-part {
+    animation: none !important;
+    transform: none;
+    opacity: 1;
+  }
+
+  .studio-boot-arm-svg animate,
+  .studio-boot-arm-svg animateTransform {
+    display: none !important;
+  }
+
+  .studio-boot-arm-swing {
+    transform: rotate(-16deg);
+    transform-origin: 198px 78px;
+    transform-box: view-box;
+  }
+
+  .studio-boot-arm-elbow {
+    transform: rotate(-90deg);
+    transform-origin: 112px 78px;
+    transform-box: view-box;
+  }
+
+  .studio-boot-arm-payload-g {
+    opacity: 1 !important;
+  }
+
+  .studio-boot-arm-ground-g {
+    opacity: 0 !important;
+  }
+}

@@ -1,0 +1,25 @@
+  check(manager.foveation === 0, 'open menu requests full peripheral text resolution');
+  api.__runtimeTest.openDebugger();
+  const hud = api.__runtimeTest.debuggerHud();
+  const version = hud.tex.version;
+  for (let i = 0; i < 72; i++) api.update();
+  check(hud.tex.version === version, '72 unchanged XR updates do not upload the debugger again');
+  const position = hud.group.position.clone();
+  camera.position.x += .1;
+  api.update();
+  check(hud.group.position.distanceTo(position) < 1e-6, 'docked debugger remains world-anchored while head moves');
+  await wait(110);
+  sources[1].gamepad.axes[2] = .7;
+  api.update();
+  check(hud.tex.version === version + 1, 'changed controller input uploads the debugger once');
+  const { createMenuClarityControl } = await import('/xr/xr-hud-refresh.js');
+  const restore = createMenuClarityControl(.35);
+  restore(manager, false);
+  check(manager.foveation === .35, 'scene foveation is restored after menus close');
+  restore(manager, true);
+  check(manager.foveation === 0, 'reopening a menu restores clarity');
+  manager.isPresenting = false;
+  renderer.render(scene, camera);
+  manager.isPresenting = true;
+  return {checks, count: checks.length, threeRevision: THREE.REVISION};
+}

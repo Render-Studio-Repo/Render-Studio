@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2026 Enactic, Inc. (OpenArm MuJoCo Web)
+  Licensed under the Apache License, Version 2.0
+  https://github.com/enactic/openarm_mujoco
+  Docs: https://docs.openarm.dev/simulation/mujoco/
+
+  Sandbox embed + analysis bridge for Render Studio repair loop (mujoco1).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark light" />
+    <title>OpenArm MuJoCo Web — Render Sandbox</title>
+    <style>
+      body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: #0b1017; }
+      #panel {
+        position: fixed; top: 10px; left: 10px; width: 270px;
+        background: rgba(255, 255, 255, 0.92); border-radius: 8px;
+        padding: 10px 14px; font-size: 12px; max-height: calc(100vh - 40px);
+        overflow-y: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        z-index: 2;
+      }
+      #panel h3 { margin: 4px 0 6px; font-size: 13px; }
+      #status { margin-top: 8px; white-space: pre; font-family: monospace; font-size: 11px; }
+      #help { font-size: 10px; margin: 4px 0; }
+      button { margin-right: 6px; }
+      #analysis {
+        margin-top: 8px; padding-top: 8px; border-top: 1px solid #ccc;
+        font-size: 10px; color: #334; white-space: pre-wrap;
+      }
+      body.embed #panel {
+        background: rgba(15, 23, 42, 0.92); color: #e2e8f0;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+      }
+      /* Workshop fix: floating MuJoCo key-bindings panel overlaps wiring/whiteboard — hide in embed. */
+      body.embed #panel { display: none !important; }
+      body.embed #mujoco-panel-chip {
+        display: block;
+        position: fixed; top: 10px; left: 10px; z-index: 3;
+        background: rgba(15, 23, 42, 0.9); color: #e2e8f0;
+        border: 1px solid #475569; border-radius: 8px;
+        padding: 6px 10px; font-size: 11px; cursor: pointer;
+      }
+      body.embed.mujoco-panel-open #panel { display: block !important; max-height: 40vh; }
+      body.embed.mujoco-panel-open #panel details { display: none; }
+      body.embed #analysis { color: #94a3b8; border-top-color: #334155; }
+      body:not(.embed) #mujoco-panel-chip { display: none; }
+      body.embed select, body.embed button {
+        background: #1e293b; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px;
+      }
+      #physical-dialog { max-width: min(680px, calc(100vw - 36px)); border: 1px solid #64748b; border-radius: 10px; color: #17212b; }
+      #physical-dialog::backdrop { background: rgba(4, 10, 18, .72); }
+      #physical-dialog pre { white-space: pre-wrap; font: 12px/1.5 system-ui, sans-serif; max-height: 48vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <button type="button" id="mujoco-panel-chip" hidden title="Show scene controls only — key bindings stay hidden in embed">Scene · Reset</button>
+    <div id="panel">
+      <h3>OpenArm MuJoCo Web</h3>
+      <p style="margin:0 0 6px;font-size:10px;opacity:.8">Official Enactic sim · <a href="https://docs.openarm.dev/simulation/mujoco/" target="_blank" rel="noopener">docs</a></p>
+      <div style="margin-bottom: 6px">
+        <select id="scene-select" style="max-width: 100%"></select>
+      </div>
+      <div>
+        <button id="reset-button">Reset</button>
+        <button id="physical-button" type="button" title="Prepare an Astra/Grok physical-readiness review prompt; no robot motion">Physical</button>
+      </div>
+      <details id="mujoco-key-bindings">
+        <summary>key bindings</summary>
+        <pre id="help"></pre>
+      </details>
+      <div id="status">loading…</div>
+      <div id="analysis" aria-live="polite">analysis: waiting for MuJoCo…</div>
+    </div>
+    <dialog id="physical-dialog" aria-labelledby="physical-title">
+      <h2 id="physical-title">Physical readiness review</h2>
+      <p>This prepares a simulation review prompt. It does not command or approve robot motion.</p>
+      <strong>Basic prompt</strong>
+      <pre>Check whether this OpenArm 2.0 controller calibration setup is ready for a supervised physical test. List what is measured, estimated, failed, and still unknown.</pre>
+      <strong>Improved prompt for Astra and Grok</strong>
+      <pre id="physical-prompt"></pre>
+      <button id="physical-copy" type="button">Copy improved prompt</button>
+      <button id="physical-close" type="button">Close</button>
+    </dialog>
+    <script>
+      const physicalPrompt = `Inspect the current OpenArm 2.0 MuJoCo scene and latest completed episode. Identify the exact hardware, gripper, controller and fixture revisions and link their specifications. Verify robot/Quest frame IDs, grip pose, joint axes and limits, end-effector load, nest mating clearance, cable/visibility clearance, and collision-free approach, calibration and retreat paths. Separate source-backed facts, CAD estimates, synthetic tests and physical measurements. Compare held-out calibration residuals and repeated remounts; mark missing evidence unknown. Report the last working and first failing incident IDs, one minimal settings/design proposal, a MuJoCo test that could disprove it, and a rollback. Do not actuate the robot or apply settings.`;
+      const physicalDialog = document.getElementById("physical-dialog");
+      document.getElementById("physical-prompt").textContent = physicalPrompt;
+      document.getElementById("physical-button").addEventListener("click", () => physicalDialog.showModal());
+      document.getElementById("physical-close").addEventListener("click", () => physicalDialog.close());
+      document.getElementById("physical-copy").addEventListener("click", async () => {
+        await navigator.clipboard.writeText(physicalPrompt);
+        document.getElementById("physical-copy").textContent = "Copied";
+      });
+      if (new URLSearchParams(location.search).has("embed")) {
+        document.body.classList.add("embed");
+        const chip = document.getElementById("mujoco-panel-chip");
+        const keys = document.getElementById("mujoco-key-bindings");
+        if (keys) keys.open = false;
+        if (chip) {
+          chip.hidden = false;
+          chip.addEventListener("click", () => {
+            document.body.classList.toggle("mujoco-panel-open");
+            chip.textContent = document.body.classList.contains("mujoco-panel-open")
+              ? "Hide scene chrome"
+              : "Scene · Reset";
+          });
+        }
+      }
+      (async () => {
+        try {
+          const lock = await (await fetch("web/package-lock.json")).json();
+          const v = (name) => lock.packages[`node_modules/${name}`].version;
+          const importmap = document.createElement("script");
+          importmap.type = "importmap";
+          importmap.textContent = JSON.stringify({
+            imports: {
+              "three": `https://cdn.jsdelivr.net/npm/three@${v("three")}/build/three.module.js`,
+              "three/examples/jsm/controls/OrbitControls.js":
+                `https://cdn.jsdelivr.net/npm/three@${v("three")}/examples/jsm/controls/OrbitControls.js`,
+              "@mujoco/mujoco":
+                `https://cdn.jsdelivr.net/npm/@mujoco/mujoco@${v("@mujoco/mujoco")}/mujoco.js`,
+            },
+          });
+          document.head.appendChild(importmap);
+          const main = document.createElement("script");
+          main.type = "module";
+          main.src = "web/main.js?v=20260928-ready-replay1";
+          main.onload = () => {
+            const bridge = document.createElement("script");
+            bridge.type = "module";
+            bridge.src = "web/analysis-bridge.js?v=20260923-mode-independent-home1&simrun=20260923-1&headless-replay=20260927-3&live-eval=20260927-2&act-diagnostics=20260927-1";
+            document.head.appendChild(bridge);
+          };
+          document.head.appendChild(main);
+        } catch (e) {
+          document.getElementById("status").textContent = `load failed: ${e.message ?? e}`;
+          throw e;
+        }
+      })();
+      window.addEventListener("message", (ev) => {
+        const s = ev?.data?.sample;
+        if (!s || ev.data.type !== "openarm-mujoco-analysis") return;
+        const el = document.getElementById("analysis");
+        if (!el) return;
+        const L = s.ik_errors?.left?.pos_mm;
+        const R = s.ik_errors?.right?.pos_mm;
+        el.textContent =
+          `repair feed · ${s.scene}\n` +
+          `joints ${s.joint_count} · ik L ${L != null ? L.toFixed(1) : "—"} mm  R ${R != null ? R.toFixed(1) : "—"} mm\n` +
+          `→ openarm-mujoco/runs/latest.json`;
+      });
+    </script>
+  </body>
+</html>

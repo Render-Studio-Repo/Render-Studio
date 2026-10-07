@@ -1,0 +1,120 @@
+{
+  "environment": "Chromium headless with host WebGL, 1440x1000, localhost; welcome dismissed; CPU profiler active. Same 3 projects opened then revisited. Live Supabase network timings vary.",
+  "before": [
+    {
+      "project_id": "2ee4d857",
+      "open_to_two_frames_ms": 1153.7,
+      "metadata_ms": 511.7,
+      "glb_requests": 1,
+      "glb_transfer_bytes": 56764
+    },
+    {
+      "project_id": "f730285c",
+      "open_to_two_frames_ms": 1112.1,
+      "metadata_ms": 302.7,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "55f0de44",
+      "open_to_two_frames_ms": 1406,
+      "metadata_ms": 447.7,
+      "glb_requests": 1,
+      "glb_transfer_bytes": 8903852
+    },
+    {
+      "project_id": "2ee4d857",
+      "open_to_two_frames_ms": 862,
+      "metadata_ms": 491.4,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "f730285c",
+      "open_to_two_frames_ms": 1214.8,
+      "metadata_ms": 338.7,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "55f0de44",
+      "open_to_two_frames_ms": 1348.4,
+      "metadata_ms": 470.8,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    }
+  ],
+  "after": [
+    {
+      "project_id": "2ee4d857",
+      "open_to_two_frames_ms": 737.8,
+      "metadata_ms": 196,
+      "glb_requests": 1,
+      "glb_transfer_bytes": 56764
+    },
+    {
+      "project_id": "f730285c",
+      "open_to_two_frames_ms": 1230.4,
+      "metadata_ms": 219.7,
+      "glb_requests": 1,
+      "glb_transfer_bytes": 8903852
+    },
+    {
+      "project_id": "55f0de44",
+      "open_to_two_frames_ms": 1195.2,
+      "metadata_ms": 307.9,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "2ee4d857",
+      "open_to_two_frames_ms": 667.5,
+      "metadata_ms": 234.9,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "f730285c",
+      "open_to_two_frames_ms": 1010.9,
+      "metadata_ms": 176.4,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    },
+    {
+      "project_id": "55f0de44",
+      "open_to_two_frames_ms": 1027.9,
+      "metadata_ms": 222.8,
+      "glb_requests": 0,
+      "glb_transfer_bytes": 0
+    }
+  ],
+  "startup_project_list_requests_after": 1,
+  "startup_micro_requests": 0,
+  "browser_errors": [],
+  "cad_debug_ui": {
+    "startupMicroRequests": [],
+    "requests": [
+      {
+        "path": "/api/micro-edits/inspect",
+        "method": "POST"
+      },
+      {
+        "path": "/api/micro-edits/inspect",
+        "method": "POST"
+      }
+    ],
+    "errors": [],
+    "debugVisibleInCad": true,
+    "hiddenInRenderMesh": true,
+    "toggleDoesNotRun": true,
+    "generateRoutesToBenchmarkReview": true,
+    "benchmarkCalls": 0
+  },
+  "tests": {
+    "python_passed": 27,
+    "targeted_node_passed": 39,
+    "extended_boot_auth_passed": 21,
+    "extended_boot_auth_failed": 1,
+    "existing_failure": "boot-chrome.test.js toolbar social test expects Tips &amp; Tricks, absent from current HTML before this task; unrelated to loading/debug controls."
+  }
+}

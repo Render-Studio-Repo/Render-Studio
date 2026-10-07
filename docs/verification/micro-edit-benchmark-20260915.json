@@ -1,0 +1,676 @@
+{
+  "run": {
+    "id": "8506491614444c6d",
+    "project_id": "a81df510",
+    "user_id": "6500dec9-c06",
+    "status": "complete",
+    "created_at": "2026-09-15T18:51:46.492408+00:00",
+    "base_filename": "Mounting_fixture.glb",
+    "revision": "c301717383d46955f2268bb7",
+    "prompt": "Enlarge the single through mounting hole in Controller mounting plate from 4 mm to 6 mm diameter and move its center 3 mm in the model +X direction. Keep the plate dimensions, Z axis of the hole, all materials, and the other enclosure block unchanged.",
+    "harness": "B-rep micro edit",
+    "body_ids": [
+      "body:0"
+    ],
+    "face_ids": [
+      "body:0/face:6"
+    ],
+    "models": [
+      {
+        "model": "gpt-5.6-luna",
+        "count": 2
+      },
+      {
+        "model": "gpt-5.6-terra",
+        "count": 2
+      },
+      {
+        "model": "gpt-6-astra",
+        "count": 2
+      }
+    ],
+    "variants": [
+      "minimal",
+      "constraints"
+    ],
+    "total": 6,
+    "results": [
+      {
+        "id": 1,
+        "name": "Debug 1",
+        "model": "gpt-5.6-luna",
+        "variant": "minimal",
+        "repeat": 1,
+        "status": "complete",
+        "started_at": "2026-09-15T18:51:47.781949+00:00",
+        "attempts": [
+          {
+            "plan_ms": 6914,
+            "plan": {
+              "summary": "Enlarge the selected through-hole to 6 mm and move its center 3 mm along model +X, preserving its Z axis and all other geometry and materials.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16057,
+                "output_tokens": 82,
+                "total_tokens": 16139,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.06099,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 1403
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nUse the fewest exact local operations. Return only the JSON plan.",
+        "step_filename": "Debug_1_8506491614444c6d.step",
+        "glb_filename": "Debug_1_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 8319,
+        "feedback_event_id": "705439a15c764305a67b158acdf4afe5"
+      },
+      {
+        "id": 2,
+        "name": "Debug 2",
+        "model": "gpt-5.6-luna",
+        "variant": "constraints",
+        "repeat": 2,
+        "status": "complete",
+        "started_at": "2026-09-15T18:51:56.101865+00:00",
+        "attempts": [
+          {
+            "plan_ms": 6883,
+            "plan": {
+              "summary": "Enlarge the through-hole to 6 mm and move its center 3 mm along model +X, preserving the plate dimensions, hole Z axis, materials, and other enclosure block.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16065,
+                "output_tokens": 86,
+                "total_tokens": 16151,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.06127,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 1475
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nBefore returning the same JSON plan, check requested dimensions and preservation of each unselected body. Do not output your reasoning.",
+        "step_filename": "Debug_2_8506491614444c6d.step",
+        "glb_filename": "Debug_2_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 8360,
+        "feedback_event_id": "561e08222f5740eaa1a4fa4d0e5ee3fb"
+      },
+      {
+        "id": 3,
+        "name": "Debug 3",
+        "model": "gpt-5.6-terra",
+        "variant": "minimal",
+        "repeat": 1,
+        "status": "complete",
+        "started_at": "2026-09-15T18:52:04.463256+00:00",
+        "attempts": [
+          {
+            "plan_ms": 7716,
+            "plan": {
+              "summary": "Enlarge the selected through-hole to 6 mm and move its center 3 mm in model +X, preserving the plate dimensions, hole Z axis, materials, and other enclosure block.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16055,
+                "output_tokens": 87,
+                "total_tokens": 16142,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.06122,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 1435
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nUse the fewest exact local operations. Return only the JSON plan.",
+        "step_filename": "Debug_3_8506491614444c6d.step",
+        "glb_filename": "Debug_3_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 9153,
+        "feedback_event_id": "404fa81523ab4be5b32f83451d511079"
+      },
+      {
+        "id": 4,
+        "name": "Debug 4",
+        "model": "gpt-5.6-terra",
+        "variant": "constraints",
+        "repeat": 2,
+        "status": "complete",
+        "started_at": "2026-09-15T18:52:13.618392+00:00",
+        "attempts": [
+          {
+            "plan_ms": 6070,
+            "plan": {
+              "summary": "Enlarge the selected through-hole to 6 mm and move its center 3 mm along model +X, preserving its Z axis, plate dimensions, materials, and the other enclosure block.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16063,
+                "output_tokens": 87,
+                "total_tokens": 16150,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.0613,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 1774
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nBefore returning the same JSON plan, check requested dimensions and preservation of each unselected body. Do not output your reasoning.",
+        "step_filename": "Debug_4_8506491614444c6d.step",
+        "glb_filename": "Debug_4_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 7848,
+        "feedback_event_id": "1d18e0f2ab5742718e6d492220ee65c8"
+      },
+      {
+        "id": 5,
+        "name": "Debug 5",
+        "model": "gpt-6-astra",
+        "variant": "minimal",
+        "repeat": 1,
+        "status": "complete",
+        "started_at": "2026-09-15T18:52:21.475880+00:00",
+        "attempts": [
+          {
+            "plan_ms": 20579,
+            "plan": {
+              "summary": "Enlarge the selected through-hole to 6 mm diameter and move its center 3 mm along model +X, preserving its Z axis and everything else.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16059,
+                "output_tokens": 80,
+                "total_tokens": 16139,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.06091,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 2219
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nUse the fewest exact local operations. Return only the JSON plan.",
+        "step_filename": "Debug_5_8506491614444c6d.step",
+        "glb_filename": "Debug_5_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 22802,
+        "feedback_event_id": "df962a3a64044edfbec715b9547e53b6"
+      },
+      {
+        "id": 6,
+        "name": "Debug 6",
+        "model": "gpt-6-astra",
+        "variant": "constraints",
+        "repeat": 2,
+        "status": "complete",
+        "started_at": "2026-09-15T18:52:44.283670+00:00",
+        "attempts": [
+          {
+            "plan_ms": 6870,
+            "plan": {
+              "summary": "Enlarge the through mounting hole to 6 mm and move its center 3 mm in model +X, preserving its Z axis, plate dimensions, materials, and the unselected enclosure block.",
+              "questions": [],
+              "operations": [
+                {
+                  "op": "move_hole",
+                  "body_id": "body:0",
+                  "face_id": "face:6",
+                  "translation_mm": [
+                    3,
+                    0,
+                    0
+                  ],
+                  "diameter_mm": 6
+                }
+              ]
+            },
+            "usage": {
+              "usage": {
+                "input_tokens": 16069,
+                "output_tokens": 88,
+                "total_tokens": 16157,
+                "cached_input_tokens": 11520
+              },
+              "cost_usd": 0.06141,
+              "model": "gpt-6-astra",
+              "provider": "openai"
+            },
+            "kernel_ms": 2158
+          }
+        ],
+        "provider": "openai",
+        "ai_source": "chatgpt_subscription",
+        "system_prompt": "---\nname: micro-edit\ndescription: Fast, scoped CAD edits to selected bodies or mounting faces. Use for hole diameter or position changes, small planar face offsets, small body moves and small size adjustments after replacing an electronic component.\n---\n\n# Micro edits\n\nUse `/api/micro-edits/inspect` to read the selected STEP revision. All CAD harnesses share this B-rep path; keep the original authoring file and model intact. Operate only on the explicitly selected body IDs and optional face IDs. Viewport triangle numbers are not CAD face IDs.\n\nRead the user's edit, geometry, bound mount references, approved Parts List replacement data and relevant canvas notes together. Ask for missing direction, amount, mounting pattern or exact board variant. Never infer a hole pattern from a product name or image pixels. A request for an entire robot or a new assembly belongs in normal Generate.\n\nReturn one short JSON plan. No Python, shell, file reads, source regeneration, sourcing calls or assembly rebuild. Prefer one operation. Maximum eight operations, all on selected bodies. One repair pass is allowed only when explicitly enabled; stop on unresolved ambiguity or unsupported geometry.\n\n## Plan schema\n\n`{\"summary\":\"Move and resize the selected hole\", \"questions\":[], \"operations\":[{\"op\":\"move_hole\", \"body_id\":\"body:0\", \"face_id\":\"face:6\", \"translation_mm\":[3,0,0], \"diameter_mm\":6}]}`\n\nThe operation discriminator key is exactly `op`, not `type` or `operation`. The example IDs and dimensions above are illustrative; always replace them with the inspected IDs and the user's requested values.\n\nEach operation needs `body_id` from inspected geometry:\n\n- `move_body`: `translation_mm:[x,y,z]`, at most 100 mm per axis.\n- `scale_body`: `factors:[x,y,z]`, 0.8\u20131.25 per axis, about the body's center. Use only for an explicit overall size adjustment; scaling changes holes too.\n- `resize_hole`: cylindrical `face_id`, `diameter_mm` (0.2\u2013100). Keep its center and axis. Shrinking requires a through-hole.\n- `move_hole`: cylindrical `face_id`, `translation_mm` in the mounting plane; optionally `diameter_mm`. Through-holes only. Preserve other holes.\n- `offset_face`: planar `face_id`, signed `distance_mm` (\u221220 to +20) along the supplied outward normal.\n\nFace IDs reference the original immutable revision even across successive operations. Use only IDs provided in `geometry`, and respect `face_ids` when supplied. Preserve unselected bodies, part names, proportions and materials. Unsupported operations must return questions and an empty operations array; do not approximate fillets, threads, slots or complex features.\n\n## Verify and compare\n\nThe service executes the plan with the local CAD kernel, checks solid validity, connectedness, hole dimensions and preservation of unselected bodies, then exports STEP + GLB. It never runs AI-authored code. Debug variants all use the same source snapshot and independent output names. Record the exact prompt, plan, model, elapsed time, validation and human ratings. Geometry validation does not establish that an ambiguous request was understood; report intent accuracy as awaiting user review.\n\nKeep the prompt small and use the user's selected AI source. Benchmark fast candidates against the same fixture before changing defaults. Only refresh the viewport when a valid output finishes; do not add speculative per-token mesh rebuilds. Generate/Run is always explicit.\n\nBefore returning the same JSON plan, check requested dimensions and preservation of each unselected body. Do not output your reasoning.",
+        "step_filename": "Debug_6_8506491614444c6d.step",
+        "glb_filename": "Debug_6_8506491614444c6d.glb",
+        "validation": {
+          "checks": [
+            {
+              "op": "move_hole",
+              "diameter_mm": 6.0,
+              "translation_mm": [
+                3.0,
+                0.0,
+                0.0
+              ],
+              "hole_verified": true,
+              "body_id": "body:0"
+            }
+          ],
+          "valid": true,
+          "body_count": 2,
+          "edited_body_ids": [
+            "body:0"
+          ],
+          "unselected_bodies_preserved": true,
+          "intent_accuracy": "Awaiting user rating"
+        },
+        "elapsed_ms": 9654,
+        "feedback_event_id": "a5bd6fbb16c0475a997f3ca1a31dac70"
+      }
+    ],
+    "skill_version": "110d04d8344c",
+    "debug": true,
+    "repair_passes": 0,
+    "context_snapshot": {
+      "request": "Enlarge the single through mounting hole in Controller mounting plate from 4 mm to 6 mm diameter and move its center 3 mm in the model +X direction. Keep the plate dimensions, Z axis of the hole, all materials, and the other enclosure block unchanged.",
+      "geometry": {
+        "units": "mm",
+        "bodies": [
+          {
+            "id": "body:0",
+            "name": "Controller_mounting_plate",
+            "size_mm": [
+              40.0,
+              30.0,
+              5.0
+            ],
+            "center_mm": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "volume_mm3": 5937.16815,
+            "faces": [
+              {
+                "id": "face:0",
+                "kind": "plane",
+                "center_mm": [
+                  -20.0,
+                  -0.0,
+                  -0.0
+                ],
+                "area_mm2": 150.0,
+                "normal": [
+                  -1.0,
+                  -0.0,
+                  0.0
+                ]
+              },
+              {
+                "id": "face:1",
+                "kind": "plane",
+                "center_mm": [
+                  0.0,
+                  -15.0,
+                  -0.0
+                ],
+                "area_mm2": 200.0,
+                "normal": [
+                  -0.0,
+                  -1.0,
+                  -0.0
+                ]
+              },
+              {
+                "id": "face:2",
+                "kind": "plane",
+                "center_mm": [
+                  0.0,
+                  -0.0,
+                  2.5
+                ],
+                "area_mm2": 1187.43363,
+                "normal": [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              },
+              {
+                "id": "face:3",
+                "kind": "plane",
+                "center_mm": [
+                  0.0,
+                  15.0,
+                  -0.0
+                ],
+                "area_mm2": 200.0,
+                "normal": [
+                  0.0,
+                  1.0,
+                  0.0
+                ]
+              },
+              {
+                "id": "face:4",
+                "kind": "plane",
+                "center_mm": [
+                  0.0,
+                  -0.0,
+                  -2.5
+                ],
+                "area_mm2": 1187.43363,
+                "normal": [
+                  -0.0,
+                  -0.0,
+                  -1.0
+                ]
+              },
+              {
+                "id": "face:5",
+                "kind": "plane",
+                "center_mm": [
+                  20.0,
+                  -0.0,
+                  -0.0
+                ],
+                "area_mm2": 150.0,
+                "normal": [
+                  1.0,
+                  0.0,
+                  -0.0
+                ]
+              },
+              {
+                "id": "face:6",
+                "kind": "cylinder",
+                "center_mm": [
+                  -2.0,
+                  -0.0,
+                  0.0
+                ],
+                "area_mm2": 62.83185,
+                "hole": {
+                  "radius": 2.0,
+                  "origin": [
+                    0.0,
+                    0.0,
+                    -2.5
+                  ],
+                  "axis": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "depth": 5.0,
+                  "diameter_mm": 4.0
+                }
+              }
+            ]
+          }
+        ],
+        "body_count": 2,
+        "selected_body_ids": [
+          "body:0"
+        ]
+      },
+      "face_ids": [
+        "body:0/face:6"
+      ],
+      "references": [],
+      "parts_changes": []
+    },
+    "elapsed_ms": 67460,
+    "finished_at": "2026-09-15T18:52:53.945922+00:00"
+  },
+  "objective_checks": [
+    {
+      "name": "Debug 1",
+      "model": "gpt-5.6-luna",
+      "variant": "minimal",
+      "elapsed_ms": 8319,
+      "verified": true,
+      "warnings": {}
+    },
+    {
+      "name": "Debug 2",
+      "model": "gpt-5.6-luna",
+      "variant": "constraints",
+      "elapsed_ms": 8360,
+      "verified": true,
+      "warnings": {}
+    },
+    {
+      "name": "Debug 3",
+      "model": "gpt-5.6-terra",
+      "variant": "minimal",
+      "elapsed_ms": 9153,
+      "verified": true,
+      "warnings": {}
+    },
+    {
+      "name": "Debug 4",
+      "model": "gpt-5.6-terra",
+      "variant": "constraints",
+      "elapsed_ms": 7848,
+      "verified": true,
+      "warnings": {}
+    },
+    {
+      "name": "Debug 5",
+      "model": "gpt-6-astra",
+      "variant": "minimal",
+      "elapsed_ms": 22802,
+      "verified": true,
+      "warnings": {}
+    },
+    {
+      "name": "Debug 6",
+      "model": "gpt-6-astra",
+      "variant": "constraints",
+      "elapsed_ms": 9654,
+      "verified": true,
+      "warnings": {}
+    }
+  ]
+}

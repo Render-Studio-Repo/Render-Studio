@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -13,24 +14,34 @@ from cryptography.fernet import Fernet, InvalidToken
 from backend.config import settings
 from backend.database import get_conn
 
-SUPPORTED_PROVIDERS = {"openai", "anthropic", "kimi", "xai"}
+SUPPORTED_PROVIDERS = {"openai", "anthropic", "kimi", "xai", "gemini", "qwen", "local"}
+
+QWEN_INTL_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+QWEN_CN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 PROVIDER_LABELS: dict[str, str] = {
     "openai": "OpenAI",
     "anthropic": "Claude",
     "kimi": "Kimi",
     "xai": "Grok",
+    "gemini": "Gemini",
+    "qwen": "Qwen",
+    "local": "Local LLM",
 }
 
 # Catalog of models owners can allow on a shared key (keep in sync with frontend).
 PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
     "openai": [
-        "gpt-5.5",
-        "gpt-5.5-pro",
-        "gpt-5.3-codex",
+        "gpt-6.1-sol",
         "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-6-astra",
+        "gpt-6-astra-pro",
+        "gpt-5.5",
     ],
     "anthropic": [
+        "claude-fable-5-1",
         "claude-opus-5",
         "claude-fable-5",
         "claude-sonnet-4-5",
@@ -39,11 +50,31 @@ PROVIDER_MODEL_CATALOG: dict[str, list[str]] = {
     ],
     "kimi": [
         "kimi-k2.6",
-        "kimi-k2.5",
         "kimi-k3",
     ],
     "xai": [
         "grok-4.5",
+    ],
+    "gemini": [
+        "gemini-3.8-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    ],
+    "qwen": [
+        "qwen3-coder-plus",
+        "qwen3-coder-flash",
+        "qwen-plus",
+        "qwen-max",
+        "qwen-turbo",
+    ],
+    "local": [
+        "qwen2.5-coder:32b",
+        "qwen2.5-coder:14b",
+        "qwen2.5:32b",
+        "qwen3:32b",
+        "llama3.1:8b",
+        "deepseek-coder-v2",
+        "gpt-oss:20b",
     ],
 }
 
@@ -105,10 +136,24 @@ def normalize_provider(provider: str | None) -> str:
         "grok": "xai",
         "x-ai": "xai",
         "spacexai": "xai",
+        "google": "gemini",
+        "google-ai": "gemini",
+        "google_ai": "gemini",
+        "qwen": "qwen",
+        "dashscope": "qwen",
+        "alibaba": "qwen",
+        "aliyun": "qwen",
+        "tongyi": "qwen",
+        "ollama": "local",
+        "lmstudio": "local",
+        "lm_studio": "local",
+        "openai_compat": "local",
+        "openai-compatible": "local",
+        "openai_compatible": "local",
     }
     value = aliases.get(value, value)
     if value not in SUPPORTED_PROVIDERS:
-        raise ValueError("Provider must be openai, anthropic, kimi, or xai")
+        raise ValueError("Provider must be openai, anthropic, kimi, xai, gemini, qwen, or local")
     return value
 
 
@@ -119,6 +164,36 @@ def provider_label(provider: str | None) -> str:
         return PROVIDER_LABELS.get(str(provider or "").strip().lower(), "AI")
 
 
+def _ensure_base_url_column(conn: Any) -> None:
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(user_ai_keys)").fetchall()}
+        if "base_url" not in cols:
+            conn.execute("ALTER TABLE user_ai_keys ADD COLUMN base_url TEXT")
+    except Exception:
+        pass
+
+
+def normalize_base_url(base_url: str | None, provider: str | None = None) -> str | None:
+    raw = (base_url or "").strip().rstrip("/")
+    if not raw:
+        try:
+            prov = normalize_provider(provider)
+        except ValueError:
+            return None
+        if prov == "local":
+            return "http://127.0.0.1:11434/v1"
+        if prov == "qwen":
+            return QWEN_INTL_BASE_URL
+        return None
+    if not re.match(r"^https?://", raw, flags=re.I):
+        raise ValueError("Base URL must start with http:// or https://")
+    # Accept both …/v1 and bare host; OpenAI client wants /v1.
+    if not raw.endswith("/v1") and "localhost" in raw or "127.0.0.1" in raw:
+        if "/v1" not in raw:
+            raw = raw.rstrip("/") + "/v1"
+    return raw[:300]
+
+
 def default_model(provider: str) -> str:
     provider = normalize_provider(provider)
     if provider == "anthropic":
@@ -127,6 +202,12 @@ def default_model(provider: str) -> str:
         return getattr(settings, "kimi_model", None) or "kimi-k2.6"
     if provider == "xai":
         return getattr(settings, "xai_model", None) or "grok-4.5"
+    if provider == "gemini":
+        return getattr(settings, "gemini_model", None) or "gemini-3.8-flash"
+    if provider == "qwen":
+        return getattr(settings, "qwen_model", None) or "qwen3-coder-plus"
+    if provider == "local":
+        return "qwen2.5-coder:32b"
     return settings.openai_model
 
 
@@ -196,9 +277,32 @@ def clamp_model_to_allowed(
     return candidate or fb or default_model(provider)
 
 
+def normalize_base_url(base_url: str | None, provider: str | None = None) -> str | None:
+    raw = (base_url or "").strip().rstrip("/")
+    if not raw:
+        try:
+            prov = normalize_provider(provider)
+        except ValueError:
+            return None
+        if prov == "local":
+            return "http://127.0.0.1:11434/v1"
+        if prov == "qwen":
+            return QWEN_INTL_BASE_URL
+        return None
+    if not re.match(r"^https?://", raw, flags=re.I):
+        raise ValueError("Base URL must start with http:// or https://")
+    # Accept bare host for local servers; OpenAI client wants /v1.
+    if ("localhost" in raw or "127.0.0.1" in raw) and "/v1" not in raw:
+        raw = raw.rstrip("/") + "/v1"
+    return raw[:300]
+
+
 def validate_key(provider: str, api_key: str) -> str:
     provider = normalize_provider(provider)
     key = api_key.strip()
+    if provider == "local":
+        # Ollama / LM Studio often need no key; accept short placeholders.
+        return key or "local-no-key-required"
     if len(key) < 20:
         raise ValueError("API key looks too short")
     if provider == "openai" and not key.startswith("sk-"):
@@ -207,6 +311,20 @@ def validate_key(provider: str, api_key: str) -> str:
         raise ValueError('Claude/Anthropic API keys usually start with "sk-ant-"')
     if provider == "xai" and not key.startswith("xai-"):
         raise ValueError('Grok / xAI API keys usually start with "xai-"')
+    if provider == "gemini":
+        if key.startswith("sk-ant-"):
+            raise ValueError("That looks like an Anthropic key — pick Claude / Anthropic as the provider.")
+        if key.startswith("xai-"):
+            raise ValueError("That looks like a Grok / xAI key — pick Grok / xAI as the provider.")
+        if not key.startswith("AIza"):
+            raise ValueError('Gemini API keys from Google AI Studio usually start with "AIza"')
+    if provider == "qwen":
+        if key.startswith("sk-ant-"):
+            raise ValueError("That looks like an Anthropic key — pick Claude / Anthropic as the provider.")
+        if key.startswith("AIza"):
+            raise ValueError("That looks like a Gemini key — pick Gemini / Google as the provider.")
+        if key.startswith("xai-"):
+            raise ValueError("That looks like a Grok / xAI key — pick Grok / xAI as the provider.")
     if provider == "kimi" and key.startswith("sk-ant-"):
         raise ValueError("That looks like an Anthropic key — pick Claude / Anthropic as the provider.")
     return key
@@ -232,6 +350,69 @@ def _decrypt(enc: str | None) -> str | None:
         except (InvalidToken, UnicodeError, ValueError):
             continue
     return None
+
+
+def _prefer_remote_keys() -> bool:
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        return sbusers.prefer_supabase()
+    except Exception:
+        return False
+
+
+def _ws_live() -> bool:
+    try:
+        from backend.services.supabase_workspace_store import live
+
+        return live()
+    except Exception:
+        return False
+
+
+def _remote_keys_ready() -> bool:
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        return sbusers.source_of_truth()
+    except Exception:
+        return False
+
+
+def _backup_key_sqlite(
+    user_id: str,
+    *,
+    key_id: str,
+    name: str,
+    provider: str,
+    enc: str,
+    model: str,
+    created_at: str,
+    base_url: str | None,
+    activate: bool,
+) -> None:
+    with get_conn() as conn:
+        _ensure_base_url_column(conn)
+        existing = conn.execute(
+            "SELECT id FROM user_ai_keys WHERE id = ? AND user_id = ?",
+            (key_id, user_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE user_ai_keys SET name=?, provider=?, api_key_enc=?, model=?, base_url=? WHERE id=? AND user_id=?",
+                (name, provider, enc, model, base_url, key_id, user_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO user_ai_keys (id, user_id, name, provider, api_key_enc, model, created_at, base_url) VALUES (?,?,?,?,?,?,?,?)",
+                (key_id, user_id, name, provider, enc, model, created_at, base_url),
+            )
+        if activate:
+            conn.execute(
+                "UPDATE users SET ai_provider=?, ai_api_key_enc=?, ai_model=?, active_ai_key_id=? WHERE id=?",
+                (provider, enc, model, key_id, user_id),
+            )
+        conn.commit()
 
 
 # ── Multi-key library ─────────────────────────────────────────────────────────
@@ -264,7 +445,17 @@ def _migrate_legacy_key(user_id: str, conn: Any) -> None:
 
 def list_keys(user_id: str) -> list[dict[str, Any]]:
     """Return all saved keys for a user (no raw key values)."""
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            return []
+        from backend.services import supabase_users_store as sbusers
+
+        result = sbusers.list_key_meta(user_id)
+        for item in result:
+            item["provider_label"] = provider_label(item.get("provider"))
+        return result
     with get_conn() as conn:
+        _ensure_base_url_column(conn)
         _migrate_legacy_key(user_id, conn)
         conn.commit()
 
@@ -274,7 +465,7 @@ def list_keys(user_id: str) -> list[dict[str, Any]]:
         active_key_id = (active_id["active_ai_key_id"] if active_id else None)
 
         rows = conn.execute(
-            "SELECT id, name, provider, model, created_at FROM user_ai_keys WHERE user_id = ? ORDER BY created_at",
+            "SELECT id, name, provider, model, created_at, base_url FROM user_ai_keys WHERE user_id = ? ORDER BY created_at",
             (user_id,),
         ).fetchall()
 
@@ -286,6 +477,7 @@ def list_keys(user_id: str) -> list[dict[str, Any]]:
             "provider": row["provider"],
             "provider_label": provider_label(row["provider"]),
             "model": row["model"],
+            "base_url": row["base_url"] if "base_url" in row.keys() else None,
             "created_at": row["created_at"],
             "is_active": row["id"] == active_key_id,
         })
@@ -299,22 +491,85 @@ def add_key(
     model: str | None = None,
     name: str | None = None,
     activate: bool = True,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     """Save a new key to the library and optionally activate it."""
     provider = normalize_provider(provider)
     key = validate_key(provider, api_key)
     enc = _encrypt(key)
     chosen_model = (model or "").strip() or default_model(provider)
+    if "codex" in chosen_model.lower():
+        chosen_model = default_model(provider)
+    chosen_base = normalize_base_url(base_url, provider)
     key_name = (name or "").strip() or (
         f"{provider_label(provider)} key"
     )
     key_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
 
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            raise ValueError("User key store is unavailable")
+        from backend.services import supabase_users_store as sbusers
+
+        keys = sbusers.personal_keys(user_id)
+        keys.append(
+            {
+                "id": key_id,
+                "provider": provider,
+                "name": key_name,
+                "model": chosen_model,
+                "base_url": chosen_base,
+                "ciphertext": enc,
+                "key_hint": key_hint(key),
+                "is_active": bool(activate),
+                "created_at": now,
+            }
+        )
+        active_id = key_id if activate else (sbusers.get_by_id(user_id) or {}).get("active_ai_key_id")
+        sbusers.replace_personal_keys(
+            user_id,
+            keys,
+            active_id=active_id,
+            ai_provider=provider if activate else None,
+            ai_model=chosen_model if activate else None,
+        )
+        try:
+            _backup_key_sqlite(
+                user_id,
+                key_id=key_id,
+                name=key_name,
+                provider=provider,
+                enc=enc,
+                model=chosen_model,
+                created_at=now,
+                base_url=chosen_base,
+                activate=bool(activate),
+            )
+        except Exception:
+            pass
+        try:
+            from backend.services import supabase_secrets_store as sbsec
+
+            sbsec.upsert_ai_key(
+                key_id=key_id,
+                user_id=user_id,
+                provider=provider,
+                name=key_name,
+                model=chosen_model,
+                ciphertext=enc,
+                key_hint=key_hint(key),
+                is_active=bool(activate),
+            )
+        except Exception:
+            pass
+        return status_for_user_id(user_id)
+
     with get_conn() as conn:
+        _ensure_base_url_column(conn)
         conn.execute(
-            "INSERT INTO user_ai_keys (id, user_id, name, provider, api_key_enc, model, created_at) VALUES (?,?,?,?,?,?,?)",
-            (key_id, user_id, key_name, provider, enc, chosen_model, now),
+            "INSERT INTO user_ai_keys (id, user_id, name, provider, api_key_enc, model, created_at, base_url) VALUES (?,?,?,?,?,?,?,?)",
+            (key_id, user_id, key_name, provider, enc, chosen_model, now, chosen_base),
         )
         if activate:
             conn.execute(
@@ -338,12 +593,50 @@ def add_key(
         )
     except Exception:
         pass
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        sbusers.upsert_local_user(user_id)
+    except Exception:
+        pass
 
     return status_for_user_id(user_id)
 
 
 def delete_key(user_id: str, key_id: str) -> dict[str, Any]:
     """Remove a key from the library. If it was active, deactivate."""
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            raise ValueError("User key store is unavailable")
+        from backend.services import supabase_users_store as sbusers
+
+        row = sbusers.get_by_id(user_id) or {}
+        keys = [k for k in sbusers.personal_keys(user_id) if str(k.get("id") or "") != str(key_id)]
+        if len(keys) == len(sbusers.personal_keys(user_id)):
+            raise ValueError("Key not found")
+        active_id = str(row.get("active_ai_key_id") or "")
+        if active_id == str(key_id):
+            nxt = keys[-1] if keys else None
+            active_id = str(nxt["id"]) if nxt else None
+            provider = nxt.get("provider") if nxt else None
+            model = nxt.get("model") if nxt else None
+        else:
+            provider = None
+            model = None
+        sbusers.replace_personal_keys(user_id, keys, active_id=active_id, ai_provider=provider, ai_model=model)
+        try:
+            with get_conn() as conn:
+                conn.execute("DELETE FROM user_ai_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
+                conn.commit()
+        except Exception:
+            pass
+        try:
+            from backend.services import supabase_secrets_store as sbsec
+
+            sbsec.delete_ai_key(key_id)
+        except Exception:
+            pass
+        return status_for_user_id(user_id)
     with get_conn() as conn:
         row = conn.execute(
             "SELECT id FROM user_ai_keys WHERE id = ? AND user_id = ?",
@@ -384,12 +677,45 @@ def delete_key(user_id: str, key_id: str) -> dict[str, Any]:
         sbsec.delete_ai_key(key_id)
     except Exception:
         pass
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        sbusers.upsert_local_user(user_id)
+    except Exception:
+        pass
 
     return status_for_user_id(user_id)
 
 
 def activate_key(user_id: str, key_id: str) -> dict[str, Any]:
     """Make a saved key the active one."""
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            raise ValueError("User key store is unavailable")
+        from backend.services import supabase_users_store as sbusers
+
+        item = sbusers.find_personal_key(user_id, key_id)
+        if not item:
+            raise ValueError("Key not found")
+        keys = sbusers.personal_keys(user_id)
+        sbusers.replace_personal_keys(
+            user_id,
+            keys,
+            active_id=key_id,
+            ai_provider=item.get("provider"),
+            ai_model=item.get("model"),
+        )
+        try:
+            enc = item.get("ciphertext") or ""
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE users SET ai_provider=?, ai_api_key_enc=?, ai_model=?, active_ai_key_id=? WHERE id=?",
+                    (item.get("provider"), enc, item.get("model"), key_id, user_id),
+                )
+                conn.commit()
+        except Exception:
+            pass
+        return status_for_user_id(user_id)
     with get_conn() as conn:
         row = conn.execute(
             "SELECT provider, api_key_enc, model FROM user_ai_keys WHERE id = ? AND user_id = ?",
@@ -402,6 +728,12 @@ def activate_key(user_id: str, key_id: str) -> dict[str, Any]:
             (row["provider"], row["api_key_enc"], row["model"], key_id, user_id),
         )
         conn.commit()
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        sbusers.upsert_local_user(user_id)
+    except Exception:
+        pass
     return status_for_user_id(user_id)
 
 
@@ -435,6 +767,8 @@ def update_key(user_id: str, key_id: str, *, name: str | None = None, model: str
             model = model.strip()
             if not model:
                 raise ValueError("Model cannot be empty")
+            if "codex" in model.lower():
+                model = default_model("openai")
             conn.execute(
                 "UPDATE user_ai_keys SET model = ? WHERE id = ? AND user_id = ?",
                 (model, key_id, user_id),
@@ -444,6 +778,34 @@ def update_key(user_id: str, key_id: str, *, name: str | None = None, model: str
 
 
 # ── Team-shared keys ──────────────────────────────────────────────────────────
+
+def grant_team_openai_keys_to_member(
+    team_id: str,
+    target_user_id: str,
+    requester_id: str,
+) -> list[str]:
+    """Grant every shared OpenAI key on this workspace to a member and turn it on."""
+    granted_ids: list[str] = []
+    with get_conn() as conn:
+        keys = conn.execute(
+            """
+            SELECT id FROM team_shared_ai_keys
+            WHERE team_id=? AND lower(provider)='openai' AND COALESCE(enabled,1)=1
+            """,
+            (team_id,),
+        ).fetchall()
+    for key in keys:
+        set_team_key_member_access(
+            team_id,
+            key["id"],
+            target_user_id,
+            granted=True,
+            requester_id=requester_id,
+            use_key=True,
+        )
+        granted_ids.append(str(key["id"]))
+    return granted_ids
+
 
 def deny_shared_keys_for_new_member(
     team_id: str,
@@ -468,6 +830,26 @@ def deny_shared_keys_for_new_member(
                 (key["id"], user_id, actor, now),
             )
         conn.commit()
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        with get_conn() as conn2:
+            rows = conn2.execute(
+                "SELECT g.key_id, g.user_id, g.granted, g.updated_by, g.updated_at "
+                "FROM team_key_grants g JOIN team_shared_ai_keys k ON k.id = g.key_id "
+                "WHERE k.team_id=? AND g.user_id=?",
+                (team_id, user_id),
+            ).fetchall()
+        for row in rows:
+            ws.upsert_grant(dict(row))
+    except Exception:
+        pass
+    try:
+        from backend.services.chatgpt_share_service import deny_shared_chatgpt_for_new_member
+
+        deny_shared_chatgpt_for_new_member(team_id, user_id, updated_by=actor)
+    except Exception:
+        pass
 
 
 def deny_members_for_new_shared_key(
@@ -492,6 +874,31 @@ def deny_members_for_new_shared_key(
                 (key_id, uid, shared_by, now),
             )
         conn.commit()
+    _mirror_team_grants(key_id, shared_by, now)
+
+
+def _mirror_team_key_row(row: dict[str, Any]) -> None:
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.upsert_team_key(row)
+    except Exception:
+        pass
+
+
+def _mirror_team_grants(key_id: str, shared_by: str, now: str) -> None:
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT key_id, user_id, granted, updated_by, updated_at FROM team_key_grants WHERE key_id=?",
+                (key_id,),
+            ).fetchall()
+        for row in rows:
+            ws.upsert_grant(dict(row))
+    except Exception:
+        pass
 
 
 def add_team_shared_key(
@@ -510,6 +917,8 @@ def add_team_shared_key(
     key = validate_key(provider, api_key)
     enc = _encrypt(key)
     chosen_model = (model or "").strip() or default_model(provider)
+    if "codex" in chosen_model.lower():
+        chosen_model = default_model(provider)
     key_name = (name or "").strip() or (f"Team {provider_label(provider)} key")
     scope_type, scope_project_id, scope_label = _normalize_team_key_scope(scope_type, scope_project_id, scope_label)
     key_id = str(uuid.uuid4())[:8]
@@ -526,6 +935,22 @@ def add_team_shared_key(
             (key_id, team_id, key_name, provider, enc, chosen_model, shared_by, now, scope_type, scope_project_id, scope_label),
         )
         conn.commit()
+    _mirror_team_key_row(
+        {
+            "id": key_id,
+            "team_id": team_id,
+            "name": key_name,
+            "provider": provider,
+            "api_key_enc": enc,
+            "model": chosen_model,
+            "shared_by": shared_by,
+            "enabled": 1,
+            "created_at": now,
+            "scope_type": scope_type,
+            "scope_project_id": scope_project_id,
+            "scope_label": scope_label,
+        }
+    )
     deny_members_for_new_shared_key(team_id, key_id, shared_by)
     return list_team_shared_keys(team_id, shared_by)
 
@@ -557,9 +982,30 @@ def add_team_shared_key_from_user_key(
             "SELECT name, provider, api_key_enc, model FROM user_ai_keys WHERE id=? AND user_id=?",
             (source_key_id, shared_by),
         ).fetchone()
+        if not source and _prefer_remote_keys() and _remote_keys_ready():
+            from backend.services import supabase_users_store as sbusers
+
+            remote = sbusers.find_personal_key(shared_by, source_key_id)
+            if remote:
+                class _Row(dict):
+                    def __getitem__(self, key):
+                        if key == "api_key_enc":
+                            return self.get("ciphertext") or dict.get(self, "api_key_enc")
+                        return dict.__getitem__(self, key)
+
+                source = _Row(
+                    {
+                        "name": remote.get("name"),
+                        "provider": remote.get("provider"),
+                        "api_key_enc": remote.get("ciphertext") or remote.get("api_key_enc"),
+                        "model": remote.get("model"),
+                    }
+                )
         if not source:
             raise ValueError("Saved key not found")
         chosen_model = (model or "").strip() or source["model"] or default_model(source["provider"])
+        if "codex" in str(chosen_model or "").lower():
+            chosen_model = default_model(source["provider"])
         key_name = (name or "").strip() or f"Shared {source['name']}"
         scope_type, scope_project_id, scope_label = _normalize_team_key_scope(scope_type, scope_project_id, scope_label)
         key_id = str(uuid.uuid4())[:8]
@@ -568,6 +1014,22 @@ def add_team_shared_key_from_user_key(
             (key_id, team_id, key_name, source["provider"], source["api_key_enc"], chosen_model, shared_by, now, scope_type, scope_project_id, scope_label),
         )
         conn.commit()
+    _mirror_team_key_row(
+        {
+            "id": key_id,
+            "team_id": team_id,
+            "name": key_name,
+            "provider": source["provider"],
+            "api_key_enc": source["api_key_enc"],
+            "model": chosen_model,
+            "shared_by": shared_by,
+            "enabled": 1,
+            "created_at": now,
+            "scope_type": scope_type,
+            "scope_project_id": scope_project_id,
+            "scope_label": scope_label,
+        }
+    )
     deny_members_for_new_shared_key(team_id, key_id, shared_by)
     return list_team_shared_keys(team_id, shared_by)
 
@@ -613,8 +1075,92 @@ def _team_key_scope_allows(conn: Any, row: Any, project_id: str | None) -> bool:
     return True
 
 
+def _list_team_shared_keys_remote(team_id: str, user_id: str) -> list[dict[str, Any]]:
+    from backend.services import supabase_workspace_store as ws
+
+    keys = ws.list_team_keys(team_id)
+    key_ids = [str(k.get("id")) for k in keys if k.get("id")]
+    grants = {(g.get("key_id"), g.get("user_id")): ws._as_bool(g.get("granted")) for g in ws.list_grants_for_keys(key_ids)}
+    opt_rows = ws.list_opts_for_keys(key_ids)
+    opts = {
+        (o.get("key_id"), o.get("user_id")): o
+        for o in opt_rows
+    }
+    members = ws.list_members(team_id)
+    requester_is_team_owner = any(
+        str(m.get("user_id")) == str(user_id) and str(m.get("role") or "") == "owner" for m in members
+    )
+    out = []
+    for r in keys:
+        kid = str(r.get("id") or "")
+        owner = str(r.get("shared_by") or "") == str(user_id)
+        if not owner and not grants.get((kid, user_id), False):
+            continue
+        opt = opts.get((kid, user_id)) or {}
+        provider = normalize_provider(r.get("provider"))
+        access_members = []
+        for m in members:
+            uid = str(m.get("user_id") or "")
+            is_owner = uid == str(r.get("shared_by") or "")
+            granted = is_owner or grants.get((kid, uid), False)
+            if not granted:
+                continue
+            mopt = opts.get((kid, uid)) or {}
+            access_members.append(
+                {
+                    "user_id": uid,
+                    "display_name": uid,
+                    "email": "",
+                    "granted": True,
+                    "use_key": ws._as_bool(mopt.get("use_key"), False),
+                    "model": mopt.get("model") or r.get("model"),
+                    "daily_limit_usd": mopt.get("daily_limit_usd"),
+                    "daily_token_limit": mopt.get("daily_token_limit"),
+                    "allowed_models": effective_allowed_models(mopt.get("allowed_models"), provider),
+                }
+            )
+        out.append(
+            {
+                "id": kid,
+                "team_id": team_id,
+                "name": r.get("name"),
+                "provider": r.get("provider"),
+                "provider_label": provider_label(r.get("provider")),
+                "model": clamp_model_to_allowed(
+                    opt.get("model") or r.get("model"),
+                    provider=provider,
+                    allowed_raw=opt.get("allowed_models"),
+                    fallback=r.get("model"),
+                ),
+                "key_model": r.get("model"),
+                "allowed_models": effective_allowed_models(opt.get("allowed_models"), provider),
+                "enabled": ws._as_bool(r.get("enabled"), True),
+                "shared_by": r.get("shared_by"),
+                "shared_by_name": "",
+                "scope_type": r.get("scope_type") or "all",
+                "scope_project_id": r.get("scope_project_id"),
+                "scope_label": r.get("scope_label"),
+                "use_key": ws._as_bool(opt.get("use_key"), False),
+                "effective_model": clamp_model_to_allowed(
+                    opt.get("model") or r.get("model"),
+                    provider=provider,
+                    allowed_raw=opt.get("allowed_models"),
+                    fallback=r.get("model"),
+                ),
+                "daily_limit_usd": opt.get("daily_limit_usd"),
+                "daily_token_limit": opt.get("daily_token_limit"),
+                "is_owner": owner,
+                "can_manage": owner or requester_is_team_owner,
+                "access_members": access_members,
+            }
+        )
+    return out
+
+
 def list_team_shared_keys(team_id: str, user_id: str) -> list[dict[str, Any]]:
     """Return team shared keys. Raw key is never returned."""
+    if _ws_live():
+        return _list_team_shared_keys_remote(team_id, user_id)
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT k.id, k.name, k.provider, k.model, k.enabled, k.shared_by,
@@ -746,29 +1292,49 @@ def list_team_key_members(team_id: str, key_id: str, requester_id: str) -> list[
         if key_row["shared_by"] != requester_id and not _is_team_owner(conn, team_id, requester_id):
             raise PermissionError("Only the key owner or team owner can manage shared-key access")
 
-        rows = conn.execute(
-            """SELECT tm.user_id, u.display_name, u.email,
-                      tm.role,
-                      CASE WHEN tm.user_id = ? THEN 1 ELSE COALESCE(g.granted, 0) END AS granted,
-                      COALESCE(opt.use_key, 0) AS use_key,
-                      opt.model AS member_model,
-                      opt.daily_limit_usd AS daily_limit_usd,
-                      opt.daily_token_limit AS daily_token_limit,
-                      opt.allowed_models AS allowed_models
-               FROM team_members tm
-               JOIN users u ON u.id = tm.user_id
-               LEFT JOIN team_key_grants g ON g.key_id = ? AND g.user_id = tm.user_id
-               LEFT JOIN user_team_key_opts opt ON opt.key_id = ? AND opt.user_id = tm.user_id
-               WHERE tm.team_id = ?
-               ORDER BY u.display_name""",
-            (key_row["shared_by"], key_id, key_id, team_id),
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                """SELECT tm.user_id, u.display_name, u.email, u.handle,
+                          tm.role,
+                          CASE WHEN tm.user_id = ? THEN 1 ELSE COALESCE(g.granted, 0) END AS granted,
+                          COALESCE(opt.use_key, 0) AS use_key,
+                          opt.model AS member_model,
+                          opt.daily_limit_usd AS daily_limit_usd,
+                          opt.daily_token_limit AS daily_token_limit,
+                          opt.allowed_models AS allowed_models
+                   FROM team_members tm
+                   JOIN users u ON u.id = tm.user_id
+                   LEFT JOIN team_key_grants g ON g.key_id = ? AND g.user_id = tm.user_id
+                   LEFT JOIN user_team_key_opts opt ON opt.key_id = ? AND opt.user_id = tm.user_id
+                   WHERE tm.team_id = ?
+                   ORDER BY u.display_name""",
+                (key_row["shared_by"], key_id, key_id, team_id),
+            ).fetchall()
+        except Exception:
+            rows = conn.execute(
+                """SELECT tm.user_id, u.display_name, u.email,
+                          tm.role,
+                          CASE WHEN tm.user_id = ? THEN 1 ELSE COALESCE(g.granted, 0) END AS granted,
+                          COALESCE(opt.use_key, 0) AS use_key,
+                          opt.model AS member_model,
+                          opt.daily_limit_usd AS daily_limit_usd,
+                          opt.daily_token_limit AS daily_token_limit,
+                          opt.allowed_models AS allowed_models
+                   FROM team_members tm
+                   JOIN users u ON u.id = tm.user_id
+                   LEFT JOIN team_key_grants g ON g.key_id = ? AND g.user_id = tm.user_id
+                   LEFT JOIN user_team_key_opts opt ON opt.key_id = ? AND opt.user_id = tm.user_id
+                   WHERE tm.team_id = ?
+                   ORDER BY u.display_name""",
+                (key_row["shared_by"], key_id, key_id, team_id),
+            ).fetchall()
     provider = normalize_provider(key_row["provider"])
     return [
         {
             "user_id": r["user_id"],
             "display_name": r["display_name"],
             "email": r["email"],
+            "handle": (r["handle"] if "handle" in r.keys() else None),
             "role": r["role"],
             "granted": bool(r["granted"]),
             "use_key": bool(r["use_key"]),
@@ -911,6 +1477,29 @@ def set_team_key_member_access(
                 ),
             )
         conn.commit()
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        if granted is not None:
+            ws.upsert_grant(
+                {
+                    "key_id": key_id,
+                    "user_id": target_user_id,
+                    "granted": granted,
+                    "updated_by": requester_id,
+                    "updated_at": now,
+                }
+            )
+        opt = None
+        with get_conn() as conn2:
+            opt = conn2.execute(
+                "SELECT * FROM user_team_key_opts WHERE user_id=? AND key_id=?",
+                (target_user_id, key_id),
+            ).fetchone()
+        if opt:
+            ws.upsert_opt(dict(opt))
+    except Exception:
+        pass
     if self_limit_only:
         return []
     return list_team_key_members(team_id, key_id, requester_id)
@@ -933,6 +1522,12 @@ def delete_team_shared_key(team_id: str, key_id: str, user_id: str) -> None:
             raise PermissionError("Only the key owner or team admin can remove this key")
         conn.execute("DELETE FROM team_shared_ai_keys WHERE id=?", (key_id,))
         conn.commit()
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.delete_team_key(key_id)
+    except Exception:
+        pass
 
 
 def toggle_team_key(user_id: str, key_id: str, use_key: bool, model: str | None = None) -> None:
@@ -979,9 +1574,97 @@ def toggle_team_key(user_id: str, key_id: str, use_key: bool, model: str | None 
         conn.commit()
 
 
+def _effective_from_remote(
+    user_id: str,
+    project_id: str | None,
+    *,
+    prefer_opt_in: bool,
+) -> dict[str, Any] | None:
+    from backend.services import supabase_workspace_store as ws
+
+    memberships = ws.list_user_memberships(user_id)
+    team_ids = [str(m.get("team_id")) for m in memberships if m.get("team_id")]
+    if not team_ids:
+        return None
+    keys: list[dict[str, Any]] = []
+    for tid in team_ids:
+        keys.extend(ws.list_team_keys(tid))
+    keys = [k for k in keys if ws._as_bool(k.get("enabled"), True)]
+    if not keys:
+        return None
+    key_ids = [str(k.get("id")) for k in keys if k.get("id")]
+    grants = {(g.get("key_id"), g.get("user_id")): ws._as_bool(g.get("granted")) for g in ws.list_grants_for_keys(key_ids)}
+    opts = {(o.get("key_id"), o.get("user_id")): o for o in ws.list_opts_for_user(user_id)}
+    folder_id = None
+    if project_id:
+        access = ws.get_project_access(project_id)
+        folder_id = (access or {}).get("folder_id")
+    chosen = None
+    fallback = None
+    for key in keys:
+        kid = str(key.get("id") or "")
+        owner = str(key.get("shared_by") or "") == str(user_id)
+        if not owner and not grants.get((kid, user_id), False):
+            continue
+        scope = str(key.get("scope_type") or "all")
+        if scope == "project" and project_id and str(key.get("scope_project_id") or "") != str(project_id):
+            continue
+        if scope == "folder" and project_id and str(key.get("scope_project_id") or "") != str(folder_id or ""):
+            continue
+        opt = opts.get((kid, user_id)) or {}
+        use_key = ws._as_bool(opt.get("use_key"), False if prefer_opt_in else True)
+        packed = {**key, "opt": opt}
+        if prefer_opt_in:
+            if use_key:
+                chosen = packed
+                break
+        else:
+            if not ws._as_bool(opt.get("use_key"), True) and opt:
+                continue
+            fallback = packed
+            break
+    row = chosen or fallback
+    if not row:
+        return None
+    api_key = _decrypt(str(row.get("api_key_enc") or ""))
+    if not api_key:
+        return None
+    opt = row.get("opt") or {}
+    provider = normalize_provider(row.get("provider"))
+    model = opt.get("model") or row.get("model")
+    return {
+        "provider": provider,
+        "api_key": api_key,
+        "model": clamp_model_to_allowed(
+            model,
+            provider=provider,
+            allowed_raw=opt.get("allowed_models"),
+            fallback=row.get("model"),
+        ),
+        "allowed_models": effective_allowed_models(opt.get("allowed_models"), provider),
+        "source": "team",
+        "key_id": row.get("id"),
+        "key_name": row.get("name"),
+        "shared_by_name": "",
+        "scope_type": row.get("scope_type") or "all",
+        "scope_project_id": row.get("scope_project_id"),
+        "scope_label": row.get("scope_label"),
+        "daily_limit_usd": opt.get("daily_limit_usd"),
+        "daily_token_limit": opt.get("daily_token_limit"),
+    }
+
+
 def get_effective_key_for_user(user_id: str, project_id: str | None = None) -> dict[str, Any] | None:
     """Return the best available API key for a user.
     Priority: explicitly selected team key → personal active key → fallback team key."""
+    if _ws_live():
+        packed = _effective_from_remote(user_id, project_id, prefer_opt_in=True)
+        if packed:
+            return packed
+        personal = get_user_settings(user_id)
+        if personal.get("api_key"):
+            return {**personal, "source": "personal"}
+        return _effective_from_remote(user_id, project_id, prefer_opt_in=False)
     # Explicitly selected shared key wins so users can choose shared vs own.
     with get_conn() as conn:
         row = conn.execute(
@@ -1109,9 +1792,32 @@ def resolve_key_for_user(
 
 
 def _resolve_personal_key_for_user(user_id: str, key_id: str) -> dict[str, Any]:
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            raise ValueError("Key store unavailable")
+        from backend.services import supabase_users_store as sbusers
+
+        row = sbusers.find_personal_key(user_id, key_id)
+        if not row:
+            raise ValueError("Key not found")
+        api_key = _decrypt(str(row.get("ciphertext") or row.get("api_key_enc") or ""))
+        if not api_key:
+            raise ValueError("Key not available")
+        provider = normalize_provider(row.get("provider"))
+        base = row.get("base_url")
+        return {
+            "provider": provider,
+            "api_key": api_key,
+            "model": (row.get("model") or "").strip() or default_model(provider),
+            "base_url": normalize_base_url(base, provider) if (provider in {"local", "qwen"} or base) else None,
+            "source": "personal",
+            "key_id": key_id,
+            "key_name": row.get("name"),
+        }
     with get_conn() as conn:
+        _ensure_base_url_column(conn)
         row = conn.execute(
-            """SELECT name, provider, api_key_enc, model
+            """SELECT name, provider, api_key_enc, model, base_url
                FROM user_ai_keys WHERE id = ? AND user_id = ?""",
             (key_id, user_id),
         ).fetchone()
@@ -1121,10 +1827,16 @@ def _resolve_personal_key_for_user(user_id: str, key_id: str) -> dict[str, Any]:
     if not api_key:
         raise ValueError("Key not available")
     provider = normalize_provider(row["provider"])
+    base = None
+    try:
+        base = row["base_url"]
+    except Exception:
+        base = None
     return {
         "provider": provider,
         "api_key": api_key,
         "model": (row["model"] or "").strip() or default_model(provider),
+        "base_url": normalize_base_url(base, provider) if (provider in {"local", "qwen"} or base) else None,
         "source": "personal",
         "key_id": key_id,
         "key_name": row["name"],
@@ -1132,6 +1844,37 @@ def _resolve_personal_key_for_user(user_id: str, key_id: str) -> dict[str, Any]:
 
 
 def _resolve_team_key_for_user(user_id: str, key_id: str, *, project_id: str | None = None) -> dict[str, Any]:
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        packed = ws.resolve_team_key_for_user(user_id, key_id)
+        if not packed:
+            raise ValueError("Shared key not found or not accessible")
+        api_key = _decrypt(str(packed.get("api_key_enc") or ""))
+        if not api_key:
+            raise ValueError("Shared key not available")
+        opt = packed.get("opt") or {}
+        provider = normalize_provider(packed.get("provider"))
+        return {
+            "provider": provider,
+            "api_key": api_key,
+            "model": clamp_model_to_allowed(
+                opt.get("model") or packed.get("model"),
+                provider=provider,
+                allowed_raw=opt.get("allowed_models"),
+                fallback=packed.get("model"),
+            ),
+            "allowed_models": effective_allowed_models(opt.get("allowed_models"), provider),
+            "source": "team",
+            "key_id": packed.get("id"),
+            "key_name": packed.get("name"),
+            "shared_by_name": "",
+            "scope_type": packed.get("scope_type") or "all",
+            "scope_project_id": packed.get("scope_project_id"),
+            "scope_label": packed.get("scope_label"),
+            "daily_limit_usd": opt.get("daily_limit_usd"),
+            "daily_token_limit": opt.get("daily_token_limit"),
+        }
     with get_conn() as conn:
         row = conn.execute(
             """SELECT k.api_key_enc, k.provider, COALESCE(opt.model, k.model) AS model,
@@ -1202,17 +1945,59 @@ def clear_user_key(user_id: str) -> dict[str, Any]:
 
 def get_user_settings(user_id: str) -> dict[str, Any]:
     """Return the user's active personal key settings (no team key fallback here)."""
+    if _prefer_remote_keys():
+        if not _remote_keys_ready():
+            return {"provider": "openai", "api_key": None, "model": settings.openai_model, "base_url": None}
+        from backend.services import supabase_users_store as sbusers
+
+        row = sbusers.get_by_id(user_id) or {}
+        active_id = str(row.get("active_ai_key_id") or "")
+        item = sbusers.find_personal_key(user_id, active_id) if active_id else None
+        if not item:
+            keys = sbusers.personal_keys(user_id)
+            item = keys[-1] if keys else None
+        if not item:
+            return {"provider": "openai", "api_key": None, "model": settings.openai_model, "base_url": None}
+        provider = normalize_provider(item.get("provider") or row.get("ai_provider") or "openai")
+        api_key = _decrypt(str(item.get("ciphertext") or item.get("api_key_enc") or ""))
+        model = (item.get("model") or row.get("ai_model") or "").strip() or default_model(provider)
+        base_url = item.get("base_url")
+        return {
+            "provider": provider,
+            "api_key": api_key,
+            "model": model,
+            "base_url": normalize_base_url(base_url, provider) if (provider in {"local", "qwen"} or base_url) else None,
+            "key_id": item.get("id"),
+            "key_name": item.get("name"),
+        }
     with get_conn() as conn:
+        _ensure_base_url_column(conn)
         row = conn.execute(
-            "SELECT ai_provider, ai_api_key_enc, ai_model FROM users WHERE id = ?",
+            "SELECT ai_provider, ai_api_key_enc, ai_model, active_ai_key_id FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
+        base_url = None
+        if row and row["active_ai_key_id"]:
+            key_row = conn.execute(
+                "SELECT base_url FROM user_ai_keys WHERE id = ? AND user_id = ?",
+                (row["active_ai_key_id"], user_id),
+            ).fetchone()
+            if key_row:
+                try:
+                    base_url = key_row["base_url"]
+                except Exception:
+                    base_url = None
     if not row:
-        return {"provider": "openai", "api_key": None, "model": settings.openai_model}
+        return {"provider": "openai", "api_key": None, "model": settings.openai_model, "base_url": None}
     provider = normalize_provider(row["ai_provider"] or "openai")
     api_key = _decrypt(row["ai_api_key_enc"])
     model = (row["ai_model"] or "").strip() or default_model(provider)
-    return {"provider": provider, "api_key": api_key, "model": model}
+    return {
+        "provider": provider,
+        "api_key": api_key,
+        "model": model,
+        "base_url": normalize_base_url(base_url, provider) if (provider in {"local", "qwen"} or base_url) else None,
+    }
 
 
 def status_for_user_id(user_id: str) -> dict[str, Any]:
@@ -1220,9 +2005,19 @@ def status_for_user_id(user_id: str) -> dict[str, Any]:
     api_key = settings_for_user["api_key"]
     provider = settings_for_user["provider"]
     keys = list_keys(user_id)
-    with get_conn() as conn:
-        row = conn.execute("SELECT active_ai_key_id FROM users WHERE id=?", (user_id,)).fetchone()
-    active_id = row["active_ai_key_id"] if row else None
+    active_id = settings_for_user.get("key_id")
+    if _prefer_remote_keys() and _remote_keys_ready():
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            remote = sbusers.get_by_id(user_id) or {}
+            active_id = remote.get("active_ai_key_id") or active_id
+        except Exception:
+            pass
+    else:
+        with get_conn() as conn:
+            row = conn.execute("SELECT active_ai_key_id FROM users WHERE id=?", (user_id,)).fetchone()
+        active_id = row["active_ai_key_id"] if row else active_id
 
     # Check for effective key (personal or team fallback)
     effective = get_effective_key_for_user(user_id)

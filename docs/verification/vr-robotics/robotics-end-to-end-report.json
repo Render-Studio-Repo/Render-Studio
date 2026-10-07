@@ -1,0 +1,39 @@
+{
+  "appReady": true,
+  "profile": {
+    "id": "b612cf5a03f420d969e1914d",
+    "version": "1.0.0",
+    "files": 17
+  },
+  "initiallyJoined": false,
+  "duringJoin": false,
+  "joined": {
+    "ok": true,
+    "message": "Connected to public room"
+  },
+  "switched": {
+    "ok": true,
+    "message": "Connected to public room"
+  },
+  "oldJoined": false,
+  "updates": [
+    [
+      "ok",
+      "Connected to public room"
+    ],
+    [
+      "error",
+      "Public room opened on another device. Click Join to use this one."
+    ],
+    [
+      "ok",
+      "Connected to public room"
+    ]
+  ],
+  "live": {
+    "messages": 257,
+    "geometry": 22,
+    "gui": 34
+  },
+  "pageErrors": []
+}

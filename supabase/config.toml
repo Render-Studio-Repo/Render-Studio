@@ -1,0 +1,15 @@
+# Thin pointer — do not treat this as a local Supabase stack.
+#
+# Versioned SQL lives at:
+#   ../integrations/supabase/migrations
+#
+# The CLI always reads <workdir>/migrations (no migrations_path for
+# versioned SQL). Point the workdir at the integrations folder:
+#   supabase --workdir integrations/supabase
+#   export SUPABASE_WORKDIR=integrations/supabase
+#
+# Production apply path: paste those .sql files in the SQL Editor.
+
+[db.migrations]
+enabled = true
+schema_paths = []

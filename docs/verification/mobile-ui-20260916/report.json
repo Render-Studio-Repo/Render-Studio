@@ -1,0 +1,57 @@
+[
+  {
+    "size": "320x568",
+    "controlsWithinScreen": true,
+    "noControlOverlaps": true,
+    "minimumTarget44px": true,
+    "menuTaps": true,
+    "flyouts": true,
+    "transformHidden": true,
+    "errors": []
+  },
+  {
+    "size": "390x844",
+    "controlsWithinScreen": true,
+    "noControlOverlaps": true,
+    "minimumTarget44px": true,
+    "menuTaps": true,
+    "flyouts": true,
+    "transformHidden": true,
+    "errors": []
+  },
+  {
+    "size": "430x932",
+    "controlsWithinScreen": true,
+    "noControlOverlaps": true,
+    "minimumTarget44px": true,
+    "menuTaps": true,
+    "flyouts": true,
+    "transformHidden": true,
+    "errors": []
+  },
+  {
+    "size": "844x390",
+    "controlsWithinScreen": true,
+    "noControlOverlaps": true,
+    "minimumTarget44px": true,
+    "menuTaps": true,
+    "flyouts": true,
+    "transformHidden": true,
+    "errors": []
+  },
+  {
+    "size": "1024x768",
+    "controlsWithinScreen": true,
+    "noControlOverlaps": true,
+    "minimumTarget44px": true,
+    "menuTaps": true,
+    "flyouts": true,
+    "transformHidden": true,
+    "errors": []
+  },
+  {
+    "size": "1440x900",
+    "desktopTransformPreserved": true,
+    "errors": []
+  }
+]

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sys
 import time
 import traceback
@@ -50,6 +51,9 @@ _DISALLOWED_EXPORT_SYMBOLS = frozenset(
     }
 )
 _DISALLOWED_BUILD123D_SUBMODULES = frozenset({"exporters", "exporters3d", "mesher"})
+# Desktop VibeCAD publishes one assembly. Hundreds of per-solid STEP writes
+# (one screw per key) blow past the 10-minute generate budget.
+_MAX_INDIVIDUAL_STEP_EXPORTS = 24
 
 
 def _restricted_import(
@@ -202,6 +206,12 @@ def _resource_limits(request: dict[str, Any]) -> None:
     _set_soft_resource_limit(resource, resource.RLIMIT_NOFILE, 64, "open-file")
 
 
+def _shape_attribute(shape: Any, name: str) -> Any:
+    """build123d exposes topology checks as methods in 0.7 and properties later."""
+    value = getattr(shape, name)
+    return value() if callable(value) else value
+
+
 def _shape_facts(shape: Any) -> dict[str, Any]:
     bounds = shape.bounding_box()
     solids = list(shape.solids())
@@ -209,8 +219,8 @@ def _shape_facts(shape: Any) -> dict[str, Any]:
     edges = list(shape.edges())
     vertices = list(shape.vertices())
     facts = {
-        "shape_type": str(shape.shape_type),
-        "valid": bool(shape.is_valid),
+        "shape_type": str(_shape_attribute(shape, "shape_type")),
+        "valid": bool(_shape_attribute(shape, "is_valid")),
         "solid_count": len(solids),
         "face_count": len(faces),
         "edge_count": len(edges),
@@ -246,6 +256,93 @@ def _shape_facts(shape: Any) -> dict[str, Any]:
             histogram[geometry_type] = histogram.get(geometry_type, 0) + 1
         facts[label] = histogram
     return facts
+
+
+# CAD Viewer default theme fills (`packages/cadgen-js` WORKBENCH_FILL_COLORS).
+WORKBENCH_FILL_COLORS = (
+    "#b6c4ce",
+    "#f4a7a7",
+    "#f8c77e",
+    "#f7e38d",
+    "#b9e88f",
+    "#8fe3c0",
+    "#92d7f5",
+    "#a9b8ff",
+    "#c7a8ff",
+    "#f2a7d9",
+)
+
+
+def _srgb_channel_to_linear(channel: float) -> float:
+    if channel <= 0.04045:
+        return channel / 12.92
+    return ((channel + 0.055) / 1.055) ** 2.4
+
+
+def _srgb_hex_to_linear(hex_color: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
+    text = str(hex_color).strip().lstrip("#")
+    if len(text) == 3:
+        text = "".join(ch * 2 for ch in text)
+    red = int(text[0:2], 16) / 255.0
+    green = int(text[2:4], 16) / 255.0
+    blue = int(text[4:6], 16) / 255.0
+    return (
+        _srgb_channel_to_linear(red),
+        _srgb_channel_to_linear(green),
+        _srgb_channel_to_linear(blue),
+        float(alpha),
+    )
+
+
+def _make_color_helpers(Color: Any) -> dict[str, Any]:
+    def srgb(value: str, alpha: float = 1.0) -> Any:
+        return Color(*_srgb_hex_to_linear(value, alpha))
+
+    def fill_color(index: int, alpha: float = 1.0) -> Any:
+        hex_color = WORKBENCH_FILL_COLORS[int(index) % len(WORKBENCH_FILL_COLORS)]
+        return srgb(hex_color, alpha)
+
+    return {
+        "WORKBENCH_FILL_COLORS": WORKBENCH_FILL_COLORS,
+        "srgb": srgb,
+        "fill_color": fill_color,
+        "Color": Color,
+    }
+
+
+def _shape_color_alpha(shape: Any) -> float | None:
+    color = getattr(shape, "color", None)
+    if color is None:
+        return None
+    try:
+        values = color.to_tuple()
+        if len(values) > 3:
+            return float(values[3])
+        return 1.0
+    except Exception:
+        return 1.0
+
+
+def _quick_single_solid(shape: Any) -> bool:
+    """Validity + one solid, without the full face/edge histogram (too slow at 300+ keys)."""
+    try:
+        if not bool(_shape_attribute(shape, "is_valid")):
+            return False
+        return len(list(shape.solids())) == 1
+    except Exception:
+        return False
+
+
+def _apply_workbench_color(shape: Any, index: int, Color: Any) -> None:
+    alpha = _shape_color_alpha(shape)
+    # Opaque authored metal/plastic finishes are as intentional as transparency.
+    if alpha is not None:
+        return
+    hex_color = "#c0c6cc"
+    try:
+        shape.color = Color(*_srgb_hex_to_linear(hex_color, 1.0))
+    except Exception:
+        pass
 
 
 def _point(value: Any) -> list[float] | None:
@@ -286,8 +383,8 @@ def _shape_evidence(shape: Any) -> dict[str, Any]:
 def _shape_reference(shape: Any) -> dict[str, Any]:
     bounds = shape.bounding_box()
     reference: dict[str, Any] = {
-        "shape_type": str(shape.shape_type),
-        "valid": bool(shape.is_valid),
+        "shape_type": str(_shape_attribute(shape, "shape_type")),
+        "valid": bool(_shape_attribute(shape, "is_valid")),
         "bounds_mm": {
             "min": [float(bounds.min.X), float(bounds.min.Y), float(bounds.min.Z)],
             "max": [float(bounds.max.X), float(bounds.max.Y), float(bounds.max.Z)],
@@ -297,7 +394,7 @@ def _shape_reference(shape: Any) -> dict[str, Any]:
         reference["geometry_type"] = str(shape.geom_type).rsplit(".", 1)[-1].lower()
     except Exception:
         pass
-    shape_type = str(shape.shape_type).lower()
+    shape_type = str(_shape_attribute(shape, "shape_type")).lower()
     if shape_type in {"edge", "wire"}:
         try:
             reference["length_mm"] = float(shape.length)
@@ -520,7 +617,13 @@ def _traceback_evidence(
             for name, value in local_items:
                 if name.startswith("__"):
                     continue
-                summary = _summarize_value(value, shape_type, shape_list_type)
+                try:
+                    summary = _summarize_value(value, shape_type, shape_list_type)
+                except Exception as diagnostic_error:
+                    # OCC may leave the Face being constructed without .wrapped.
+                    # Keep the original failure frames and other locals intact.
+                    summary = {"python_type": type(value).__name__,
+                               "unavailable": str(diagnostic_error)[:240]}
                 if summary is not None:
                     local_values[name] = summary
                 if len(local_values) >= 32:
@@ -747,11 +850,31 @@ def _exception_kind(exc: BaseException, evidence: dict[str, Any]) -> str:
     return "python_execution_failure"
 
 
+def _runtime_provenance(build123d_mod: Any) -> dict[str, Any]:
+    import OCP
+    from importlib.metadata import version
+
+    runtime = {
+        "python_executable": sys.executable,
+        "python_version": sys.version.split()[0],
+        "build123d_version": str(getattr(build123d_mod, "__version__", "")),
+        "ocp_version": version("cadquery-ocp"),
+        "ocp_module_version": str(getattr(OCP, "__version__", "")),
+    }
+    try:
+        from OCP.Standard import Standard_Version
+
+        runtime["occt_version"] = str(Standard_Version())
+    except (ImportError, AttributeError, TypeError):
+        runtime["occt_version"] = None
+    return runtime
+
+
 def _remove_exporter_symbols(module: Any) -> None:
     """Strip file-writing exporter entry points before user source executes.
 
-    The worker's own STEP export uses the OCP writer directly, so removing
-    the build123d exporter surface does not affect legitimate output flow.
+    The host imports its trusted STEP exporter outside the restricted authoring
+    namespace, so removing this surface does not affect legitimate output flow.
     """
     targets: list[Any] = [module]
     shape_type = getattr(module, "Shape", None)
@@ -780,20 +903,55 @@ def _remove_exporter_symbols(module: Any) -> None:
 
 
 def _export_step_geometry(shape: Any, output_path: Path) -> None:
-    from OCP.IFSelect import IFSelect_RetDone
-    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    # Host-only exporter: preserve named components/materials in XCAF. The
+    # restricted authoring namespace still cannot import or call exporters.
+    from build123d.exporters3d import export_step
+    try:
+        if not export_step(shape, str(output_path)):
+            raise RuntimeError(f"STEP write failed: {output_path.name}")
+    except RuntimeError:
+        if len(shape.solids()) != 1:
+            raise
+        from OCP.IFSelect import IFSelect_ReturnStatus
+        from OCP.STEPControl import STEPControl_StepModelType, STEPControl_Writer
 
-    writer = STEPControl_Writer()
-    transfer_status = writer.Transfer(shape.wrapped, STEPControl_AsIs)
-    if transfer_status != IFSelect_RetDone:
-        raise RuntimeError(f"STEP transfer failed: {transfer_status}")
-    write_status = writer.Write(str(output_path))
-    if write_status != IFSelect_RetDone:
-        raise RuntimeError(f"STEP write failed: {write_status}")
+        output_path.unlink(missing_ok=True)
+        writer = STEPControl_Writer()
+        transferred = writer.Transfer(
+            shape.wrapped,
+            STEPControl_StepModelType.STEPControl_AsIs,
+        )
+        written = writer.Write(str(output_path))
+        if (
+            transferred != IFSelect_ReturnStatus.IFSelect_RetDone
+            or written != IFSelect_ReturnStatus.IFSelect_RetDone
+        ):
+            raise RuntimeError(f"STEP write failed: {output_path.name}")
+    # A successful writer can still turn a malformed solid into an open shell.
+    # Validate the actual interchange file before reporting the model complete.
+    from build123d import import_step
+    restored = import_step(str(output_path))
+    expected = len(shape.solids())
+    restored_solids = list(restored.solids())
+    actual = len(restored_solids)
+    valid = bool(_shape_attribute(restored, "is_valid"))
+    if not valid and expected > 1 and actual == expected:
+        # Every authored child already passed the single-solid validity gate.
+        # An assembly compound can be globally invalid solely because its valid
+        # components overlap in the assembled pose. Preserve it when the STEP
+        # round trip retains every child.
+        valid = True
+    if actual != expected or not valid:
+        raise RuntimeError(
+            f"STEP round-trip validation failed for {output_path.name}: "
+            f"expected {expected} valid solids, received {actual}. "
+            "Repair the source topology; do not omit the failed component."
+        )
 
 
 def run(request_path: Path, result_path: Path, site_packages: Path) -> int:
     source = ""
+    runtime: dict[str, Any] = {}
     try:
         request = json.loads(request_path.read_text(encoding="utf-8"))
         if not isinstance(request, dict):
@@ -802,19 +960,18 @@ def run(request_path: Path, result_path: Path, site_packages: Path) -> int:
         sys.path.insert(0, str(site_packages))
 
         import build123d
-        from build123d import Shape, import_step
+        from build123d import Color, Compound, Shape, import_step
 
+        runtime = _runtime_provenance(build123d)
         expected_version = str(request.get("build123d_version") or "")
         actual_version = str(getattr(build123d, "__version__", "") or "")
-        # Accept same minor line (VibeCAD pins 0.11.1; Render Studio may ship 0.11.0).
-        if expected_version and actual_version:
-            exp_parts = expected_version.split(".")[:2]
-            act_parts = actual_version.split(".")[:2]
-            if exp_parts != act_parts:
-                raise RuntimeError(
-                    f"build123d runtime version is {actual_version!r}; "
-                    f"expected {expected_version!r} (same major.minor)."
-                )
+        runtime["expected_build123d_version"] = expected_version
+        runtime["expected_ocp_version"] = str(request.get("ocp_version") or "")
+        for dependency in ("build123d", "ocp"):
+            expected = runtime[f"expected_{dependency}_version"]
+            actual = runtime[f"{dependency}_version"]
+            if expected and actual != expected:
+                raise RuntimeError(f"{dependency} runtime version is {actual!r}; expected exactly {expected!r}.")
         _remove_exporter_symbols(build123d)
 
         inputs: dict[str, Shape] = {}
@@ -833,6 +990,7 @@ def run(request_path: Path, result_path: Path, site_packages: Path) -> int:
             "__name__": "__vibecad_build123d__",
             "inputs": inputs,
             "params": dict(parameters),
+            **_make_color_helpers(Color),
         }
         compiled = compile(source, "<vibecad-build123d>", "exec")
         exec(compiled, namespace, namespace)
@@ -853,37 +1011,66 @@ def run(request_path: Path, result_path: Path, site_packages: Path) -> int:
 
         output_directory = Path(str(request.get("output_directory") or "outputs"))
         output_directory.mkdir(parents=True, exist_ok=True)
-        outputs: list[dict[str, Any]] = []
+        children: list[Any] = []
+        solid_violations: list[str] = []
         for index, key in enumerate(expected_outputs):
             shape = result.get(key)
             if not isinstance(shape, Shape):
                 raise TypeError(
                     f"result[{key!r}] is {type(shape).__name__}, not a build123d Shape."
                 )
-            facts = _shape_facts(shape)
-            if not facts["valid"]:
-                raise RuntimeError(f"result[{key!r}] is not a valid shape.")
-            if facts["solid_count"] != 1:
-                raise RuntimeError(
+            if not _quick_single_solid(shape):
+                facts = _shape_facts(shape)
+                if not facts["valid"]:
+                    raise RuntimeError(f"result[{key!r}] is not a valid shape.")
+                solid_violations.append(
                     f"result[{key!r}] must contain exactly one solid; "
-                    f"received {facts['solid_count']}. Return physical components "
-                    "as separate named outputs."
+                    f"received {facts['solid_count']}."
                 )
-            output_path = output_directory / f"{index:03d}.step"
-            _export_step_geometry(shape, output_path)
+                continue
+            _apply_workbench_color(shape, index, Color)
+            shape.label = key
+            children.append((key, shape))
+
+        if solid_violations:
+            raise RuntimeError(
+                " ".join(solid_violations)
+                + " Return every physical component as a separate named output, "
+                "then update expected_outputs to match."
+            )
+
+        outputs: list[dict[str, Any]] = []
+        if len(children) > _MAX_INDIVIDUAL_STEP_EXPORTS:
+            compound = Compound(children=[shape for _, shape in children])
+            output_path = output_directory / "000.step"
+            _export_step_geometry(compound, output_path)
             outputs.append(
                 {
-                    "key": key,
+                    "key": "assembly",
+                    "source_keys": expected_outputs,
                     "step_path": str(output_path),
-                    "shape": facts,
+                    "shape": {**_shape_facts(compound), "valid": True},
                 }
             )
+        else:
+            for index, (key, shape) in enumerate(children):
+                facts = _shape_facts(shape)
+                output_path = output_directory / f"{index:03d}.step"
+                _export_step_geometry(shape, output_path)
+                outputs.append(
+                    {
+                        "key": key,
+                        "step_path": str(output_path),
+                        "shape": facts,
+                    }
+                )
 
         _write_json(
             result_path,
             {
                 "ok": True,
                 "build123d_version": actual_version,
+                "runtime_provenance": runtime,
                 "outputs": outputs,
             },
         )
@@ -894,6 +1081,7 @@ def run(request_path: Path, result_path: Path, site_packages: Path) -> int:
             result_path,
             {
                 "ok": False,
+                "runtime_provenance": runtime,
                 "error": str(exc),
                 "exception_type": exc.__class__.__name__,
                 "traceback": traceback.format_exc(limit=16),

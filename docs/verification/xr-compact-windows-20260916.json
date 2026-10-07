@@ -1,0 +1,107 @@
+{
+  "checks": [
+    "opening View preserves Menu as a tab",
+    "new panel becomes the active tab",
+    "only active docked content renders",
+    "Settings joins the shared viewport",
+    "opening another panel does not move the shared viewport",
+    "all four opened panels remain available",
+    "visible Menu tab is a real laser hit target",
+    "trigger tap switches to Menu",
+    "a tap never detaches a tab",
+    "View tab can be targeted",
+    "holding a tab never detaches or moves it",
+    "tab clicks and controller motion leave workspace still",
+    "Pop out is an explicit button",
+    "Pop out detaches the selected panel",
+    "detached window opens beside the workspace",
+    "Pop out does not capture or follow the controller",
+    "detached panel and main workspace both remain visible",
+    "detached window exposes a Dock button",
+    "Dock returns the panel to the workspace",
+    "closing a tab preserves other panels",
+    "more than four panels remain accessible",
+    "new overflow tab is selected",
+    "overflow has a previous-page target",
+    "previous page exposes older tabs without closing them",
+    "idle frames do not repaint the tab strip",
+    "workspace uses compact width",
+    "content headers cannot drag the containing workspace",
+    "squeezing while selecting content cannot grab workspace",
+    "empty tab-strip space is never a movement handle",
+    "workspace has explicit sizing buttons",
+    "smaller reduces the shared workspace size",
+    "only the labeled top handle starts movement",
+    "top handle can deliberately move the workspace",
+    "top handle can deliberately rotate the workspace",
+    "active content follows the workspace exactly",
+    "moving preserves the smaller size",
+    "grip still grabs the labeled top handle",
+    "grip movement preserves chosen window size",
+    "tab selection stays still even after a previous intentional drag",
+    "Tidy is available on the top bar",
+    "Tidy gathers pop-outs and restores compact size",
+    "assistant review opens as a shared-window tab",
+    "assistant background updates do not steal the active tab",
+    "wiring inspector opens as a shared-window tab",
+    "wiring background updates do not steal the active tab",
+    "exiting wiring removes its inspector tab"
+  ],
+  "count": 46,
+  "threeRevision": "172",
+  "passed": true,
+  "logs": [
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x12c004d5a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x12c004d5a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x12c004d5a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x12c004d5a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    },
+    {
+      "kind": "warning",
+      "text": "Could not find menu_pressed_min in the model"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    }
+  ]
+}

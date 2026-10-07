@@ -1,0 +1,101 @@
+{
+  "date": "2026-09-15",
+  "baseline_snapshot": "20260915T163230Z-watchdog (11:32 CDT)",
+  "scope": "Local Chromium with hardware WebGL. Timing varies with live server/GPU load; byte/request reduction is the reliable comparison.",
+  "before": [
+    {
+      "project_id": "2ee4d857",
+      "open_ms": 2214.8,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 56764
+    },
+    {
+      "project_id": "f730285c",
+      "open_ms": 1462.7,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 8903852
+    },
+    {
+      "project_id": "2ee4d857",
+      "open_ms": 1082,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 56764
+    },
+    {
+      "project_id": "f730285c",
+      "open_ms": 1331.6,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 8903852
+    }
+  ],
+  "after": [
+    {
+      "project_id": "2ee4d857",
+      "open_ms": 3137.2,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 56764
+    },
+    {
+      "project_id": "f730285c",
+      "open_ms": 3614.9,
+      "mesh_requests": 1,
+      "mesh_transfer_bytes": 8903852
+    },
+    {
+      "project_id": "2ee4d857",
+      "open_ms": 1306.5,
+      "mesh_requests": 0,
+      "mesh_transfer_bytes": 0
+    },
+    {
+      "project_id": "f730285c",
+      "open_ms": 1399.7,
+      "mesh_requests": 0,
+      "mesh_transfer_bytes": 0
+    }
+  ],
+  "asset_reload": [
+    {
+      "count": 371,
+      "bytes": 13074107,
+      "cached": 0,
+      "readySeconds": 2.85
+    },
+    {
+      "count": 372,
+      "bytes": 111752,
+      "cached": 371,
+      "readySeconds": 4.71
+    }
+  ],
+  "browser_errors": [],
+  "tests": {
+    "node": 39,
+    "python": 40
+  },
+  "dense_model": {
+    "project_id": "f730285c",
+    "glb_meshes": 5447,
+    "bytes": 8903552
+  },
+  "public_asset_reload": [
+    {
+      "count": 372,
+      "bytes": 3397544,
+      "cached": 0,
+      "readySeconds": 5.14
+    },
+    {
+      "count": 372,
+      "bytes": 111742,
+      "cached": 371,
+      "readySeconds": 2.78
+    }
+  ],
+  "public_cache_headers": {
+    "cache-control": "public, no-cache, max-age=0, must-revalidate",
+    "cdn-cache-control": "no-store",
+    "cf-cache-status": "BYPASS"
+  },
+  "public_browser_errors": []
+}

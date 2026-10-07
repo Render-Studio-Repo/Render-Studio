@@ -3,16 +3,21 @@
 
 Sources (in order):
   1. frontend/docs/updates/shipped.json     — explicit registry (agents/CI append here)
-  2. frontend/getting-started-guides.js    — Getting Started feature cards
-  3. frontend/roadmap.html                 — items marked Done / shipped
-  4. Code markers: /* @milestone id=... title="..." summary="..." */
+  2. ai-context/worklog.md                  — BIG product headings from the last 3 weeks
+  3. frontend/site/getting-started-guides.js    — Getting Started feature cards
+  4. frontend/pages/roadmap.html                 — items marked Done / shipped
+  5. Code markers: /* @milestone id=... title="..." summary="..." */
 
 Writes missing entries into frontend/docs/updates/milestones.js (newest first)
 and bumps ?v= cache busts on updates.html / updates.js imports.
 
+Hourly LaunchAgent: deploy/mac/com.render3d.scan-milestones.plist
+Admin “Add update” already publishes via /api/admin/site-pages (no HTML edit).
+
 Usage:
   python scripts/scan-milestones.py           # apply
   python scripts/scan-milestones.py --dry-run # preview only
+  python scripts/scan-milestones.py --skip-social  # no Discord/LinkedIn
 """
 
 from __future__ import annotations
@@ -22,16 +27,39 @@ import json
 import re
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MILESTONES = ROOT / "frontend" / "docs" / "updates" / "milestones.js"
 SHIPPED = ROOT / "frontend" / "docs" / "updates" / "shipped.json"
-GUIDES = ROOT / "frontend" / "getting-started-guides.js"
-ROADMAP = ROOT / "frontend" / "roadmap.html"
-UPDATES_HTML = ROOT / "frontend" / "updates.html"
-UPDATES_JS = ROOT / "frontend" / "updates.js"
+WORKLOG = ROOT / "ai-context" / "worklog.md"
+GUIDES = ROOT / "frontend" / "site" / "getting-started-guides.js"
+ROADMAP = ROOT / "frontend" / "pages" / "roadmap.html"
+UPDATES_HTML = ROOT / "frontend" / "pages" / "updates.html"
+UPDATES_JS = ROOT / "frontend" / "site" / "updates.js"
+SCAN_LOG = ROOT / "logs" / "scan-milestones.log"
+WORKLOG_LOOKBACK_DAYS = 21
+
+# Worklog auto-ingest is opt-in: `@milestone` in the heading, or a title that
+# is itself a product-launch phrase. Body mentions of FreeCAD/McMaster
+# (bugfixes) must not spam Recent Updates.
+WORKLOG_TITLE_RE = re.compile(
+    r"imagine panel|parts catalog|clip editor|video editor|"
+    r"viser lan|control center|prompt persist|faster boot|"
+    r"reference files folder|freecad is the source|dimos stays gated|"
+    r"insert tab|viewport split|native joints|code workspace|"
+    r"public pin|film.?edit|settings search|mobile studio|"
+    r"share.?remix|wrist cam|public room|document tab|"
+    r"kernel measure|spatial AI draw|send to wiring|"
+    r"edit selected|database config|exploded view",
+    re.I,
+)
+WORKLOG_SKIP_RE = re.compile(
+    r"\b(lag|fps|crash|polish|logo|sheen|favicon|hitch|cache-bust|"
+    r"snap on chip|stray|viewport missing|wordmark)\b",
+    re.I,
+)
 
 # Existing milestone ids that already cover a Getting Started / roadmap id.
 COVERED_BY: dict[str, set[str]] = {
@@ -47,11 +75,42 @@ COVERED_BY: dict[str, set[str]] = {
     "link-to-prompt": {"link-to-prompt"},
     "tips-library": {"tips-tricks", "tips-library"},
     "tips-tricks": {"tips-tricks", "tips-library"},
+    "admin-control-center": {"admin-control-center", "management-control-center", "cc1"},
+    "management-control-center": {"admin-control-center", "management-control-center"},
+    "imagine-panel": {"imagine-panel", "imagine1", "imagine-fetch"},
+    "parts-catalog-mcmaster": {"parts-catalog-mcmaster", "parts-catalog", "insert-tab"},
+    "freecad-kernel-edit": {"freecad-kernel-edit", "fc-extrude", "fcdoc1", "freecad-kernel"},
+    "freecad-kernel": {"freecad-kernel-edit", "freecad-kernel"},
+    "wrist-cameras": {"wrist-cameras", "robotics-wrist-cameras"},
+    "robotics-wrist-cameras": {"wrist-cameras", "robotics-wrist-cameras"},
+    "share-remix": {"share-remix", "public-share"},
+    "vr-spatial-draw": {"vr-spatial-draw", "vr-ai-draw"},
+    "database-setup": {"database-setup", "self-host"},
+    "prompt-persist-faster-boot": {"prompt-persist-faster-boot", "prompt-persist"},
+    "prompt-persist": {"prompt-persist-faster-boot", "prompt-persist"},
+    "reference-folders-captures": {"reference-folders-captures", "reference-folders"},
+    "reference-folders": {"reference-folders-captures", "reference-folders"},
+    "wiring-compose": {"wiring-compose", "wiring"},
+    "document-tabs": {"document-tabs", "viewport-document-tab-strip"},
+    "public-room": {"public-room", "public-room-drop-a-project-both-people-can-pick-up"},
+    "edit-selected": {
+        "edit-selected",
+        "mcmaster-crawls-fail-fast-edit-selected-stays-in-vibecad",
+        "collapse-bodies-in-edit-selected-picker",
+    },
+    "wrist-cameras": {"wrist-cameras", "robotics-wrist-cameras", "wrist-camera-dragging-and-minimize"},
+    "database-setup": {"database-setup", "self-host", "docs-hero-spacing-database-configuration-tab"},
+    "plus-new-project": {"plus-new-project", "projects-upload"},
 }
 
 SKIP_IDS = {
     # Docs chrome / polish — not workflow milestones
     "preferences",
+    "projects-upload",
+    "credibility",
+    "send-to-slicer",
+    "restore-updates-tab-two-week-milestones",
+    "docs-hero-spacing-database-configuration-tab",
 }
 
 
@@ -122,6 +181,9 @@ def is_covered(candidate_id: str, title: str, covered: set[str]) -> bool:
     aliases = COVERED_BY.get(cid, set()) | {cid}
     if covered & aliases:
         return True
+    for src_id, src_aliases in COVERED_BY.items():
+        if cid in src_aliases and (src_id in covered or covered & src_aliases):
+            return True
     if title.strip().lower() in covered:
         return True
     # soft title overlap
@@ -142,17 +204,22 @@ def load_shipped_registry() -> list[dict]:
     rows = data if isinstance(data, list) else data.get("items") or []
     out = []
     for row in rows:
-        if not isinstance(row, dict) or not row.get("id") or not row.get("title"):
+        if not isinstance(row, dict) or not row.get("id"):
             continue
+        keywords = row.get("keywords") or []
+        if not isinstance(keywords, list):
+            keywords = []
+        title = str(row.get("title") or "").strip() or str(row["id"]).replace("-", " ")
         out.append(
             {
                 "id": kebab(str(row["id"])),
-                "title": str(row["title"]).strip(),
-                "summary": str(row.get("summary") or row["title"]).strip(),
+                "title": title,
+                "summary": str(row.get("summary") or title).strip(),
                 "kind": "tool" if str(row.get("kind") or "").lower() == "tool" else "feature",
                 "date": str(row.get("date") or today()),
                 "visual": str(row.get("visual") or ""),
                 "href": str(row.get("href") or ""),
+                "keywords": [str(k) for k in keywords if str(k).strip()],
                 "source": "shipped.json",
             }
         )
@@ -260,11 +327,60 @@ def load_code_markers() -> list[dict]:
     return out
 
 
-def collect_candidates() -> list[dict]:
-    # Prefer explicit registry, then guides, roadmap, markers.
+def _first_worklog_bullet(block: str) -> str:
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            return re.sub(r"^[-*]\s+", "", stripped).strip()
+    return ""
+
+
+def load_worklog(since: str | None = None) -> list[dict]:
+    """BIG worklog headings from the last N days, plus any `@milestone` titles."""
+    if not WORKLOG.is_file():
+        return []
+    text = WORKLOG.read_text(encoding="utf-8")
+    cutoff = since or (date.fromisoformat(today()) - timedelta(days=WORKLOG_LOOKBACK_DAYS)).isoformat()
+    heading = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — (.+)$", re.M)
+    matches = list(heading.finditer(text))
+    out = []
+    for i, m in enumerate(matches):
+        dt, title = m.group(1), m.group(2).strip()
+        if dt < cutoff and "@milestone" not in title.lower():
+            continue
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[m.end() : end]
+        tagged = "@milestone" in title.lower() or "@milestone" in body[:1200].lower()
+        if not tagged and WORKLOG_SKIP_RE.search(title):
+            continue
+        if not tagged and not WORKLOG_TITLE_RE.search(title):
+            continue
+        clean_title = re.sub(r"\s*\(@milestone[^)]*\)\s*", "", title, flags=re.I).strip()
+        clean_title = re.sub(r"`[^`]+`", "", clean_title)
+        clean_title = re.sub(r"\s*\([^)]*\)\s*$", "", clean_title).strip(" —-")
+        summary = _first_worklog_bullet(body) or clean_title
+        summary = re.sub(r"\s+", " ", summary)[:280]
+        out.append(
+            {
+                "id": kebab(clean_title)[:80],
+                "title": clean_title[:120],
+                "summary": summary,
+                "kind": "tool" if re.search(r"\b(tool|editor|catalog|panel)\b", clean_title, re.I) else "feature",
+                "date": dt,
+                "visual": "",
+                "href": "/updates.html",
+                "source": "worklog",
+            }
+        )
+    return out
+
+
+def collect_candidates(since: str | None = None) -> list[dict]:
+    # Prefer explicit registry, then recent worklog, then guides, roadmap, markers.
     # Deduplicate by id keeping first (highest priority) occurrence.
     ordered = (
         load_shipped_registry()
+        + load_worklog(since)
         + load_getting_started()
         + load_roadmap_shipped()
         + load_code_markers()
@@ -293,6 +409,9 @@ def format_entry(row: dict) -> str:
         fields.append(f'    visual: {js_str(row["visual"])},')
     if row.get("href"):
         fields.append(f'    href: {js_str(row["href"])},')
+    keywords = row.get("keywords") or []
+    if isinstance(keywords, list) and keywords:
+        fields.append(f'    keywords: {json.dumps([str(k) for k in keywords])},')
     return "  {\n" + "\n".join(fields) + "\n  },\n"
 
 
@@ -316,6 +435,12 @@ def bump_cache() -> None:
             js,
             count=1,
         )
+        js2 = re.sub(
+            r'(shipped\.json\?v=)[^"\']+',
+            rf"\g<1>{stamp}",
+            js2,
+            count=1,
+        )
         if js2 != js:
             UPDATES_JS.write_text(js2, encoding="utf-8")
     if UPDATES_HTML.is_file():
@@ -330,19 +455,84 @@ def bump_cache() -> None:
             UPDATES_HTML.write_text(html2, encoding="utf-8")
 
 
+def heartbeat(msg: str) -> None:
+    try:
+        SCAN_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with SCAN_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now(timezone.utc).isoformat()} {msg}\n")
+    except Exception:
+        pass
+
+
+def upsert_shipped(rows: list[dict]) -> None:
+    """Keep shipped.json in sync so /updates.html can fetch it without a CMS pass."""
+    data: dict = {"items": []}
+    if SHIPPED.is_file():
+        try:
+            raw = json.loads(SHIPPED.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {"items": []}
+        data = raw if isinstance(raw, dict) else {"items": list(raw or [])}
+        data.setdefault("items", [])
+    by_id = {str(x.get("id")): x for x in data["items"] if isinstance(x, dict) and x.get("id")}
+    for row in rows:
+        cid = str(row.get("id") or "")
+        if not cid:
+            continue
+        payload = {
+            "id": cid,
+            "date": row.get("date") or today(),
+            "kind": row.get("kind") or "feature",
+            "title": row.get("title") or cid.replace("-", " "),
+            "summary": row.get("summary") or row.get("title") or cid,
+            "href": row.get("href") or "/updates.html",
+        }
+        if row.get("visual"):
+            payload["visual"] = row["visual"]
+        if row.get("keywords"):
+            payload["keywords"] = row["keywords"]
+        existing = by_id.get(cid)
+        if existing:
+            if not existing.get("title"):
+                existing["title"] = payload["title"]
+            if not existing.get("summary"):
+                existing["summary"] = payload["summary"]
+            if payload.get("visual") and not existing.get("visual"):
+                existing["visual"] = payload["visual"]
+            continue
+        data["items"].insert(0, payload)
+        by_id[cid] = payload
+    SHIPPED.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_agent_updates_index(rows: list[dict]) -> None:
+    """Tiny JSON for Render Agent — not a full-text indexer."""
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from backend.services.render_agent_live_index import write_updates_index
+
+        write_updates_index(rows)
+    except Exception as err:
+        print(f"agent updates index skipped: {err}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--skip-social", action="store_true", help="Do not announce to Discord/LinkedIn")
+    ap.add_argument("--since", default="", help="Worklog ISO date cutoff (default: 21 days ago)")
     args = ap.parse_args()
 
     text = MILESTONES.read_text(encoding="utf-8")
     existing = parse_milestones(text)
     covered = existing_coverage(existing)
     existing_ids = {r["id"] for r in existing}
+    heartbeat("scan start")
 
     missing = []
-    for cand in collect_candidates():
+    for cand in collect_candidates(args.since or None):
         if cand["id"] in existing_ids:
             continue
         if is_covered(cand["id"], cand["title"], covered):
@@ -350,9 +540,14 @@ def main() -> None:
         missing.append(cand)
         covered.add(cand["id"])
         covered.add(cand["title"].strip().lower())
+        covered |= COVERED_BY.get(cand["id"], set())
         existing_ids.add(cand["id"])
 
     if not missing:
+        if not args.dry_run:
+            upsert_shipped(existing)
+            _write_agent_updates_index(existing)
+        heartbeat("up to date")
         if not args.quiet:
             print("Milestones up to date — nothing to add.")
         return
@@ -366,12 +561,16 @@ def main() -> None:
         return
 
     MILESTONES.write_text(insert_milestones(text, missing), encoding="utf-8")
+    upsert_shipped(missing + existing)
     bump_cache()
+    _write_agent_updates_index(missing + existing)
+    heartbeat(f"added {len(missing)}")
     if not args.quiet:
         print(f"Updated {MILESTONES.relative_to(ROOT)}")
 
-    # Push new milestones to Discord (best-effort; never fail the scan).
     # Push new milestones to Discord + LinkedIn (best-effort; never fail the scan).
+    if args.skip_social:
+        return
     try:
         sys.path.insert(0, str(ROOT))
         from backend.services import social_updates_service as social

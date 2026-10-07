@@ -1,0 +1,16 @@
+{
+  "checks": [
+    "All 15 provider cards render enabled actions and purpose groups",
+    "Every Connect/Manage/Setup guide opens and copies without account API writes; Escape closes",
+    "Copied harness instructions omit fixture account data and OAuth state",
+    "A failed provider retains all cards and an actionable local error",
+    "Finish Stripe setup POSTs onboarding and never DELETEs account",
+    "Unconfigured Stripe stops before backend demo-account mutation",
+    "OAuth errors stay visible inside dialog and allow retry",
+    "X PIN flow offers user-clicked authorization link and explicit PIN submit",
+    "Missing wallet extension gives next steps; explicit manual address path saves via mock API",
+    "Mobile dialog fits, keeps actions reachable, and provides copy fallback when clipboard denied"
+  ],
+  "count": 10,
+  "page_errors": []
+}

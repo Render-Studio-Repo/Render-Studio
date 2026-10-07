@@ -12,7 +12,7 @@ Code continues to use local rolling snapshots via backup-code.sh
 (which does not include projects/).
 
 One-time auth (browser required):
-  /home/ubuntu/.venv/bin/python3 /home/ubuntu/scripts/backup-to-drive.py --auth
+  .venv/bin/python3 scripts/backup-to-drive.py --auth
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-ROOT = Path("/home/ubuntu")
+ROOT = Path(os.getenv("RENDER3D_ROOT", Path(__file__).resolve().parent.parent))
 # Staging only — deleted after a successful Drive upload.
 LOCAL_BACKUP_ROOT = ROOT / "backups" / "drive-daily"
 RETENTION_DAYS = 10
@@ -45,7 +45,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-TOKEN_DIR = Path(os.getenv("GOOGLE_TOKEN_DIR", "/home/ubuntu/.config/ohio"))
+TOKEN_DIR = Path(os.getenv("GOOGLE_TOKEN_DIR", str(Path.home() / ".config" / "render3d")))
 TOKEN_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = TOKEN_DIR / "token_google_drive_backup.pickle"
 CREDENTIALS_FILE = TOKEN_DIR / "credentials_google_drive_backup.json"
@@ -62,6 +62,29 @@ CLIENT_SECRET = os.getenv(
 # Model / project data only — code stays in local snapshots.
 BACKUP_DIRS = ("projects",)
 BACKUP_FILES: tuple[str, ...] = ()
+
+# Code-only golden snapshots (protected on Drive via golden- prefix).
+GOLDEN_DIRS = (
+    "frontend",
+    "backend",
+    "scripts",
+    "services",
+    "deploy",
+    "data",
+    "ai-context",
+    "demos",
+    "fusion360-plugin",
+    "docs",
+    "Getting-Started",
+)
+GOLDEN_FILES = (
+    "run.py",
+    "requirements.txt",
+    "README.md",
+    "AGENTS.md",
+    "CHANGELOG.md",
+)
+GOLDEN_LOCAL_ROOT = ROOT / "backups" / "golden"
 
 TAR_EXCLUDES = (
     ".venv",
@@ -536,6 +559,151 @@ def run_backup(*, skip_upload: bool = False, keep_local: bool = False) -> None:
     )
 
 
+def golden_snapshot_name(label: str = "working-production") -> str:
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (label or "working-production")).strip("-_")
+    safe = safe or "working-production"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"golden-{safe}-{ts}"
+
+
+def create_golden_snapshot(label: str = "working-production") -> Path:
+    """Code-only golden tree under backups/golden/ (no projects/)."""
+    name = golden_snapshot_name(label)
+    dest = GOLDEN_LOCAL_ROOT / name
+    if dest.exists():
+        raise RuntimeError(f"Golden destination already exists: {dest}")
+    dest.mkdir(parents=True, exist_ok=False)
+
+    copied = 0
+    for dirname in GOLDEN_DIRS:
+        src = ROOT / dirname
+        if not src.is_dir():
+            LOG.warning("Skipping missing golden dir: %s", src)
+            continue
+        target = dest / dirname
+        LOG.info("Copying %s → %s", src, target)
+        shutil.copytree(
+            src,
+            target,
+            ignore=shutil.ignore_patterns(
+                *TAR_EXCLUDES,
+                "vendor",
+                "node_modules",
+                ".venv",
+                "myenv",
+                "__pycache__",
+                "*.pyc",
+                ".DS_Store",
+                "projects",
+                "backups",
+            ),
+            dirs_exist_ok=False,
+        )
+        copied += 1
+
+    for filename in GOLDEN_FILES:
+        src = ROOT / filename
+        if src.is_file():
+            shutil.copy2(src, dest / filename)
+            copied += 1
+
+    if not (dest / "frontend" / "index.html").is_file():
+        raise RuntimeError("Golden invalid: frontend/index.html missing")
+    if not (dest / "backend" / "main.py").is_file():
+        raise RuntimeError("Golden invalid: backend/main.py missing")
+
+    (dest / "BACKUP_LABEL").write_text(f"{name}\n", encoding="utf-8")
+    (dest / "BACKUP_CREATED_UTC").write_text(
+        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n",
+        encoding="utf-8",
+    )
+    head = git_head()
+    if head:
+        (dest / "GIT_HEAD").write_text(head + "\n", encoding="utf-8")
+    (dest / "MANIFEST.txt").write_text(
+        "\n".join(
+            [
+                f"created_utc={datetime.now(timezone.utc).isoformat()}",
+                f"kind=golden-code",
+                f"label={name}",
+                f"git_head={head}",
+                f"drive_folder_id={PARENT_FOLDER_ID}",
+                "included_dirs=" + ",".join(GOLDEN_DIRS),
+                "included_files=" + ",".join(GOLDEN_FILES),
+                "note=code-only golden; projects/ excluded; protected via golden- prefix",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    LOG.info("Golden snapshot ready (%s dirs/files copied): %s", copied, dest)
+    return dest
+
+
+def archive_golden_snapshot(golden_dir: Path) -> Path:
+    archive = golden_dir.parent / f"{golden_dir.name}.tar.gz"
+    if archive.is_file():
+        archive.unlink()
+    cmd = [
+        "tar",
+        "-czf",
+        str(archive),
+        "-C",
+        str(golden_dir.parent),
+        golden_dir.name,
+    ]
+    LOG.info("Creating golden archive: %s", archive)
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if result.returncode not in (0, 1):
+        if result.stderr:
+            LOG.error(result.stderr.strip())
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    if not archive.is_file() or archive.stat().st_size <= 0:
+        raise RuntimeError(f"Golden archive missing or empty: {archive}")
+    LOG.info("Golden archive size: %.2f MiB", archive.stat().st_size / (1024**2))
+    return archive
+
+
+def upload_golden_snapshot(service, golden_dir: Path, archive: Path) -> str:
+    folder_id = drive_create_folder(service, golden_dir.name, PARENT_FOLDER_ID)
+    LOG.info("Uploading golden archive to Drive folder %s (%s)", golden_dir.name, folder_id)
+    drive_upload_file(service, archive, folder_id)
+    manifest = golden_dir / "MANIFEST.txt"
+    if manifest.is_file():
+        drive_upload_file(service, manifest, folder_id)
+    note = golden_dir / "DRIVE_UPLOAD.txt"
+    note.write_text(
+        "\n".join(
+            [
+                f"uploaded_utc={datetime.now(timezone.utc).isoformat()}",
+                f"drive_folder_id={folder_id}",
+                f"drive_parent_id={PARENT_FOLDER_ID}",
+                f"archive={archive.name}",
+                f"archive_bytes={archive.stat().st_size}",
+                f"local_path={golden_dir}",
+                "protected=true (golden- prefix)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    drive_upload_file(service, note, folder_id)
+    LOG.info("Golden Drive folder: https://drive.google.com/drive/folders/%s", folder_id)
+    return folder_id
+
+
+def run_golden_backup(label: str = "working-production", skip_upload: bool = False) -> Path:
+    golden_dir = create_golden_snapshot(label=label)
+    archive = archive_golden_snapshot(golden_dir)
+    if skip_upload:
+        LOG.info("Local-only golden left at %s (+ %s)", golden_dir, archive)
+        return golden_dir
+    service = get_drive_service()
+    folder_id = upload_golden_snapshot(service, golden_dir, archive)
+    LOG.info("Golden backup complete: local=%s drive_folder=%s", golden_dir, folder_id)
+    return golden_dir
+
+
 def main() -> int:
     setup_logging()
     parser = argparse.ArgumentParser(description="Backup Render Studio models to Google Drive")
@@ -556,6 +724,16 @@ def main() -> int:
         action="store_true",
         help=f"Only prune Drive day folders older than {RETENTION_DAYS} days",
     )
+    parser.add_argument(
+        "--golden",
+        action="store_true",
+        help="Create a protected code-only golden snapshot and upload it to Drive",
+    )
+    parser.add_argument(
+        "--golden-label",
+        default="working-production",
+        help="Label segment for golden-* folder name (default: working-production)",
+    )
     args = parser.parse_args()
 
     if args.auth:
@@ -563,6 +741,9 @@ def main() -> int:
         return 0
 
     try:
+        if args.golden:
+            run_golden_backup(label=args.golden_label, skip_upload=args.local_only)
+            return 0
         if args.migrate_local:
             service = get_drive_service()
             count = upload_existing_local_archives(service)

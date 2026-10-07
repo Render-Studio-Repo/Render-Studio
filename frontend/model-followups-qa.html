@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Model follow-ups QA</title><link rel="stylesheet" href="/studio/design-assistance.css"><style>body{background:#0d141c;color:#d8e5f0;font:14px system-ui;padding:30px}.assist-dialog{max-height:85vh;overflow:auto;width:720px}#results{color:#8fdda6}.assist-status{min-height:20px}</style></head><body><h1>Model-specific edit follow-ups</h1><p id="results">Running checks…</p><select id="prompt-target-mode"><option value="new">Add new object</option><option value="edit" selected>Edit selected</option></select><p id="prompt-status"></p><script type="module">
+import {mountModelFollowups} from '/studio/model-followups.js?v=qa1';
+let backend={filename:'robot.glb',model_revision:'model1',revision:1,summary:'Review the battery tray, controller mount and front sensor bracket in this generated assembly.',questions:[{id:'q1',question:'Does the battery tray leave enough room for the power cables, or should it move?',reason:'Specify the direction and distance while preserving its mounting holes.',category:'placement',answer:''},{id:'q2',question:'Does the front sensor bracket look too long or too high?',reason:'Name the face and the amount to shorten or lower it.',category:'micro_edit',answer:''}],notes:''};
+let attached=null, writes=0;
+function response(){return {...structuredClone(backend),reference:{id:'followup:robot',type:'document',filename:'follow-up-questions-robot.txt',label:'Follow-up questions.txt',text_content:backend.questions.map(q=>q.question+'\n'+q.answer).join('\n')+'\n'+backend.notes}}}
+window.fetch=async(url,options={})=>{
+ if(options.method==='PUT'){
+  const snapshot=JSON.parse(options.body); await new Promise(r=>setTimeout(r,80));
+  if(snapshot.revision!==backend.revision)return new Response(JSON.stringify({detail:'Conflict'}),{status:409});
+  backend.questions.forEach(q=>{q.answer=snapshot.answers[q.id]||''});backend.notes=snapshot.notes;backend.revision++;writes++;
+ }
+ return new Response(JSON.stringify(response()),{status:200,headers:{'Content-Type':'application/json'}});
+};
+const controller=mountModelFollowups({getProjectId:()=> 'qa',getSelectedModel:()=> 'robot.glb',getContext:async()=>({project_id:'qa',base_filename:'robot.glb',references:[],images:[]}),getPrompt:()=> 'Build a mobile robot base',attachReference:r=>{attached=r}});
+const check=(value,name)=>{if(!value)throw Error(name);};
+try{
+ localStorage.clear();await controller.open();
+ check(document.querySelectorAll('[data-answer]').length===2,'generated questions');
+ const input=document.querySelector('[data-answer="q1"]');input.value='Move the battery tray 15 mm toward the rear; preserve all mounting holes.';input.dispatchEvent(new Event('input'));
+ check(localStorage.length===1,'immediate local draft');
+ document.querySelector('[data-close]').click();await controller.prepare();
+ check(backend.questions[0].answer.includes('15 mm'),'close saves answers');
+ check(attached.text_content.includes('15 mm'),'reference includes saved answer');
+ check(localStorage.length===0,'synced draft cleared');
+ await controller.open();check(document.querySelector('dialog').open,'reopened dialog visible');check(document.querySelector('[data-answer="q1"]').value.includes('15 mm'),'reopen restores answer');
+ const edit=document.querySelector('[data-answer="q2"]');edit.value='Shorten the front bracket 2 mm';edit.dispatchEvent(new Event('input'));
+ const pending=controller.prepare();await new Promise(r=>setTimeout(r,10));edit.value='Shorten only the front bracket 3 mm; keep the sensor holes.';edit.dispatchEvent(new Event('input'));await pending;
+ check(backend.questions[1].answer.includes('3 mm'),'typing during save retains latest answer');
+ check(attached.text_content.includes('3 mm'),'reference updates before Improve');
+ check(writes===3,'serialized saves');
+ document.querySelector('#results').textContent='PASS — 10 browser checks: autosave, close, reopen, reference update and in-flight typing';
+}catch(error){document.querySelector('#results').textContent='FAIL: '+error.stack;}
+</script></body></html>

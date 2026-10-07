@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 110" fill="none">
+  <rect x="6" y="8" width="148" height="94" rx="6" fill="#2d6a4f" stroke="#1b4332" stroke-width="2"/>
+  <rect x="12" y="14" width="18" height="82" rx="2" fill="#12161c"/>
+  <g fill="#d4a017">
+    <circle cx="21" cy="22" r="2"/><circle cx="21" cy="30" r="2"/><circle cx="21" cy="38" r="2"/>
+    <circle cx="21" cy="46" r="2"/><circle cx="21" cy="54" r="2"/><circle cx="21" cy="62" r="2"/>
+    <circle cx="21" cy="70" r="2"/><circle cx="21" cy="78" r="2"/><circle cx="21" cy="86" r="2"/>
+  </g>
+  <rect x="44" y="28" width="70" height="44" rx="3" fill="#111418" stroke="#000"/>
+  <text x="79" y="54" text-anchor="middle" fill="#d8f3dc" font-size="11" font-weight="800" font-family="ui-sans-serif,system-ui">HAT</text>
+  <rect x="122" y="20" width="22" height="28" rx="2" fill="#c5ccd4"/>
+  <rect x="122" y="54" width="22" height="16" rx="2" fill="#6e7681"/>
+  <text x="80" y="90" text-anchor="middle" fill="#b7e4c7" font-size="8" font-family="ui-sans-serif,system-ui">40-pin GPIO</text>
+</svg>

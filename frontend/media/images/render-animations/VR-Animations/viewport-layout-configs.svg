@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="220" viewBox="0 0 480 220" role="img" aria-label="Animated viewport split configurations">
+  <defs>
+    <style>
+      .stage { fill: #0d1117; }
+      .chrome { fill: #161b22; stroke: #30363d; stroke-width: 1; }
+      .pane { fill: #12171f; stroke: rgba(88,166,255,.42); stroke-width: 1.2; }
+      .lbl { fill: #e6edf3; font: 700 12px ui-sans-serif, system-ui, sans-serif; }
+      .kicker { fill: #79c0ff; font: 700 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; }
+      .frame { opacity: 0; }
+    </style>
+  </defs>
+  <rect class="stage" width="480" height="220" rx="16"/>
+  <rect class="chrome" x="16" y="16" width="448" height="188" rx="14"/>
+  <text class="kicker" x="32" y="38">SPLIT CONFIGS</text>
+
+  <g class="frame" id="f1">
+    <rect class="pane" x="32" y="52" width="200" height="132" rx="8"/>
+    <text class="lbl" x="46" y="78">Viewport</text>
+    <rect class="pane" x="244" y="52" width="200" height="132" rx="8"/>
+    <text class="lbl" x="258" y="78">Wiring</text>
+    <animate attributeName="opacity" dur="10s" repeatCount="indefinite"
+      values="1;1;0;0;0;0;0;0;0;0;1" keyTimes="0;.16;.18;.36;.38;.56;.58;.76;.78;1;1"/>
+  </g>
+  <g class="frame" id="f2">
+    <rect class="pane" x="32" y="52" width="200" height="132" rx="8"/>
+    <text class="lbl" x="46" y="78">Viewport</text>
+    <rect class="pane" x="244" y="52" width="200" height="132" rx="8"/>
+    <text class="lbl" x="258" y="78">McMaster</text>
+    <animate attributeName="opacity" dur="10s" repeatCount="indefinite"
+      values="0;0;1;1;0;0;0;0;0;0;0" keyTimes="0;.16;.18;.36;.38;.56;.58;.76;.78;1;1"/>
+  </g>
+  <g class="frame" id="f3">
+    <rect class="pane" x="32" y="52" width="412" height="58" rx="8"/>
+    <text class="lbl" x="46" y="78">Viewport</text>
+    <rect class="pane" x="32" y="122" width="412" height="62" rx="8"/>
+    <text class="lbl" x="46" y="148">Parts List</text>
+    <animate attributeName="opacity" dur="10s" repeatCount="indefinite"
+      values="0;0;0;0;1;1;0;0;0;0;0" keyTimes="0;.16;.18;.36;.38;.56;.58;.76;.78;1;1"/>
+  </g>
+  <g class="frame" id="f4">
+    <rect class="pane" x="32" y="52" width="412" height="58" rx="8"/>
+    <text class="lbl" x="46" y="78">Canvas</text>
+    <rect class="pane" x="32" y="122" width="412" height="62" rx="8"/>
+    <text class="lbl" x="46" y="148">Viewport</text>
+    <animate attributeName="opacity" dur="10s" repeatCount="indefinite"
+      values="0;0;0;0;0;0;1;1;0;0;0" keyTimes="0;.16;.18;.36;.38;.56;.58;.76;.78;1;1"/>
+  </g>
+  <g class="frame" id="f5">
+    <rect class="pane" x="32" y="52" width="196" height="58" rx="8"/>
+    <text class="lbl" x="44" y="78">Canvas</text>
+    <rect class="pane" x="240" y="52" width="204" height="58" rx="8"/>
+    <text class="lbl" x="252" y="78">Viewport</text>
+    <rect class="pane" x="32" y="122" width="196" height="62" rx="8"/>
+    <text class="lbl" x="44" y="148">Wiring</text>
+    <rect class="pane" x="240" y="122" width="204" height="62" rx="8"/>
+    <text class="lbl" x="252" y="148">Parts List</text>
+    <animate attributeName="opacity" dur="10s" repeatCount="indefinite"
+      values="0;0;0;0;0;0;0;0;1;1;0" keyTimes="0;.16;.18;.36;.38;.56;.58;.76;.78;1;1"/>
+  </g>
+</svg>

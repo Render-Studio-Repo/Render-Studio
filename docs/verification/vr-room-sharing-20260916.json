@@ -1,0 +1,18 @@
+{
+  "questControllerAssetsBothHands": true,
+  "videoFramesReceived": 6,
+  "decodedCameraPixels": [
+    56,
+    190,
+    244,
+    255
+  ],
+  "explicitVideoOnlyCapture": true,
+  "guestGripAndResizeReplicated": true,
+  "elevenModelsVisibleBoth": true,
+  "adoptedParentTransform": true,
+  "lateJoinCameraAndFullInventory": true,
+  "stopRemovesRemoteWindow": true,
+  "errors": [],
+  "scope": "Two isolated Chromium clients and real CollabHub relay; synthetic camera video and controller poses; no physical camera, production room, or robot commands."
+}

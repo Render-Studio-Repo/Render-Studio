@@ -1,0 +1,73 @@
+/* Keep the compose controls within the resizable AI panel. */
+#prompt-pane-compose .prompt-compose-head {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#prompt-pane-compose .prompt-compose-head h2 {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+#prompt-pane-compose .prompt-key-picker-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+#prompt-pane-compose .prompt-key-pill {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#prompt-pane-compose .prompt-key-pill-model {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#prompt-pane-compose .prompt-key-pill-arrow,
+#prompt-pane-compose .prompt-design-toggle {
+  flex-shrink: 0;
+}
+
+#prompt-pane-compose .prompt-skills-primary,
+#prompt-pane-compose .prompt-skills-trail {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+#prompt-pane-compose .prompt-skills-trail .hey-ai-voice-select,
+#prompt-pane-compose .prompt-skills-trail .prompt-voice-order {
+  margin: 0;
+}
+
+#prompt-pane-compose .prompt-target-row {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+#prompt-pane-compose #prompt-target-mode {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+#prompt-pane-compose .prompt-target-row > .assist-icon {
+  flex: 0 0 24px;
+  margin: 0;
+}
+
+#prompt-pane-compose #prompt-target-picker-btn {
+  order: 1;
+  flex: 1 0 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#prompt-pane-compose #prompt-target-picker-btn[hidden] {
+  display: none !important;
+}

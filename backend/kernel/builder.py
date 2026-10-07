@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from build123d import (
     Axis,
@@ -266,7 +266,7 @@ def _make_loft(params: dict[str, Any]) -> Body:
     return loft(sketches)
 
 
-PRIMITIVES: dict[str, Callable[[dict[str, Any]], Body]] = {
+PRIMITIVES: dict[str, Optional[Callable[[dict[str, Any]], Body]]] = {
     "box": _make_box,
     "cylinder": _make_cylinder,
     "cone": _make_cone,
@@ -600,7 +600,7 @@ def _ensure_body(body: Body, *, name: str = "pattern body") -> Body:
     return body
 
 
-def _parse_pattern_locations(params: dict[str, Any]) -> list[tuple[float, float, float]] | None:
+def _parse_pattern_locations(params: dict[str, Any]) -> list[tuple[float, float, float]]:
     raw = params.get("locations") or params.get("positions") or params.get("instances") or params.get("offsets")
     if raw is None:
         return None
@@ -832,7 +832,7 @@ def _op_hole(running: Body | None, feat: Feature) -> Body:
     return running - cutter
 
 
-MODIFIERS: dict[str, Callable[[Body, dict[str, Any]], Body]] = {
+MODIFIERS: dict[str, Optional[Callable[[Body, dict[str, Any]], Body]]] = {
     "fillet": _op_fillet,
     "chamfer": _op_chamfer,
     "shell": _op_shell,
@@ -963,7 +963,7 @@ def _compute_world_positions(program: FeatureProgram) -> dict[str, list[float]]:
     return positions
 
 
-def build_program(program: FeatureProgram, progress: Callable[[dict[str, Any]], None] | None = None) -> BuildResult:
+def build_program(program: FeatureProgram, progress: Optional[Callable[[dict[str, Any]], None]] = None) -> BuildResult:
     """Build every part in a program. Raises :class:`KernelBuildError` on failure."""
     result = BuildResult(program=program)
     total = max(1, len(program.parts))

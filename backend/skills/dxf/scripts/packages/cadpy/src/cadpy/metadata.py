@@ -442,7 +442,7 @@ def _parse_literal_return_envelope(
             f"{_display_path(script_path)} {function.name}() must return a generator envelope dict"
         )
     envelope: dict[str, ast.expr] = {}
-    for key_node, value_node in zip(value.keys, value.values, strict=True):
+    for key_node, value_node in zip(value.keys, value.values):
         if not isinstance(key_node, ast.Constant) or not isinstance(key_node.value, str):
             raise ValueError(
                 f"{_display_path(script_path)} {function.name}() envelope keys must be string literals"

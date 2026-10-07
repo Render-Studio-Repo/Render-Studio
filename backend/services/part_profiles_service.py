@@ -52,7 +52,7 @@ API_REQUIRED_SOURCES = {
 WIRING_TYPES = {
     "raspberry-pi", "arduino-uno", "arduino-mega", "breadboard", "servo-motor",
     "motor-driver", "stepper", "led", "resistor", "transistor", "diode",
-    "button", "sensor", "motor",
+    "button", "sensor", "motor", "power-supply",
 }
 
 # Mechanical shells / fixtures — never auto-assign an electrical pin type.
@@ -62,8 +62,10 @@ _ENCLOSURE_RE = re.compile(
 
 # Ordered (most specific first) recognition rules: regex -> (wiring_type, kind, datasheet hint)
 _RULES: list[tuple[re.Pattern[str], str, str, str]] = [
+    (re.compile(r"mks[_\- ]?gen|makerbase|\bramps\b"), "arduino-mega", "MKS Gen L", "MKS Gen L / RAMPS Mega2560 pin map"),
     (re.compile(r"28byj|stepper|nema\s*\d|nema\d"), "stepper", "Stepper motor", "stepper coil pinout (28BYJ-48 / NEMA) datasheet"),
     (re.compile(r"servo|sg90|mg996|mg90"), "servo-motor", "Servo motor", "servo signal/VCC/GND pinout"),
+    (re.compile(r"cl86t|\bcl86\b"), "motor-driver", "CL86T closed-loop driver", "CL86T PUL+/DIR+/AC pinout"),
     (re.compile(r"l298|l293|uln2003|a4988|drv8825|tb6600|tb6612|motor[_\- ]?driver|h[_\- ]?bridge|stepper[_\- ]?driver"), "motor-driver", "Motor driver", "driver IN/OUT + VCC/GND pinout"),
     (re.compile(r"dc[_\- ]?motor|gear[_\- ]?motor|\bmotor\b|tt[_\- ]?motor|brushed"), "motor", "DC motor", "DC motor terminal polarity"),
     (re.compile(r"arduino[_\- ]?mega|atmega2560|\bmega\b"), "arduino-mega", "Arduino Mega", "Arduino Mega 2560 pinout"),
@@ -422,52 +424,93 @@ def _product_page_url(item: dict[str, Any]) -> str | None:
     return None
 
 
-def search_catalog(query: str, *, sources: list[str] | None = None, limit: int = 12) -> dict[str, Any]:
-    selected = _selected_catalog_sources(sources)
-    candidates: list[dict[str, Any]] = []
-    errors: dict[str, str] = {}
-    if "step_parts" in selected:
-        try:
-            step_limit = limit if selected == ["step_parts"] else min(8, max(3, limit // 2))
-            for item in search_sources(query, limit=step_limit):
-                item["provider_id"] = "step_parts"
-                item["source_kind"] = "cad"
-                item["source_label"] = "step.parts" if item.get("provider") == "step.parts" else "built-in fallback"
-                item["retrieval_mode"] = "live" if item.get("provider") == "step.parts" else "local_fallback"
-                item["is_real_result"] = item.get("provider") == "step.parts"
-                item["importable"] = bool(item.get("step_url"))
-                item.setdefault("price_links", price_search_links(query))
-                item.setdefault("datasheet_url", item.get("page_url"))
-                item.setdefault("product_page_url", item.get("product_page_url"))
-                candidates.append(item)
-        except RuntimeError as exc:
-            errors["step_parts"] = str(exc)
-    for source in selected:
-        if source == "step_parts":
-            continue
-        candidates.append(_external_source_candidate(source, query))
+CATALOG_DEPARTMENTS: list[dict[str, str]] = [
+    {"id": "popular", "label": "Popular", "category": "", "query": ""},
+    {"id": "electronics", "label": "Electronics", "category": "electronics", "query": ""},
+    {"id": "fastener", "label": "Fasteners", "category": "fastener", "query": ""},
+    {"id": "actuator", "label": "Motors & servos", "category": "actuator", "query": ""},
+    {"id": "bearing", "label": "Bearings", "category": "bearing", "query": ""},
+    {"id": "motion", "label": "Linear motion", "category": "motion", "query": ""},
+    {"id": "power-transmission", "label": "Gears & belts", "category": "power-transmission", "query": ""},
+    {"id": "mechanical-hardware", "label": "Hardware", "category": "mechanical-hardware", "query": ""},
+    {"id": "enclosure", "label": "Enclosures", "category": "enclosure", "query": ""},
+    {"id": "thermal", "label": "Fans & heatsinks", "category": "thermal", "query": ""},
+]
+
+POPULAR_QUERIES = (
+    "Arduino Nano",
+    "NEMA 17",
+    "SG90 servo",
+    "M3 screw",
+    "608 bearing",
+    "Raspberry Pi",
+    "ESP32",
+    "linear rail",
+)
+
+
+def catalog_departments() -> list[dict[str, str]]:
+    return [dict(item) for item in CATALOG_DEPARTMENTS]
+
+
+def _decorate_catalog_part(item: dict[str, Any], *, query: str = "") -> dict[str, Any]:
+    name = str(item.get("name") or item.get("id") or "part")
+    item.setdefault("provider_id", "step_parts")
+    item.setdefault("source_kind", "cad")
+    live = item.get("provider") == "step.parts"
+    item["source_label"] = "step.parts" if live else "built-in fallback"
+    item["retrieval_mode"] = "live" if live else "local_fallback"
+    item["is_real_result"] = live
+    item["importable"] = bool(item.get("step_url"))
+    item.setdefault("price_links", price_search_links(query or name))
+    item.setdefault("datasheet_url", item.get("page_url"))
+    item.setdefault("product_page_url", item.get("product_page_url"))
+    return item
+
+
+def _part_from_api(item: dict[str, Any]) -> dict[str, Any]:
     return {
-        "query": query,
-        "sources": catalog_source_options(),
-        "selected_sources": selected,
-        "candidates": candidates,
-        "price_links": price_search_links(query),
-        "errors": errors,
+        "provider": "step.parts",
+        "provider_id": "step_parts",
+        "source_label": "step.parts",
+        "retrieval_mode": "live",
+        "is_real_result": True,
+        "id": item.get("id"),
+        "name": item.get("name"),
+        "description": item.get("description"),
+        "category": item.get("category"),
+        "family": item.get("family"),
+        "tags": item.get("tags") or [],
+        "attributes": item.get("attributes") or {},
+        "page_url": item.get("pageUrl"),
+        "product_page_url": _product_page_url(item),
+        "step_url": item.get("stepUrl"),
+        "glb_url": item.get("glbUrl"),
+        "png_url": item.get("pngUrl"),
+        "wiring_type": _map_source_to_wiring_type(item),
     }
 
 
-def search_sources(query: str, *, limit: int = 8, origin: str = STEP_PARTS_ORIGIN) -> list[dict[str, Any]]:
-    """Search the step.parts catalog. Returns simplified candidate records.
-
-    Raises RuntimeError when the catalog is unreachable so the caller can report it.
-    """
+def _fetch_step_parts(
+    *,
+    query: str = "",
+    category: str = "",
+    limit: int = 24,
+    origin: str = STEP_PARTS_ORIGIN,
+) -> tuple[list[dict[str, Any]], Exception | None]:
     url = f"{origin}/v1/parts"
     items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     last_exc: Exception | None = None
-    for q in _query_variants(query):
+    variants = _query_variants(query) if str(query or "").strip() else [""]
+    for q in variants:
+        params: dict[str, Any] = {"pageSize": min(max(int(limit), 1), 50)}
+        if q:
+            params["q"] = q
+        if category:
+            params["category"] = category
         try:
-            resp = httpx.get(url, params={"q": q, "pageSize": min(max(limit, 1), 50)}, timeout=12.0)
+            resp = httpx.get(url, params=params, timeout=12.0)
             resp.raise_for_status()
             data = resp.json()
         except (httpx.HTTPError, ValueError) as exc:
@@ -484,31 +527,98 @@ def search_sources(query: str, *, limit: int = 8, origin: str = STEP_PARTS_ORIGI
                 break
         if len(items) >= limit:
             break
+    return items[:limit], last_exc
+
+
+def search_catalog(
+    query: str,
+    *,
+    sources: list[str] | None = None,
+    limit: int = 24,
+    category: str = "",
+) -> dict[str, Any]:
+    selected = _selected_catalog_sources(sources)
+    # Product grid is STEP models. Dummy “search Amazon for X” cards used to
+    # pad the count and hide the actual parts.
+    want_parts = "step_parts" in selected or not sources
+    candidates: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    q = str(query or "").strip()
+    cat = str(category or "").strip()
+    if want_parts:
+        try:
+            if not q and not cat:
+                raw = popular_parts(limit=limit)
+            else:
+                raw = search_sources(q, limit=limit, category=cat)
+            for item in raw:
+                candidates.append(_decorate_catalog_part(item, query=q or cat or item.get("name") or ""))
+        except RuntimeError as exc:
+            errors["step_parts"] = str(exc)
+    shop_query = q or cat or "cad parts"
+    return {
+        "query": q,
+        "category": cat,
+        "heading": "Popular right now" if not q and not cat else (q or cat.replace("-", " ")),
+        "departments": catalog_departments(),
+        "catalog_size": 16847,
+        "sources": catalog_source_options(),
+        "selected_sources": ["step_parts"] if want_parts else selected,
+        "candidates": candidates,
+        "price_links": price_search_links(shop_query),
+        "shop_links": price_search_links(shop_query),
+        "errors": errors,
+    }
+
+
+def popular_parts(*, limit: int = 24, origin: str = STEP_PARTS_ORIGIN) -> list[dict[str, Any]]:
+    """Mix well-known hardware/electronics so the storefront is not an empty search box."""
+    seen: set[str] = set()
     out: list[dict[str, Any]] = []
-    for item in items[:limit]:
-        out.append(
-            {
-                "provider": "step.parts",
-                "provider_id": "step_parts",
-                "source_label": "step.parts",
-                "retrieval_mode": "live",
-                "is_real_result": True,
-                "id": item.get("id"),
-                "name": item.get("name"),
-                "description": item.get("description"),
-                "category": item.get("category"),
-                "family": item.get("family"),
-                "tags": item.get("tags") or [],
-                "attributes": item.get("attributes") or {},
-                "page_url": item.get("pageUrl"),
-                "product_page_url": _product_page_url(item),
-                "step_url": item.get("stepUrl"),
-                "glb_url": item.get("glbUrl"),
-                "png_url": item.get("pngUrl"),
-                "wiring_type": _map_source_to_wiring_type(item),
-            }
-        )
-    if not out:
+    for q in POPULAR_QUERIES:
+        try:
+            batch = search_sources(q, limit=4, origin=origin)
+        except RuntimeError:
+            continue
+        for item in batch:
+            key = str(item.get("id") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+            if len(out) >= limit:
+                return out
+    try:
+        extra = search_sources("", limit=limit, origin=origin)
+    except RuntimeError:
+        extra = []
+    for item in extra:
+        key = str(item.get("id") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
+def search_sources(
+    query: str,
+    *,
+    limit: int = 8,
+    origin: str = STEP_PARTS_ORIGIN,
+    category: str = "",
+) -> list[dict[str, Any]]:
+    """Search the step.parts catalog. Returns simplified candidate records.
+
+    Raises RuntimeError when the catalog is unreachable so the caller can report it.
+    """
+    items, last_exc = _fetch_step_parts(
+        query=query, category=category, limit=limit, origin=origin
+    )
+    out = [_part_from_api(item) for item in items[:limit]]
+    if not out and str(query or "").strip():
         out.extend(_builtin_candidates(query, limit))
     if not out and last_exc is not None:
         raise RuntimeError(f"Could not reach the parts catalog: {last_exc}") from last_exc

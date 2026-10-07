@@ -474,6 +474,298 @@ def gear_train_program(
     )
 
 
+def planetary_stage_teeth(stage_ratio: int) -> tuple[int, int, int]:
+    """Integer (sun, planet, ring) for a fixed-ring stage: i = 1 + Zr/Zs."""
+    ratio = max(3, int(round(stage_ratio)))
+    for zs in range(12, 48, 2):
+        zr = (ratio - 1) * zs
+        if (zr - zs) % 2:
+            continue
+        zp = (zr - zs) // 2
+        if zp < 9:
+            continue
+        orbit = (zs + zp) / 2.0
+        tip = zp / 2.0 + 1.15
+        if 2.0 * tip + 0.8 < orbit * math.sqrt(3.0):
+            return zs, zp, zr
+    return 24, 24, 72
+
+
+def _factor_planetary_ratio(target: float) -> list[int]:
+    """Split a reduction into one or two stages with i in 3..8."""
+    r = max(3.0, float(target))
+    nearest = int(round(r))
+    if 3 <= nearest <= 8:
+        return [nearest]
+    for a in range(8, 2, -1):
+        if nearest % a == 0:
+            b = nearest // a
+            if 3 <= b <= 8:
+                return [a, b]
+    if abs(r - 20.0) < 0.35:
+        return [5, 4]
+    if nearest > 8:
+        first = 5 if nearest >= 15 else 4
+        rest = min(8, max(3, int(round(nearest / first))))
+        return [first, rest]
+    return [4]
+
+
+def planetary_reduction_program(
+    ratio: float = 20.0,
+    *,
+    module: float = 1.5,
+    thickness: float = 6.0,
+    planet_count: int = 3,
+    pressure_angle: float = 20.0,
+    material: str = "steel",
+):
+    """Fixed-ring planetary reduction (carrier output). 1:20 uses two stacked stages."""
+    from backend.kernel.schema import Feature, FeatureProgram, JointSpec, PartSpec
+
+    stages = _factor_planetary_ratio(ratio)
+    parts: list[PartSpec] = []
+    joints: list[JointSpec] = []
+    meta_stages: list[dict[str, Any]] = []
+    achieved = 1.0
+    stack_pitch = thickness + 8.0
+    housing_r = 0.0
+
+    joints.append(
+        JointSpec(id="world_fixed", type="fixed", parent="world", child="housing", anchor=[0, 0, 0], axis=[0, 0, 1])
+    )
+
+    for si, stage_i in enumerate(stages):
+        zs, zp, zr = planetary_stage_teeth(stage_i)
+        orbit = center_distance(module, zs, zp)
+        ring_dims = GearDims(module, zr, pressure_angle, 0.0)
+        sun_bore = max(4.0, module * 2.2)
+        planet_bore = max(3.0, module * 1.6)
+        pin_r = max(1.4, planet_bore / 2.0 - 0.15)
+        z_gear = si * stack_pitch
+        z_carrier = z_gear - 4.0
+        rim_r = ring_dims.pitch_radius + 3.5 * module
+        housing_r = max(housing_r, rim_r + 2.0)
+        achieved *= 1.0 + zr / zs
+        tag = f"s{si + 1}"
+        sun_id = f"{tag}_sun"
+        ring_id = f"{tag}_ring"
+        carrier_id = f"{tag}_carrier"
+
+        parts.append(
+            PartSpec(
+                id=ring_id,
+                color="#4a5568",
+                material=material,
+                features=[
+                    Feature(
+                        op="ring_gear",
+                        module=module,
+                        teeth=zr,
+                        thickness=thickness,
+                        pressure_angle=pressure_angle,
+                        rim_radius=rim_r,
+                        at=[0.0, 0.0, z_gear],
+                    )
+                ],
+            )
+        )
+        joints.append(
+            JointSpec(
+                id=f"{ring_id}_fixed",
+                type="fixed",
+                parent="housing",
+                child=ring_id,
+                anchor=[0.0, 0.0, z_gear + thickness / 2.0],
+                axis=[0, 0, 1],
+            )
+        )
+        parts.append(
+            PartSpec(
+                id=sun_id,
+                color="#d69e2e",
+                material=material,
+                features=[
+                    Feature(
+                        op="spur_gear",
+                        module=module,
+                        teeth=zs,
+                        thickness=thickness,
+                        bore=sun_bore,
+                        pressure_angle=pressure_angle,
+                        at=[0.0, 0.0, z_gear],
+                    )
+                ],
+            )
+        )
+        sun_parent = "housing" if si == 0 else f"s{si}_carrier"
+        joints.append(
+            JointSpec(
+                id=f"{sun_id}_axle",
+                type="continuous",
+                parent=sun_parent,
+                child=sun_id,
+                anchor=[0.0, 0.0, z_gear + thickness / 2.0],
+                axis=[0, 0, 1],
+                drive_torque_nm=0.04 if si == 0 else None,
+            )
+        )
+
+        carrier_holes = [
+            Feature(op="hole", diameter=sun_bore + 1.6, through=True, combine="cut", at=[0.0, 0.0, z_carrier + 1.5]),
+        ]
+        for pi in range(planet_count):
+            ang = pi * 360.0 / planet_count
+            rad = math.radians(ang)
+            px = orbit * math.cos(rad)
+            py = orbit * math.sin(rad)
+            carrier_holes.append(
+                Feature(
+                    op="hole",
+                    diameter=pin_r * 2.0 + 0.4,
+                    through=True,
+                    combine="cut",
+                    at=[px, py, z_carrier + 1.5],
+                )
+            )
+            planet_id = f"{tag}_planet_{pi + 1}"
+            pin_id = f"{tag}_pin_{pi + 1}"
+            phase = (180.0 / zp) + ang * (zs / zp)
+            parts.append(
+                PartSpec(
+                    id=planet_id,
+                    color="#2b6cb0",
+                    material=material,
+                    features=[
+                        Feature(
+                            op="spur_gear",
+                            module=module,
+                            teeth=zp,
+                            thickness=thickness,
+                            bore=planet_bore,
+                            pressure_angle=pressure_angle,
+                            at=[px, py, z_gear],
+                            rotation=[0.0, 0.0, phase],
+                        )
+                    ],
+                )
+            )
+            parts.append(
+                PartSpec(
+                    id=pin_id,
+                    color="#a0aec0",
+                    material=material,
+                    features=[
+                        Feature(
+                            op="cylinder",
+                            radius=pin_r,
+                            height=thickness + 6.0,
+                            at=[px, py, z_carrier],
+                        )
+                    ],
+                )
+            )
+            joints.append(
+                JointSpec(
+                    id=f"{planet_id}_spin",
+                    type="continuous",
+                    parent=carrier_id,
+                    child=planet_id,
+                    anchor=[px, py, z_gear + thickness / 2.0],
+                    axis=[0, 0, 1],
+                )
+            )
+            joints.append(
+                JointSpec(
+                    id=f"{pin_id}_fixed",
+                    type="fixed",
+                    parent=carrier_id,
+                    child=pin_id,
+                    anchor=[px, py, z_carrier],
+                    axis=[0, 0, 1],
+                )
+            )
+
+        parts.append(
+            PartSpec(
+                id=carrier_id,
+                color="#718096",
+                material="aluminum",
+                features=[
+                    Feature(
+                        op="cylinder",
+                        radius=orbit + 7.0 * module,
+                        height=3.0,
+                        at=[0.0, 0.0, z_carrier + 1.5],
+                    ),
+                    *carrier_holes,
+                ],
+            )
+        )
+        joints.append(
+            JointSpec(
+                id=f"{carrier_id}_out",
+                type="continuous",
+                parent="housing",
+                child=carrier_id,
+                anchor=[0.0, 0.0, z_carrier + 1.5],
+                axis=[0, 0, 1],
+            )
+        )
+        meta_stages.append(
+            {
+                "ratio": 1.0 + zr / zs,
+                "sun": zs,
+                "planet": zp,
+                "ring": zr,
+                "orbit_mm": orbit,
+            }
+        )
+
+    housing_h = len(stages) * stack_pitch + 8.0
+    parts.insert(
+        0,
+        PartSpec(
+            id="housing",
+            color="#2d3748",
+            material="aluminum",
+            features=[
+                Feature(
+                    op="cylinder",
+                    radius=housing_r,
+                    height=housing_h,
+                    at=[0.0, 0.0, -6.0 + housing_h / 2.0],
+                ),
+                Feature(
+                    op="hole",
+                    diameter=max(12.0, (housing_r - 1.2) * 2.0),
+                    through=True,
+                    combine="cut",
+                    at=[0.0, 0.0, 0.0],
+                ),
+            ],
+        ),
+    )
+
+    return FeatureProgram(
+        name="planetary_gear_reduction",
+        description=(
+            f"{len(stages)}-stage fixed-ring planetary gearbox, sun in / carrier out, "
+            f"ratio 1:{achieved:g} (requested 1:{float(ratio):g})."
+        ),
+        parts=parts,
+        joints=joints,
+        meta={
+            "module": module,
+            "requested_ratio": float(ratio),
+            "overall_ratio": achieved,
+            "stages": meta_stages,
+            "planet_count": planet_count,
+            "pressure_angle_deg": pressure_angle,
+        },
+    )
+
+
 def gear_metadata(params: dict[str, Any]) -> dict[str, Any]:
     """Standard gear data for physics/traceability."""
     dims = GearDims(

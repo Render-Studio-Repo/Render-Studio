@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Iterator, Optional
 
 import httpx
 from openai import OpenAI
 
 from backend.config import settings
+from backend.services.prompt_language import with_multilingual_prompt_rule
 from backend.services.ai_cost import (
     estimate_cost_usd,
     usage_from_anthropic_response,
@@ -20,6 +23,61 @@ from backend.services.trace_log import add as trace_add
 
 logger = logging.getLogger(__name__)
 
+ProgressCb = Optional[Callable[[dict[str, Any]], None]]
+_generation_progress: ContextVar[ProgressCb] = ContextVar("generation_progress", default=None)
+_thinking_emit_state: ContextVar[dict[str, Any]] = ContextVar("generation_thinking_emit", default=None)
+
+
+@contextmanager
+def bind_generation_progress(callback: ProgressCb) -> Iterator[None]:
+    """Attach a generation HUD callback so LLM streams can show thinking live."""
+    token = _generation_progress.set(callback)
+    prev_state = _thinking_emit_state.set({"t": 0.0, "text": ""})
+    try:
+        yield
+    finally:
+        _generation_progress.reset(token)
+        _thinking_emit_state.reset(prev_state)
+
+
+def emit_generation_thinking(text: str, *, stage: str = "ai_source", force: bool = False) -> None:
+    """Push model reasoning onto the viewport loader without clobbering the step label."""
+    cb = _generation_progress.get()
+    chunk = str(text or "").strip()
+    if not cb or not chunk:
+        return
+    state = _thinking_emit_state.get()
+    if state is None:
+        state = {"t": 0.0, "text": ""}
+        _thinking_emit_state.set(state)
+    now = time.monotonic()
+    last = str(state.get("text") or "")
+    if (
+        not force
+        and now - float(state.get("t") or 0) < 0.18
+        and chunk == last
+    ):
+        return
+    state["t"] = now
+    state["text"] = chunk
+    try:
+        cb({
+            "stage": stage,
+            "thinking": chunk[:4000],
+            "thinking_append": chunk[:2000],
+        })
+    except Exception:
+        pass
+
+
+def _ensure_json_word(system_prompt: str, user_content: str) -> str:
+    """OpenAI json_object format 400s unless some input text contains 'json'."""
+    blob = f"{system_prompt or ''}\n{user_content or ''}".lower()
+    if "json" in blob:
+        return user_content
+    extra = "\n\nRespond with a JSON object."
+    return f"{user_content or ''}{extra}"
+
 RESPONSES_ONLY_MODELS = {"gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"}
 PRO_MODELS = RESPONSES_ONLY_MODELS | {settings.openai_model_quality}
 
@@ -27,7 +85,7 @@ PRO_MODELS = RESPONSES_ONLY_MODELS | {settings.openai_model_quality}
 def uses_openai_responses_api(model: str | None) -> bool:
     """Whether this OpenAI model should use the Responses API (tools / CAD agent).
 
-    GPT-5.5* and GPT-5.6* (Sol/Terra/Luna) are Responses-first. Older chat-only
+    GPT-5.5*, GPT-5.6*, GPT-6.1 Sol, and GPT-6 Astra are Responses-first. Older chat-only
     ids fall back to chat.completions.
     """
     m = (model or "").strip()
@@ -35,7 +93,9 @@ def uses_openai_responses_api(model: str | None) -> bool:
         return False
     if m in RESPONSES_ONLY_MODELS:
         return True
-    if m.startswith("gpt-5.5") or m.startswith("gpt-5.6"):
+    if m.startswith(("gpt-5.5", "gpt-5.6", "gpt-6.1-sol", "gpt-6-astra")):
+        return True
+    if "codex" in m.lower():
         return True
     return False
 
@@ -47,6 +107,8 @@ def is_openai_frontier_model(model: str | None) -> bool:
         m in PRO_MODELS
         or m.startswith("gpt-5.5")
         or m.startswith("gpt-5.6")
+        or m.startswith("gpt-6.1-sol")
+        or m.startswith("gpt-6-astra")
         or m.endswith("-pro")
         or m.endswith("-sol")
     )
@@ -84,13 +146,288 @@ def model_hard_timeout_seconds(model: str | None) -> float:
 
 def cad_authoring_max_tokens(model: str | None) -> int:
     """Pro / Sol CAD briefs + build123d sources routinely exceed 8k output tokens."""
-    if is_sol_model(model) or str(model or "").endswith("-pro") or "gpt-5.5-pro" in str(model or "").lower():
+    m = str(model or "").strip().lower()
+    if is_sol_model(model) or str(model or "").endswith("-pro") or "gpt-5.5-pro" in m:
         return 32768
+    # Kimi K3 spends a large share of the budget on hidden reasoning tokens.
+    if is_kimi_k3_model(model):
+        return 32768
+    if m.startswith("kimi"):
+        return 16384
     if is_openai_frontier_model(model):
         return 16384
     return 8192
 
-DESIGN_SYSTEM_PROMPT = """You are Render Studio's CAD design engine. You are an expert mechanical engineer
+
+def build_cad_brief_prompts(
+    user_prompt: str,
+    project_context: dict[str, Any] | None = None,
+) -> tuple[str, str]:
+    """System + user messages for CAD brief authoring (HTTP and Codex/Astra)."""
+    from backend.services.skills_service import get_reference, get_skill_dir
+
+    skill_dir = get_skill_dir("cad")
+    if not skill_dir:
+        raise RuntimeError("CAD skill not installed")
+    skill_md_path = skill_dir / "SKILL.md"
+    if not skill_md_path.is_file():
+        raise RuntimeError("CAD skill not installed")
+    skill_md = skill_md_path.read_text(encoding="utf-8", errors="ignore")
+    brief_ref = get_reference("cad", "cad-brief.md")
+    brief_guide = (brief_ref or {}).get("content") or ""
+    system = with_multilingual_prompt_rule(
+        "You are a CAD authoring agent following the upstream text-to-cad workflow "
+        "(https://github.com/earthtojake/text-to-cad).\n"
+        "Before writing build123d source, produce a concise CAD brief in Markdown.\n"
+        "Start with the line 'CAD brief:' and use bullet notes as described in the reference.\n"
+        "The Model bullet must be a short product/part noun (e.g. parallel_gripper, tractrix_horn), "
+        "never boilerplate like fully_assembled_cad or parametric_step_assembly.\n"
+        "For multi-part assemblies, publish the complete assembled layout. A parts list is metadata, not a request "
+        "to explode or omit the assembly. Only create a separate exploded layout when explicitly requested.\n"
+        "When motors/servos/ESC/battery/wiring/electronics are in the prompt, list those as visible labeled solids "
+        "(not empty pockets alone) under validation targets.\n"
+    )
+    from backend.services.cad_harness import catalog_hardware_allowed, prompt_forbids_catalog_hardware
+    from backend.services.purchase_parts import PURCHASE_LIST_RULES
+
+    from backend.services.parts_sourcing_policy import PARTS_SOURCING_RULES
+    system += "\n" + PURCHASE_LIST_RULES + "\n" + PARTS_SOURCING_RULES + "\n"
+
+    if prompt_forbids_catalog_hardware(user_prompt):
+        system += (
+            "The user wants a print-only kit (no screws / all parts 3D-printed). "
+            "The 'McMaster-Carr / purchased hardware' bullet MUST be 'none'. "
+            "Do not list catalog fasteners, inserts, or other purchased hardware.\n"
+        )
+    elif isinstance(project_context, dict) and project_context.get("use_mcmaster_parts") is False:
+        system += (
+            "McMaster-Carr catalog hardware is OFF. The 'McMaster-Carr / purchased hardware' bullet MUST be 'none'. "
+            "Do not list catalog fasteners, part numbers, or other purchased hardware.\n"
+        )
+    else:
+        system += (
+            "Always include a 'McMaster-Carr / purchased hardware' bullet. Unless the user specifies another process "
+            "for custom parts, assume FDM/3D-printed production parts and list the McMaster-Carr catalog hardware "
+            "needed to assemble them (qty + verified part number; flag unsourced items instead of inventing PNs). "
+            "Use 'none' only when truly no COTS hardware is required. On edits, append new part numbers and note removals.\n"
+        )
+    system += (
+        "If the project already has STEP/GLB parts, name them and say how the new work sits relative to them "
+        "(mate, clear, restack, or leave in place). Do not ignore sibling files.\n"
+    )
+    if catalog_hardware_allowed(user_prompt, context=project_context if isinstance(project_context, dict) else None):
+        system += (
+            "If a sibling mount STEP is mentioned but missing from this folder, still write a complete brief with "
+            "clearly labeled provisional envelope dimensions. Ask for missing mating dimensions before drilling "
+            "a replacement pattern; do not present assumptions or unverified PNs as sourced facts.\n"
+        )
+    system += (
+        "Do not write Python. Do not wrap the brief in JSON.\n"
+        "When images or PDF drawing pages are attached, follow the Technical drawings "
+        "section of the CAD brief reference: title block, views, callouts, and sections "
+        "are a dimensioned contract. Do not flatten a multi-view PDF into one extruded profile.\n\n"
+        f"CAD skill:\n{skill_md}\n\n"
+        f"CAD brief reference:\n{brief_guide}"
+    )
+    parts = [user_prompt]
+    if project_context:
+        kb = project_context.get("knowledge_base") if isinstance(project_context, dict) else None
+        ctx = (
+            {k: v for k, v in (project_context or {}).items() if k != "knowledge_base"}
+            if isinstance(project_context, dict)
+            else project_context
+        )
+        if isinstance(kb, dict) and kb.get("text"):
+            parts.append(f"\n\nKnowledge base material to follow:\n{kb['text']}")
+        existing_mcmaster = ""
+        if isinstance(project_context, dict):
+            existing_mcmaster = str(project_context.get("mcmaster_parts_list") or "").strip()
+        if existing_mcmaster and catalog_hardware_allowed(
+            user_prompt,
+            context=project_context if isinstance(project_context, dict) else None,
+        ):
+            parts.append(
+                "\n\nExisting McMaster parts list (update on this edit — append new PNs, "
+                f"mark unused as removed):\n{existing_mcmaster[:12000]}"
+            )
+        inventory = []
+        if isinstance(project_context, dict):
+            inventory = project_context.get("project_parts") or []
+        if inventory:
+            lines = []
+            for item in inventory[:30]:
+                if not isinstance(item, dict):
+                    lines.append(f"- {item}")
+                    continue
+                name = item.get("filename") or item.get("name") or "part"
+                extra = []
+                if item.get("bbox_mm"):
+                    extra.append(f"bbox_mm={item['bbox_mm']}")
+                if item.get("center_mm"):
+                    extra.append(f"center_mm={item['center_mm']}")
+                lines.append(f"- {name}" + (f" ({', '.join(extra)})" if extra else ""))
+            parts.append(
+                "\n\nExisting project parts (inspect and rearrange; do not ignore):\n"
+                + "\n".join(lines)
+            )
+        if ctx:
+            slim_ctx = {
+                k: v
+                for k, v in (ctx or {}).items()
+                if k not in {"mcmaster_parts_list", "project_parts"}
+            }
+            if slim_ctx:
+                blob = json.dumps(slim_ctx, separators=(",", ":"), default=str)
+                parts.append(f"\nProject context: {blob[:12000]}")
+    return system, "".join(parts)
+
+
+def is_kimi_k3_model(model: str | None) -> bool:
+    m = str(model or "").strip().lower()
+    return "kimi-k3" in m or (m.startswith("kimi") and m.endswith("k3"))
+
+
+def kimi_chat_create_kwargs(
+    model: str | None,
+    *,
+    max_tokens: int,
+    tools: bool = False,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    """Moonshot Chat Completions extras. K3 ≠ K2 parameter set."""
+    if is_kimi_k3_model(model):
+        # Official K3 fields. Do not send temperature (fixed at 1.0) or K2 `thinking`.
+        out: dict[str, Any] = {
+            "max_completion_tokens": max(int(max_tokens or 0), 16384),
+            # Default effort is max, which can spend the whole budget on hidden
+            # reasoning and leave content/tool_calls empty (blank viewport).
+            "reasoning_effort": reasoning_effort or "high",
+        }
+        if tools:
+            out["tool_choice"] = "required"
+        return out
+    return {"max_tokens": max_tokens}
+
+
+def extract_openai_compat_message_text(message: Any) -> str:
+    """Prefer visible content; fall back to Kimi/Moonshot ``reasoning_content``.
+
+    Kimi K3 often fills ``reasoning_content`` first. With a tight ``max_tokens`` or
+    default ``reasoning_effort=max``, ``message.content`` can be empty even when the
+    model produced usable JSON in the reasoning channel — which previously became
+    ``"{}"`` and left the viewport blank.
+    """
+    if isinstance(message, dict):
+        content = message.get("content")
+        reasoning = message.get("reasoning_content")
+    else:
+        content = getattr(message, "content", None)
+        reasoning = getattr(message, "reasoning_content", None)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text")
+                if text:
+                    parts.append(str(text))
+            else:
+                text = getattr(block, "text", None)
+                if text:
+                    parts.append(str(text))
+        content = "\n".join(parts)
+    text = str(content or "").strip()
+    if text:
+        return text
+    reasoning = str(reasoning or "").strip()
+    if not reasoning:
+        return ""
+    # Prefer a JSON object/array embedded in the reasoning trace.
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = reasoning.find(opener)
+        end = reasoning.rfind(closer)
+        if start >= 0 and end > start:
+            candidate = reasoning[start : end + 1].strip()
+            try:
+                json.loads(candidate)
+                return candidate
+            except Exception:
+                pass
+    return reasoning
+
+
+def non_empty_assistant_content(message: Any, *, fallback: str = "(continuing)") -> str:
+    """Moonshot rejects assistant messages with empty content on the next turn."""
+    text = extract_openai_compat_message_text(message).strip()
+    return text if text else fallback
+
+
+def _serialize_chat_tool_calls(tool_calls: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for tc in tool_calls or []:
+        if isinstance(tc, dict):
+            fn = tc.get("function") or {}
+            if not isinstance(fn, dict):
+                fn = {
+                    "name": getattr(fn, "name", "") or "",
+                    "arguments": getattr(fn, "arguments", None) or "{}",
+                }
+            tc_id = tc.get("id")
+            name = fn.get("name") or ""
+            args = fn.get("arguments") or "{}"
+        else:
+            fn = getattr(tc, "function", None)
+            tc_id = getattr(tc, "id", None)
+            name = getattr(fn, "name", "") if fn else ""
+            args = (getattr(fn, "arguments", None) if fn else None) or "{}"
+        if not tc_id or not name:
+            continue
+        out.append(
+            {
+                "id": tc_id,
+                "type": "function",
+                "function": {"name": str(name), "arguments": str(args)},
+            }
+        )
+    return out
+
+
+def openai_compat_assistant_history_message(message: Any) -> dict[str, Any]:
+    """Serialize an assistant message for the next Moonshot/OpenAI chat turn.
+
+    Kimi K3 requires the complete assistant message — including
+    ``reasoning_content`` and ``tool_calls`` — to be passed back unchanged.
+    Copying only ``content`` breaks later tool turns and leaves CAD blank.
+    Moonshot also rejects empty assistant ``content``.
+    """
+    raw: dict[str, Any] = {}
+    if isinstance(message, dict):
+        raw = {k: v for k, v in message.items() if v is not None}
+    elif hasattr(message, "model_dump"):
+        try:
+            raw = message.model_dump(exclude_none=True)
+        except Exception:
+            raw = {}
+
+    payload: dict[str, Any] = {
+        "role": "assistant",
+        "content": non_empty_assistant_content(message),
+    }
+    reasoning = raw.get("reasoning_content") if raw else None
+    if reasoning is None:
+        reasoning = getattr(message, "reasoning_content", None)
+    if reasoning:
+        payload["reasoning_content"] = reasoning
+
+    tool_calls = raw.get("tool_calls") if raw else None
+    if tool_calls is None:
+        tool_calls = getattr(message, "tool_calls", None)
+    serialized = _serialize_chat_tool_calls(tool_calls)
+    if serialized:
+        payload["tool_calls"] = serialized
+    return payload
+
+
+DESIGN_SYSTEM_PROMPT = with_multilingual_prompt_rule("""You are Render Studio's CAD design engine. You are an expert mechanical engineer
 and CAD modeler. You think step-by-step about HOW to construct 3D objects using boolean
 operations (union, subtraction, intersection), just like Fusion 360, SolidWorks, or ForgeCAD.
 
@@ -154,6 +491,7 @@ Document steps 1–7 in `design_plan`. Step 8 is the actual B-rep output (`progr
 
 Rules for the workflow:
 - Dimensioned drawings/images: extract callouts into the dimension table; never silently contradict them.
+- Mixed reference files: a canvas sketch / line drawing EXPLAINS layout (arrows, hanging off, beside, offset) — it is not the part to copy. A photo of extrusion, rail, or hardware is a mate TARGET. Do not sit the new motor/bracket on top of that object unless the prompt and sketch say on-top. Product photos of the thing to make are for silhouette of THAT object only.
 - Single-part requests: still fill all eight steps (hierarchy has one node; assembly/joints may be empty).
 - Generators (`gear_train`, `enclosure`, …): still complete steps 1–7, then set `generator` for step 8.
 - Do NOT skip steps to save tokens — concise bullets are fine, but every field must be present.
@@ -388,28 +726,28 @@ PATTERN — for repeated surface details (vents, buttons, bolts, grilles, pads):
     {{"op":"cylinder","diameter":16,"height":4,"combine":"add","at":[-55,-45,2]}},
     {{"op":"pattern","arrange":"rectangular","x_count":2,"y_count":2,"x_spacing":110,"y_spacing":90}}
 
-CHARACTERISTIC PART COLORS (use these exact hex values — bright enough to read on a dark viewport; NEVER use black, charcoal, or dull aluminium greys):
-  Housing / shell plastic: #7eb6e8
-  Light plastic:           #d6dee8
-  Soft metal / bracket:    #a8c4dc
-  Stainless / fasteners:   #c6d0da
-  Robot links / gears:     #78aee8
-  Glass / transparent:     #b0d4e8
-  Rubber / TPU / tires:    #6d7a8c
-  Copper / brass:          #d69a56
-  Wood / timber:           #c49a62
-  PCB green:               #2e944e
-  Accent blue:             #1e87f0
-  Accent orange:           #e86828
-  Accent red:              #d43030
-  White / ceramic:         #e8e6e0
-  Sand / food-safe:        #e8d6a8
-  Mint accent:             #8fd17f
-  Violet accent:           #b79be8
-
-When colouring multi-body assemblies, assign distinct mid/light colours by role so every body
-reads against the dark canvas (bolts=light steel #c6d0da, housings=#7eb6e8, gears=#78aee8,
-rubber=#6d7a8c, brackets=#a8c4dc). Do NOT use #000000, #1e2124, #2b2f33, or aluminium greys.
+CHARACTERISTIC PART COLORS — realistic shop finishes (not pastel rainbow):
+Always colour every named body, including Target Edit / Generate another / imported STEP/GLB.
+White or mid-grey tessellation is unauthored OCC/glTF default — not a finish to keep.
+If the prompt includes a colors: / materials / appearance clause, use those hexes on the
+matching named bodies. Otherwise pick semantic shop colours from the part name:
+  Aluminum / housing / frame:  #c0c6cc
+  Steel / gears / shafts:      #8a939d
+  Stainless / fasteners:       #c6d0da
+  Black oxide / anodize:       #3a3f44
+  Glass / transparent:         #b0d4e8
+  Rubber / TPU / tires:        #4a5560
+  Copper / brass:              #c4a574
+  Wood / timber:               #c49a62
+  POM / nylon / plastic:       #d9d3c7
+  PCB green:                   #2e944e
+  Chess ivory (white set):     #e8e0d4
+  Chess ebony (black set):     #2a2a2e
+Do NOT cycle CAD Viewer pastel fills (#f4a7a7, #f8c77e, #f7e38d, #b9e88f, #8fe3c0,
+#92d7f5, #a9b8ff, #c7a8ff, #f2a7d9) unless the user explicitly asked for workbench
+fills or a toy/game look. Never rainbow-band a single chess piece.
+Bolts/fasteners stay #c6d0da or black oxide #3a3f44. Same material on several parts
+may share one colour — that is correct, not a bug.
 ━━━ EXAMPLES OF GOOD CAD REASONING ━━━
 
 EXAMPLE 1 — "Make a coffee mug"
@@ -474,7 +812,7 @@ Reasoning: A coffee maker is NEVER a single box. Use the revolve recipe for cara
 ⚠ Each part has EXPLICIT "placement" — feature "at" values are LOCAL offsets from that placement.
 
 parts / features:
-  "body" (#7eb6e8, ABS), placement:[0,0,0]:
+  "body" (#b6c4ce, ABS), placement:[0,0,0]:
     {{"op":"loft","sections":[{{"z":0,"width":180,"height":230}},{{"z":160,"width":175,"height":225}},{{"z":310,"width":165,"height":215}}]}},
     {{"op":"box","size":[145,170,175],"combine":"cut","at":[0,-28,87]}},        ← local: front carafe alcove
     {{"op":"box","size":[100,10,60],"combine":"cut","at":[0,-108,230]}},        ← local: control panel recess
@@ -620,12 +958,12 @@ For bottles: prefer pet_soda_bottle generator OR a single revolve profile + opti
 ━━━ CONSUMER PRODUCT DESIGN — MULTI-PART RULE ━━━
 
 For consumer electronics, appliances, furniture, tools, and any real-world product:
-ALWAYS use MULTIPLE PARTS (3–8) with DIFFERENT COLORS to produce a recognisable object.
-A product that looks like a single dark grey / black / aluminium blob is WRONG and unacceptable.
+ALWAYS use MULTIPLE PARTS (3–8) with REALISTIC SHOP COLOURS to produce a recognisable object.
+A product that looks like a single dark grey blob is WRONG; pastel rainbow bodies are also WRONG.
 
 Visual differentiation rules:
 1. Decompose into parts that are PHYSICALLY AND VISUALLY DISTINCT: body, trim, display, buttons, legs, etc.
-2. Each part gets its own color (#hex): plastic bodies (#7eb6e8 or #d6dee8), soft metal (#a8c4dc or #c6d0da), glass/transparent (#b0d8f0), rubber (#6d7a8c), accents (#e86828 / #8fd17f). NEVER black/charcoal.
+2. Colour by real materials named in the prompt (aluminum #c0c6cc, steel #8a939d, black oxide #3a3f44, brass #c4a574, POM #d9d3c7, glass #b0d4e8, rubber #4a5560, fasteners #c6d0da). Preserve user/reference finishes including neutral metals and white paint. Infer plausible materials when unspecified; keep identical material assignments in assembled and exploded exports. Do not cycle pastel CAD Viewer fills. Chess/game pieces stay ivory #e8e0d4 or ebony #2a2a2e.
 3. Use CHARACTERISTIC SHAPES for each product category:
    - Coffee makers: tapered box body + dome lid (revolve) + glass carafe (cylinder, light blue) + chrome drip plate + buttons
    - Controller stands: wide base (160×110×15) + NARROW spine pillar (36×22×95, NOT 80mm wide!) + TWO CYLINDER PEGS (d=13mm, 65mm tall, 66mm apart) for controller grips + rubber feet
@@ -759,9 +1097,9 @@ KEY RULES:
 - NEVER emit a part with zero volume: every part id must start with a solid primitive (combine=new), then add/cut. Do not name a part "assembly" unless it contains real solid features.
 - For spice dispensers, shakers, and kitchen gadgets: revolved or shelled main body + separate dial/lid/knob parts (≤8 parts total, ≤15 features on the main body).
 - Avoid stacked duplicate primitives: do not place multiple full-size boxes/cylinders at the same anchor to "approximate" one shape — fuse into one solid or use cut/intersect intentionally.
-- Appliances, consumer products, and furniture: use 3–8 VISUALLY DISTINCT parts with different colors. A single grey box is never acceptable for a product that has recognisable form. Each part must contribute a clear visual element (body, trim, display, handle, base, feet, etc.)."""
+- Appliances, consumer products, and furniture: use 3–8 named parts with realistic shop colours (not pastel rainbow). A single grey box is never acceptable for a product that has recognisable form. Each part must contribute a clear visual element (body, trim, display, handle, base, feet, etc.).""")
 
-V2_DESIGN_ADDENDUM = """
+V2_DESIGN_ADDENDUM = with_multilingual_prompt_rule("""
 ━━━ CAD 2.0 QUALITY PIPELINE ━━━
 
 You are in 2.0 quality mode. Apply maximum engineering rigor at every step.
@@ -806,7 +1144,7 @@ QUALITY CHECKLIST (run mentally before emitting the response):
 □ No duplicate primitive at the same position (x,y,z within 0.5mm)
 □ Fillets/chamfers placed AFTER the full solid is built
 □ Realistic mm dimensions — a standard bolt M6 is 6mm diameter, a matchbox is 50×35×15mm
-□ Multi-part assemblies: 3–8 visually distinct parts with contrasting colors
+□ Multi-part assemblies: 3–8 named parts with realistic shop colours (not pastel rainbow)
 □ brief is present and part_constraints lists every part_id
 
 UPDATED RESPONSE FORMAT for 2.0 mode — design_plan MUST include brief:
@@ -841,9 +1179,9 @@ UPDATED RESPONSE FORMAT for 2.0 mode — design_plan MUST include brief:
   "generator": <object or null>,
   "program": <object or null>
 }
-"""
+""")
 
-SYSTEM_PROMPT = """CAD mesh editing assistant. You edit an EXISTING 3D model.
+SYSTEM_PROMPT = with_multilingual_prompt_rule("""CAD mesh editing assistant. You edit an EXISTING 3D model.
 Reply ONLY with JSON:
 {{"message":"…","actions":[{{"op":"…","id":"a","result":true}}],"filename":"part.glb"}}
 
@@ -917,7 +1255,7 @@ Example: "Put a 4mm hole 3mm deep in this @lasso-1"
 → [{{"op":"use_base","id":"b"}},{{"op":"hole_at_point","id":"h","at_refs":["lasso-1"],"diameter_mm":4,"depth_mm":3,"through":false,"result":true}}]
 
 Colors: "white", "black", "#ffffff", or [r,g,b] 0–1.
-Use mm sizes when the mesh is in mm. Max 8 ops. Exactly one action with result:true."""
+Use mm sizes when the mesh is in mm. Max 8 ops. Exactly one action with result:true.""")
 
 
 class AIService:
@@ -925,20 +1263,43 @@ class AIService:
         "openai": None,
         "xai": "https://api.x.ai/v1",
         "kimi": "https://api.moonshot.ai/v1",
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "qwen": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "local": "http://127.0.0.1:11434/v1",
     }
+    OPENAI_COMPAT_COST_PROVIDERS = frozenset({"openai", "xai", "kimi", "gemini", "qwen", "local"})
+    CHAT_COMPLETIONS_ONLY_PROVIDERS = frozenset({"kimi", "gemini", "qwen", "local"})
 
-    def __init__(self, model: str | None = None, api_key: str | None = None, provider: str = "openai") -> None:
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        provider: str = "openai",
+        base_url: str | None = None,
+    ) -> None:
         self.provider = (provider or "openai").lower()
         if self.provider in {"moonshot"}:
             self.provider = "kimi"
         if self.provider in {"grok", "x-ai"}:
             self.provider = "xai"
+        if self.provider in {"google", "google-ai", "google_ai"}:
+            self.provider = "gemini"
+        if self.provider in {"dashscope", "alibaba", "aliyun", "tongyi"}:
+            self.provider = "qwen"
+        if self.provider in {"ollama", "lmstudio", "lm_studio"}:
+            self.provider = "local"
         if self.provider == "anthropic":
             default_model = settings.anthropic_model
         elif self.provider == "kimi":
             default_model = getattr(settings, "kimi_model", None) or "kimi-k2.6"
         elif self.provider == "xai":
             default_model = getattr(settings, "xai_model", None) or "grok-4.5"
+        elif self.provider == "gemini":
+            default_model = getattr(settings, "gemini_model", None) or "gemini-3.8-flash"
+        elif self.provider == "qwen":
+            default_model = getattr(settings, "qwen_model", None) or "qwen3-coder-plus"
+        elif self.provider == "local":
+            default_model = "qwen2.5-coder:32b"
         else:
             default_model = settings.openai_model
         self.model = model or default_model
@@ -947,14 +1308,17 @@ class AIService:
             raise RuntimeError("Add your AI provider API key from the account menu before generating.")
         self.client = None
         self.cancel_check = None  # optional Callable[[], bool] set by generation runners
-        if self.provider in self.OPENAI_COMPAT_BASE_URLS:
-            base_url = self.OPENAI_COMPAT_BASE_URLS[self.provider]
+        self.reasoning_effort = None
+        mapped = self.OPENAI_COMPAT_BASE_URLS.get(self.provider)
+        resolved_base = (base_url or "").strip().rstrip("/") or mapped
+        self.base_url = resolved_base
+        if self.provider in self.OPENAI_COMPAT_BASE_URLS or resolved_base:
             kwargs: dict[str, Any] = {
                 "api_key": self.api_key,
                 "timeout": model_hard_timeout_seconds(self.model),
             }
-            if base_url:
-                kwargs["base_url"] = base_url
+            if resolved_base:
+                kwargs["base_url"] = resolved_base
             self.client = OpenAI(**kwargs)
         elif self.provider != "anthropic":
             raise RuntimeError(f"Unsupported AI provider: {self.provider}")
@@ -995,7 +1359,7 @@ class AIService:
                             estimate_cost_usd(
                                 self.model,
                                 usage,
-                                provider=self.provider if self.provider in {"openai", "xai", "kimi"} else "openai",
+                                provider=self.provider if self.provider in self.OPENAI_COMPAT_COST_PROVIDERS else "openai",
                             ),
                         )
                 else:
@@ -1056,7 +1420,7 @@ class AIService:
         cost = getattr(exc, "cost_usd", None)
         if cost is None:
             provider = str(trace.get("provider") or "openai").strip().lower()
-            if provider not in {"openai", "anthropic", "kimi", "xai"}:
+            if provider not in {"openai", "anthropic", "kimi", "xai", "gemini", "qwen"}:
                 provider = "openai"
             cost = estimate_cost_usd(model, usage, provider=provider)
         if cost is not None:
@@ -1099,7 +1463,7 @@ class AIService:
             f"{user_prompt}{context_text}",
             trace_id=trace_id,
             images=images,
-            max_tokens=16384,
+            max_tokens=cad_authoring_max_tokens(self.model),
         )
         try:
             plan = json.loads(self._json_payload(raw))
@@ -1134,6 +1498,8 @@ class AIService:
             specs=", ".join(available_specs()) or "(none)",
             materials=", ".join(list_materials()),
         )
+        from backend.services.parts_sourcing_policy import PARTS_SOURCING_RULES
+        system += "\n\n" + PARTS_SOURCING_RULES
         skills_block = build_skills_prompt(skills)
         if skills_block:
             system = f"{system}\n\n{skills_block}"
@@ -1157,7 +1523,7 @@ class AIService:
             "".join(parts),
             trace_id=trace_id,
             images=images,
-            max_tokens=16384,
+            max_tokens=cad_authoring_max_tokens(self.model),
         )
         try:
             design = json.loads(self._json_payload(raw))
@@ -1175,41 +1541,10 @@ class AIService:
         images: list[dict[str, Any]] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Create the CAD brief text-to-cad expects before authoring source."""
-        from backend.services.skills_service import get_reference, get_skill_dir
-
-        skill_dir = get_skill_dir("cad")
-        if not skill_dir:
-            raise RuntimeError("CAD skill not installed")
-
-        skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
-        brief_ref = get_reference("cad", "cad-brief.md")
-        brief_guide = (brief_ref or {}).get("content") or ""
-
-        system = (
-            "You are a CAD authoring agent following the upstream text-to-cad workflow "
-            "(https://github.com/earthtojake/text-to-cad).\n"
-            "Before writing build123d source, produce a concise CAD brief in Markdown.\n"
-            "Start with the line 'CAD brief:' and use bullet notes as described in the reference.\n"
-            "The Model bullet must be a short product/part noun (e.g. parallel_gripper, tractrix_horn), "
-            "never boilerplate like fully_assembled_cad or parametric_step_assembly.\n"
-            "For multi-part assemblies, the brief must call out BOTH an assembled layout and an exploded BOM layout.\n"
-            "When motors/servos/ESC/battery/wiring/electronics are in the prompt, list those as visible labeled solids "
-            "(not empty pockets alone) under validation targets.\n"
-            "Do not write Python. Do not wrap the brief in JSON.\n\n"
-            f"CAD skill:\n{skill_md}\n\n"
-            f"CAD brief reference:\n{brief_guide}"
-        )
-        parts = [user_prompt]
-        if project_context:
-            kb = project_context.get("knowledge_base") if isinstance(project_context, dict) else None
-            ctx = {k: v for k, v in (project_context or {}).items() if k != "knowledge_base"} if isinstance(project_context, dict) else project_context
-            if isinstance(kb, dict) and kb.get("text"):
-                parts.append(f"\n\nKnowledge base material to follow:\n{kb['text']}")
-            if ctx:
-                parts.append(f"\nProject context: {json.dumps(ctx, separators=(',', ':'))}")
+        system, user = build_cad_brief_prompts(user_prompt, project_context)
         raw, trace = self._call_model(
             system,
-            "".join(parts),
+            user,
             trace_id=trace_id,
             images=images,
             max_tokens=cad_authoring_max_tokens(self.model),
@@ -1241,7 +1576,10 @@ class AIService:
         if not skill_dir:
             raise RuntimeError("CAD skill not installed")
 
-        skill_md = skill_dir.joinpath("SKILL.md").read_text(encoding="utf-8", errors="ignore")
+        skill_md_path = skill_dir / "SKILL.md"
+        if not skill_md_path.is_file():
+            raise RuntimeError("CAD skill not installed")
+        skill_md = skill_md_path.read_text(encoding="utf-8", errors="ignore")
         # Keep Jake skill body; drop Render Studio appendix so it cannot contradict gen_step().
         marker = "<!-- render3d-studio -->"
         if marker in skill_md:
@@ -1254,17 +1592,21 @@ class AIService:
             "positioning.md",
             "snapshot-review.md",
             "inspection-and-validation.md",
+            "cad-brief.md",
             "parameters.md",
         ):
             ref = get_reference("cad", name)
             if ref and ref.get("content"):
                 ref_blocks.append(f"### {name}\n{ref['content']}")
 
-        system = (
+        system = with_multilingual_prompt_rule(
             "You are a CAD authoring agent following the upstream text-to-cad workflow "
             "(https://github.com/earthtojake/text-to-cad).\n"
-            "Write ONLY valid Python source for build123d with a top-level gen_step() function.\n"
-            "gen_step() must return the ASSEMBLED STEP-ready shape or labeled compound; do not write file paths inside gen_step().\n"
+            "Write ONLY valid Python source for a Jake text-to-cad 0.5 cadgen model.\n"
+            "Preferred: `from cadgen import build123d as bd` and `from cadgen import step`, "
+            "one `@step` function that returns a Shape, and `if __name__ == '__main__': model()`.\n"
+            "Also accepted: a top-level gen_step() function (scripts/step wraps it for 0.5).\n"
+            "The model must return the ASSEMBLED STEP-ready shape or labeled compound; do not write file paths inside the model.\n"
             "For multi-part assemblies, also define gen_exploded() that returns the same labeled children spaced apart "
             "for BOM/assembly review. scripts/step auto-exports {stem}_exploded.step/.glb when gen_exploded exists.\n"
             "Use millimeters. Define every named parameter at module scope before gen_step(), including file names, "
@@ -1280,6 +1622,14 @@ class AIService:
             "grippers, fixtures, and editable designs this is mandatory. If the user explicitly asks for one printable "
             "solid/manifold part, still keep named construction variables for major pieces, and only then create a final "
             "fused printable solid.\n"
+            "Colour every leaf with realistic shop materials from the prompt's colors/materials clause "
+            "(aluminum #c0c6cc, steel #8a939d, black oxide #3a3f44, brass #c4a574, POM #d9d3c7, "
+            "rubber #4a5560, fasteners #c6d0da). Use `from cadgen import srgb` / cadgen.srgb. "
+            "Imported STEP/GLB that tessellates white/grey is uncolored — still apply srgb to unauthored surfaces; "
+            "do not leave glTF/OCC default white on Target Edit. "
+            "Do not cycle pastel CAD Viewer fills (#f4a7a7, #f8c77e, #a9b8ff, #f2a7d9) unless the user "
+            "asked for workbench colours. Colour leaves, never the parent compound. "
+            "Channels are linear — always use cadgen.srgb, never Color(0.5, 0.5, 0.5) from a hex by eye.\n"
             "When the prompt mentions motors, servos, ESC, battery/LiPo, receiver, wiring, or electronics: model visible "
             "labeled solids for those components AND wire/harness runs — do not stop at empty pockets or channels.\n"
             "For mechanisms (gears, hinges, linkages, lids, sliders, robots), label every moving part with a stable "
@@ -1297,6 +1647,9 @@ class AIService:
             'model_label = "cooling_fan").\n'
             "When importing a project DXF with import_dxf(), set a module-level constant such as "
             'dxf_filename = "part.dxf" and use Path(dxf_filename) inside gen_step().\n'
+            "When images, PDF pages, or DXF drawings are attached, treat them as technical "
+            "drawings per cad-brief.md: extract views and callouts; reconstruct 3D solids. "
+            "A multi-view PDF is not a single 2D profile to extrude.\n"
             "Follow the CAD brief exactly.\n"
             "Return ONLY Python source — no markdown fences, no explanation before or after the code.\n"
             "If editing an existing model, preserve working geometry and change only what the prompt or repair note requires.\n"
@@ -1305,6 +1658,9 @@ class AIService:
             "To avoid repeated NameError failures, prefer writing complete geometry inline in gen_step() with local code blocks "
             "instead of calling custom helper functions. If you do use a helper, it MUST be fully defined above gen_step().\n"
             "Never return source where gen_step() calls make_*/add_*/build_*/create_* names that are not defined in-file.\n"
+            "Never raise INPUT_BLOCKED and never write a preflight-only stub. If a sibling mount STEP is missing, "
+            "author complete parameterized geometry with documented assumed dimensions and real McMaster catalog PNs "
+            "so scripts/step can export STEP/GLB for live viewport drawing.\n"
             "CRITICAL — hole/position lists: any name used as Locations(*name) or `for x, y in name` MUST be a list/tuple of "
             "(x, y) or (x, y, z) coordinates. Never assign a bare float (wrong: rod_hole_positions = 10.0). "
             "Correct: rod_hole_positions = [(-30, -10), (-10, -10), (10, -10), (30, -10), (-30, 10), (-10, 10), (10, 10), (30, 10)]. "
@@ -1316,11 +1672,50 @@ class AIService:
             f"CAD skill:\n{skill_md}\n\n"
             + "\n\n".join(ref_blocks)
         )
+        from backend.services.parts_sourcing_policy import PARTS_SOURCING_RULES
+        system += "\n\n" + PARTS_SOURCING_RULES
         if fusion_mode:
             system += (
                 "\n\nFusion mode: structure source like a Fusion 360 timeline with named phase functions, "
                 "explicit datums, and functional interfaces before cosmetic fillets/chamfers."
             )
+        from backend.services.cad_harness import (
+            catalog_hardware_allowed,
+            prompt_forbids_catalog_hardware,
+            PRINT_ONLY_HARDWARE_INSTRUCTIONS,
+            MCMASTER_DISABLED_INSTRUCTIONS,
+        )
+
+        if isinstance(project_context, dict) and project_context.get("use_mcmaster_parts") is False:
+            system += "\n\n" + MCMASTER_DISABLED_INSTRUCTIONS + "\n"
+        elif prompt_forbids_catalog_hardware(user_prompt):
+            system += "\n\n" + PRINT_ONLY_HARDWARE_INSTRUCTIONS + "\n"
+        else:
+            system += (
+                "\n\nMcMaster-Carr production hardware (CAD 2.0):\n"
+                "- Unless the brief specifies another process for custom parts, treat printed geometry as FDM/3D-printed "
+                "production parts that must assemble with purchasable hardware.\n"
+                "- Honor references/McMaster/parts_list.md — the single McMaster parts list for this project.\n"
+                "- Size holes, pockets, bosses, and clearances for the listed McMaster part numbers "
+                "(fasteners, bearings, inserts, shafts, springs, hinges, standoffs, etc.).\n"
+                "- Import on-disk `{PN}.step` with cadgen.read_step and place with moved(Location(...)) "
+                "into the parent Compound at millimetre scale. Export one assembled STEP — the viewer "
+                "tessellates one GLB. Do not leave unsized fasteners stacked at the origin.\n"
+                "- Do not crawl McMaster when `{PN}.glb` or `{PN}.step` already exists.\n"
+                "- Do not invent mystery fasteners when a part number is listed; if geometry for a PN is unavailable, "
+                "keep a labeled envelope solid and leave the PN on the parts list.\n"
+                "- On generative edits, only add hardware clearances that remain required; do not drop listed PNs "
+                "from the design without marking them unused in the brief/parts list.\n"
+            )
+        from backend.services.cad_authoring_agent import source_is_input_blocked_refusal
+
+        if source_is_input_blocked_refusal(previous_source):
+            previous_source = None
+            system += (
+                "\nThe previous file was a preflight refusal (INPUT_BLOCKED). Ignore it. "
+                "Write a complete new model with assumed envelope dimensions and McMaster hardware.\n"
+            )
+
         dxf_files = (project_context or {}).get("dxf_files") if isinstance(project_context, dict) else None
         if dxf_files:
             readable = next(
@@ -1356,12 +1751,14 @@ class AIService:
         if cad_files:
             system += (
                 "\n\nAttached 3D CAD reference files:\n"
-                "- Project context.cad_files lists STEP/STL/3MF/GLB/OBJ/IGES/etc the user attached as AI references.\n"
+                "- Project context.cad_files lists STEP/STL/3MF/GLB/OBJ/IGES/etc the user attached or selected.\n"
+                "- NEW models must be authored TO that object: import_step the listed .step/.stp filename, "
+                "mate to its real faces/slots/profiles, and keep the reference solid unchanged in the assembly.\n"
+                "- Do not rebuild or replace the attached STEP, and do not invent a generic box/extrusion in its place.\n"
                 "- Attached reference view images (iso/top/front/side) show the real shape — use them when wrapping, "
                 "clipping, mating, or placing a button/click feature on the reference.\n"
-                "- Prefer size_mm + silhouette_top_mm / silhouette_front_mm / silhouette_side_mm as the geometric "
-                "envelope for clips, cradles, and snap-fit parts (example: clip around a controller that presses a button).\n"
-                "- For .step/.stp files in the project cwd, import_step(\"filename.step\") is allowed when BREP reuse helps.\n"
+                "- Prefer size_mm + silhouette_top_mm / silhouette_front_mm / silhouette_side_mm as the measured "
+                "envelope, then refine against the imported B-rep.\n"
                 "- Mesh-only formats may not import as BREP; still honor their measured envelope and silhouettes.\n"
                 "- Add explicit clearances (about 0.3–0.6 mm for snaps) instead of inventing unrelated overall sizes.\n"
             )
@@ -1381,7 +1778,7 @@ class AIService:
         if mcmaster_specs:
             system += (
                 "\n\nMcMaster-Carr part specification pointers:\n"
-                "- Project context.refs may include type:\"spec\" (or document) entries named mcmaster_*.md.\n"
+                "- Project context.refs may include the shared McMaster parts_list.md spec.\n"
                 "- These are authoritative supplier pointers for strength, material, finish, thread, torque, "
                 "clearance/tap drill guidance, and product variants — prefer them over guessing fastener properties.\n"
                 "- The linked CAD file is geometry only; mechanical properties come from the McMaster listing/spec text.\n"
@@ -1396,22 +1793,40 @@ class AIService:
         if project_context:
             parts.append(f"\nProject context: {json.dumps(project_context, separators=(',', ':'))}")
         if previous_source:
+            prev = previous_source
+            truncated = False
+            if len(prev) > 120000:
+                prev = prev[:120000]
+                truncated = True
             parts.append(
                 "\n\nExisting generated source to edit (Jake revise mode — preserve what still works):\n"
-                f"{previous_source[:14000]}\n"
-                "Apply the SMALLEST responsible source change. Do not rewrite from scratch. "
-                "Keep labels, mates, orientation, and filename lineage unless the prompt requires otherwise."
+                f"{prev}\n"
+                + ("\n[Source truncated for prompt size — keep every def make_*/build_*/create_* from the file on disk.]\n" if truncated else "")
+                + "Apply the SMALLEST responsible source change. Do not rewrite from scratch. "
+                "Keep labels, mates, orientation, filename lineage, and EVERY helper function "
+                "(def make_*, def build_*, def create_*) already in this file. "
+                "Returning only gen_step()/gen_exploded() that call helpers you deleted is a hard failure.\n"
             )
         if repair_note:
-            parts.append(
-                "\n\nThe previous authoring-agent attempt FAILED (Jake skill loop: "
-                "scripts/step → inspect → snapshot → visual review). "
-                "Classify the failure, edit the existing source with the smallest responsible change, "
-                "and return corrected Python only. Do not restart from an unrelated model.\n"
-                "If the failure is Locations/positions TypeError, replace any `*_positions = <float>` "
-                "with a real list of (x, y) tuples or use GridLocations.\n"
-                f"Error/feedback:\n{repair_note}"
-            )
+            if source_is_input_blocked_refusal(repair_note):
+                parts.append(
+                    "\n\nThe previous authoring attempt refused to build (INPUT_BLOCKED / preflight stub). "
+                    "Do not keep that stub and do not wait for a sibling STEP that is not in this folder. "
+                    "Write a complete parameterized chassis NOW with documented assumed dimensions "
+                    "(OpenArm-style table deck ~190×250×8 mm, M6 clearance grid at 30 mm) and real McMaster PNs. "
+                    "scripts/step must export STEP/GLB so the viewport can live-draw.\n"
+                    f"Error/feedback:\n{repair_note}"
+                )
+            else:
+                parts.append(
+                    "\n\nThe previous authoring-agent attempt FAILED (Jake skill loop: "
+                    "scripts/step → inspect → snapshot → visual review). "
+                    "Classify the failure, edit the existing source with the smallest responsible change, "
+                    "and return corrected Python only. Do not restart from an unrelated model.\n"
+                    "If the failure is Locations/positions TypeError, replace any `*_positions = <float>` "
+                    "with a real list of (x, y) tuples or use GridLocations.\n"
+                    f"Error/feedback:\n{repair_note}"
+                )
 
         raw, trace = self._call_model(
             system,
@@ -1422,8 +1837,10 @@ class AIService:
             json_response=False,
         )
         source = self._python_payload(raw)
-        if "def gen_step" not in source:
-            raise ValueError("AI response did not contain gen_step() Python source.")
+        from backend.services.cad_authoring_agent import source_has_cad_model
+
+        if not source_has_cad_model(source):
+            raise ValueError("AI response did not contain gen_step() or a cadgen @step model.")
         trace["stage"] = "cad_python_source"
         return source, trace
 
@@ -1487,7 +1904,7 @@ class AIService:
             user_prompt,
             trace_id=trace_id,
             images=images,
-            max_tokens=16384,
+            max_tokens=cad_authoring_max_tokens(self.model),
         )
         try:
             rig = json.loads(self._json_payload(raw))
@@ -1670,6 +2087,8 @@ class AIService:
         if self.provider != "openai":
             return None
         model = self.model
+        override = override or self.reasoning_effort
+        gpt61_sol = model.startswith("gpt-6.1-sol")
         pro_like = (
             model in PRO_MODELS
             or model.startswith("gpt-5.5-pro")
@@ -1680,36 +2099,47 @@ class AIService:
         # Explicit override from callers (e.g. prompt-improve wants none/medium).
         if override:
             effort = override.strip().lower()
-            if pro_like and effort in {"none", "low"}:
-                # Pro rejects none/low — use the lightest supported tier.
+            if (pro_like and effort == "none") or (pro_like and effort == "low" and not gpt61_sol):
+                # Sol-class models reject none. GPT-6.1 Sol explicitly supports low.
                 effort = "medium"
             if effort == "none" and not pro_like:
                 return {"reasoning": {"effort": "none"}}
-            if effort in {"low", "medium", "high", "xhigh"}:
-                return {"reasoning": {"effort": effort}}
+            if effort in {"low", "medium", "high", "xhigh", "max"}:
+                return {"reasoning": {"effort": effort, "summary": "auto"}}
         # Pro / Sol frontier models: leave reasoning to the API default unless configured.
         if pro_like:
             effort = settings.openai_reasoning_effort
             if effort and effort not in {"none", "low"}:
-                return {"reasoning": {"effort": effort}}
+                return {"reasoning": {"effort": effort, "summary": "auto"}}
             # Sol benefits from at least medium effort for CAD tool loops.
             if model.startswith("gpt-5.6") or model.endswith("-sol"):
-                return {"reasoning": {"effort": "medium"}}
-            return None
+                return {"reasoning": {"effort": "medium", "summary": "auto"}}
+            return {"reasoning": {"summary": "auto"}}
         effort = settings.openai_reasoning_effort
         if effort and effort != "none":
-            return {"reasoning": {"effort": effort}}
-        return {"reasoning": {"effort": "low"}}
+            return {"reasoning": {"effort": effort, "summary": "auto"}}
+        return {"reasoning": {"effort": "low", "summary": "auto"}}
 
     @staticmethod
     def _clean_images(images: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        from backend.services.drawing_context import prompt_image_context
         out: list[dict[str, Any]] = []
         for img in images or []:
-            data_url = str(img.get("data_url") or "")
-            media_type = str(img.get("media_type") or "")
+            data_url = str(img.get("data_url") or "").strip()
+            media_type = str(img.get("media_type") or "").strip().lower()
             if not data_url.startswith("data:image/") or ";base64," not in data_url:
                 continue
+            # Infer media type from the data URL when the client omits / mismatches it.
+            header = data_url.split(";base64,", 1)[0]
+            inferred = ""
+            if header.startswith("data:image/"):
+                inferred = header[len("data:") :].split(";")[0].strip().lower()
             if media_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+                media_type = inferred
+            if media_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+                continue
+            b64 = data_url.split(";base64,", 1)[1].strip()
+            if not b64:
                 continue
             out.append(
                 {
@@ -1717,24 +2147,31 @@ class AIService:
                     "name": str(img.get("name") or f"image-{len(out) + 1}"),
                     "media_type": "image/jpeg" if media_type == "image/jpg" else media_type,
                     "data_url": data_url,
-                    "base64": data_url.split(";base64,", 1)[1],
+                    "base64": b64,
+                    **prompt_image_context(img),
                 }
             )
-        return out[:4]
+        return out[:8]
 
     def _openai_user_content(self, user_content: str, images: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
         if not images:
             return user_content
+        from backend.services.prompt_references import image_caption
+
         content: list[dict[str, Any]] = [{"type": "input_text", "text": user_content}]
         for img in images:
+            content.append({"type": "input_text", "text": image_caption(img)})
             content.append({"type": "input_image", "image_url": img["data_url"]})
         return content
 
     def _openai_chat_user_content(self, user_content: str, images: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
         if not images:
             return user_content
+        from backend.services.prompt_references import image_caption
+
         content: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
         for img in images:
+            content.append({"type": "text", "text": image_caption(img)})
             content.append({"type": "image_url", "image_url": {"url": img["data_url"]}})
         return content
 
@@ -1765,6 +2202,9 @@ class AIService:
         allow_truncated: bool = False,
         reasoning_effort: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
+        reasoning_effort = reasoning_effort or self.reasoning_effort
+        if json_response:
+            user_content = _ensure_json_word(system_prompt, user_content)
         clean_images = self._clean_images(images)
         if self.provider == "anthropic":
             return self._call_anthropic(
@@ -1777,8 +2217,8 @@ class AIService:
                 allow_truncated=allow_truncated,
             )
 
-        # Kimi (Moonshot) is OpenAI chat-completions compatible only — skip Responses API.
-        if self.provider == "kimi":
+        # Kimi, Gemini, and Qwen are OpenAI chat-completions compatible only — skip Responses API.
+        if self.provider in self.CHAT_COMPLETIONS_ONLY_PROVIDERS:
             return self._call_openai_compat_chat(
                 system_prompt,
                 user_content,
@@ -1787,6 +2227,7 @@ class AIService:
                 max_tokens=max_tokens,
                 json_response=json_response,
                 allow_truncated=allow_truncated,
+                reasoning_effort=reasoning_effort,
             )
 
         messages = [
@@ -1796,7 +2237,7 @@ class AIService:
 
         model = self.model
         hard_timeout = model_hard_timeout_seconds(model)
-        cost_provider = self.provider if self.provider in {"openai", "xai", "kimi"} else "openai"
+        cost_provider = self.provider if self.provider in self.OPENAI_COMPAT_COST_PROVIDERS else "openai"
         t0 = time.perf_counter()
         trace: dict[str, Any] = {
             "model": model,
@@ -1826,6 +2267,21 @@ class AIService:
             }
             if json_response:
                 create_kwargs["text"] = {"format": {"type": "json_object"}}
+            if _generation_progress.get() is not None:
+                streamed = self._stream_openai_responses(
+                    create_kwargs,
+                    trace=trace,
+                    label=label,
+                    hard_timeout=hard_timeout,
+                    t0=t0,
+                    json_response=json_response,
+                    allow_truncated=allow_truncated,
+                    max_tokens=max_tokens,
+                    cost_provider=cost_provider,
+                    trace_id=trace_id,
+                )
+                if streamed is not None:
+                    return streamed
             # Run in a thread so cancel_check can abort between polls.
             with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-resp") as _pool:
                 _fut = _pool.submit(_do_responses_create, create_kwargs)
@@ -1908,6 +2364,120 @@ class AIService:
                     cause=exc2,
                 )
 
+    def _stream_openai_responses(
+        self,
+        create_kwargs: dict[str, Any],
+        *,
+        trace: dict[str, Any],
+        label: str,
+        hard_timeout: float,
+        t0: float,
+        json_response: bool,
+        allow_truncated: bool,
+        max_tokens: int,
+        cost_provider: str,
+        trace_id: str | None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Stream Responses so reasoning summaries can show in the generation HUD."""
+        kwargs = dict(create_kwargs)
+        kwargs["stream"] = True
+        reasoning_acc: list[str] = []
+        text_parts: list[str] = []
+        final = None
+        try:
+            stream = self.client.responses.create(**kwargs)
+            deadline = time.monotonic() + float(hard_timeout or 0)
+            for event in stream:
+                if self.cancel_check and self.cancel_check():
+                    raise RuntimeError("Generation canceled.")
+                if hard_timeout and time.monotonic() > deadline:
+                    raise TimeoutError(f"{label} Responses stream timed out")
+                etype = str(getattr(event, "type", "") or "")
+                delta = getattr(event, "delta", None)
+                if isinstance(delta, dict):
+                    piece = str(delta.get("text") or delta.get("content") or "")
+                elif isinstance(delta, str):
+                    piece = delta
+                else:
+                    piece = ""
+                    text_attr = getattr(event, "text", None)
+                    if isinstance(text_attr, str):
+                        piece = text_attr
+                if piece and "reasoning" in etype:
+                    reasoning_acc.append(piece)
+                    emit_generation_thinking("".join(reasoning_acc)[-2000:], stage="ai_source")
+                elif piece and "output_text" in etype:
+                    text_parts.append(piece)
+                if etype in {"response.completed", "response.done"}:
+                    final = getattr(event, "response", None) or final
+            text = "".join(text_parts)
+            response = final
+            if response is not None:
+                out = getattr(response, "output_text", None)
+                if out:
+                    text = str(out)
+                self._emit_reasoning_from_response(response, fallback="".join(reasoning_acc))
+                finish_reason = getattr(response, "status", None) or ""
+                incomplete = getattr(response, "incomplete_details", None)
+                if incomplete:
+                    finish_reason = getattr(incomplete, "reason", finish_reason) or finish_reason
+                usage = usage_from_openai_response(response)
+            else:
+                finish_reason = ""
+                usage = None
+            if not text.strip():
+                return None
+            trace["duration_ms"] = (time.perf_counter() - t0) * 1000
+            trace["raw_preview"] = text[:4000]
+            trace["finish_reason"] = finish_reason
+            trace["streamed"] = True
+            if usage:
+                trace["usage"] = usage
+                trace["cost_usd"] = estimate_cost_usd(self.model, usage, provider=cost_provider)
+            if finish_reason in ("max_output_tokens", "length"):
+                if allow_truncated:
+                    trace["truncated"] = True
+                    return text, trace
+                kind = "JSON" if json_response else "response"
+                raise self._openai_error_with_trace(
+                    f"AI returned invalid {kind}: response truncated at token limit "
+                    f"(max_output_tokens={max_tokens}). Partial: {text[:400]}",
+                    trace,
+                    ValueError,
+                )
+            trace_add(
+                "info",
+                f"{label} stream OK ({trace['duration_ms']:.0f}ms) finish={finish_reason}",
+                trace_id=trace_id,
+                data=trace,
+            )
+            return text, trace
+        except Exception as exc:
+            logger.debug("OpenAI Responses stream failed, falling back: %s", exc)
+            return None
+
+    def _emit_reasoning_from_response(self, response: Any, fallback: str = "") -> None:
+        bits: list[str] = []
+        for item in getattr(response, "output", None) or []:
+            itype = str(getattr(item, "type", "") or "")
+            if "reasoning" not in itype:
+                continue
+            summary = getattr(item, "summary", None)
+            if isinstance(summary, list):
+                for part in summary:
+                    if isinstance(part, dict) and part.get("text"):
+                        bits.append(str(part.get("text")))
+                    else:
+                        text = getattr(part, "text", None)
+                        if text:
+                            bits.append(str(text))
+            text = getattr(item, "text", None)
+            if text:
+                bits.append(str(text))
+        blob = "\n".join(bits).strip() or str(fallback or "").strip()
+        if blob:
+            emit_generation_thinking(blob[:4000], stage="ai_source", force=True)
+
     def _call_openai_compat_chat(
         self,
         system_prompt: str,
@@ -1920,6 +2490,7 @@ class AIService:
         allow_truncated: bool = False,
         prior_trace: dict[str, Any] | None = None,
         t0: float | None = None,
+        reasoning_effort: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Chat Completions path for OpenAI + OpenAI-compatible providers (xAI, Kimi)."""
         import concurrent.futures as _cf
@@ -1927,9 +2498,9 @@ class AIService:
         clean_images = images or []
         model = self.model
         hard_timeout = model_hard_timeout_seconds(model)
-        cost_provider = self.provider if self.provider in {"openai", "xai", "kimi"} else "openai"
+        cost_provider = self.provider if self.provider in self.OPENAI_COMPAT_COST_PROVIDERS else "openai"
         started = t0 if t0 is not None else time.perf_counter()
-        label = {"xai": "xAI", "kimi": "Kimi"}.get(cost_provider, "OpenAI")
+        label = {"xai": "xAI", "kimi": "Kimi", "gemini": "Gemini", "qwen": "Qwen"}.get(cost_provider, "OpenAI")
         trace: dict[str, Any] = prior_trace or {
             "model": model,
             "provider": cost_provider,
@@ -1953,19 +2524,26 @@ class AIService:
         }
         if json_response:
             chat_kwargs["response_format"] = {"type": "json_object"}
-        # Kimi prefers max_tokens over max_completion_tokens on older snapshots.
         if cost_provider == "kimi":
             chat_kwargs.pop("max_completion_tokens", None)
-            chat_kwargs["max_tokens"] = max_tokens
+            chat_kwargs.update(kimi_chat_create_kwargs(model, max_tokens=max_tokens, reasoning_effort=reasoning_effort))
+        if cost_provider == "gemini" and reasoning_effort:
+            chat_kwargs["reasoning_effort"] = reasoning_effort
+        if cost_provider == "qwen":
+            extra = dict(chat_kwargs.get("extra_body") or {})
+            extra.setdefault("enable_thinking", False)
+            chat_kwargs["extra_body"] = extra
         with _cf.ThreadPoolExecutor(max_workers=1, thread_name_prefix="oai-chat") as _pool:
             _fut = _pool.submit(self.client.chat.completions.create, **chat_kwargs)
             completion = self._wait_future(_fut, hard_timeout=hard_timeout)
         choice = completion.choices[0]
-        text = choice.message.content or "{}"
+        text = extract_openai_compat_message_text(choice.message)
+        reasoning_len = len(str(getattr(choice.message, "reasoning_content", None) or ""))
         chat_finish = choice.finish_reason or ""
         trace["finish_reason"] = chat_finish
         trace["duration_ms"] = (time.perf_counter() - started) * 1000
         trace["raw_preview"] = text[:4000]
+        trace["reasoning_chars"] = reasoning_len
         usage = usage_from_openai_response(completion)
         if usage:
             trace["usage"] = usage
@@ -1978,6 +2556,14 @@ class AIService:
             raise self._openai_error_with_trace(
                 f"AI returned invalid {kind}: response truncated at token limit "
                 f"(max_tokens={max_tokens}). Partial: {text[:400]}",
+                trace,
+                ValueError,
+            )
+        if not text.strip():
+            raise self._openai_error_with_trace(
+                f"{label} returned empty content "
+                f"(finish={chat_finish or 'unknown'}, reasoning_chars={reasoning_len}). "
+                "Retry the prompt, or pick Kimi K2.6 / raise max tokens.",
                 trace,
                 ValueError,
             )
@@ -2006,8 +2592,13 @@ class AIService:
         }
         trace_add("info", f"Anthropic Messages -> {self.model}", trace_id=trace_id, data=trace)
         try:
+            from backend.services.prompt_references import image_caption
+
             content: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
             for img in clean_images:
+                content.append(
+                    {"type": "text", "text": image_caption(img)}
+                )
                 content.append(
                     {
                         "type": "image",
@@ -2114,11 +2705,15 @@ class AIService:
 
         Returns (dxf_text, drawing_prompt, call_trace).
         """
-        system = (
-            "You are an expert CAD drafter and mechanical designer. The user uploaded reference image(s) "
-            "of an object to model in 3D. Convert the image(s) into:\n"
+        from backend.services.prompt_references import DRAWING_PACKAGE_MIXED_REF_RULE
+
+        system = with_multilingual_prompt_rule(
+            "You are an expert CAD drafter and mechanical designer. The user uploaded reference image(s). "
+            "Read them WITH the prompt. Convert into:\n"
             "1) A clear CAD drawing brief (natural language) that a downstream text-to-CAD agent can follow, and\n"
-            "2) A DXF (Drawing eXchange Format) of the key 2D geometry.\n\n"
+            "2) A DXF (Drawing eXchange Format) of the key 2D geometry of the NEW PART only.\n"
+            + DRAWING_PACKAGE_MIXED_REF_RULE
+            + "\n"
             "Output EXACTLY in this format (no markdown fences):\n"
             "===DRAWING_PROMPT===\n"
             "<multi-sentence brief: overall shape, materials if visible, estimated mm dimensions, "
@@ -2128,7 +2723,8 @@ class AIService:
             "Estimate millimetre dimensions from visual proportions and any scale cues. "
             "Use layers OUTLINE, HOLES, DIMENSIONS, ANNOTATIONS. "
             "Include visible holes as CIRCLE entities and outlines as LINE/LWPOLYLINE/ARC. "
-            "The drawing prompt must incorporate and extend the user's request — do not ignore their prompt."
+            "The drawing prompt must incorporate and extend the user's request — do not ignore their prompt. "
+            "The user prompt may be in any language; understand it fully."
         )
         user = (
             f"User prompt: {prompt}\n\n"
@@ -2140,6 +2736,7 @@ class AIService:
             trace_id=trace_id,
             images=images,
             max_tokens=8192,
+            json_response=False,
         )
         text = self._strip_code_fence(raw)
         drawing_prompt = ""

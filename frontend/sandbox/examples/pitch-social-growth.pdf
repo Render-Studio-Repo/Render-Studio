@@ -1,0 +1,139 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R 13 0 R] /Count 5 >> endobj
+3 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+4 0 obj << /Length 423 >> stream
+BT
+/F1 16 Tf
+36 560 Td
+(Grow Render Studio social presence) Tj
+0 -28 Td
+/F1 22 Tf
+(The ask) Tj
+0 -18 Td
+/F1 11 Tf
+(mktpitch1  1/5  point left/right to step) Tj
+0 -26 Td
+/F1 13 Tf
+(- Product name is Render Studio. Always include https://render3d.app.) Tj
+0 -26 Td
+/F1 13 Tf
+(- Growth = real clips of shipped UI, not vanity metrics.) Tj
+0 -26 Td
+/F1 13 Tf
+(- Never invent follower counts, tweet IDs, or live post URLs.) Tj
+ET
+endstream endobj
+5 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >> endobj
+6 0 obj << /Length 407 >> stream
+BT
+/F1 16 Tf
+36 560 Td
+(Grow Render Studio social presence) Tj
+0 -28 Td
+/F1 22 Tf
+(Accounts we actually run) Tj
+0 -18 Td
+/F1 11 Tf
+(mktpitch1  2/5  point left/right to step) Tj
+0 -26 Td
+/F1 13 Tf
+(- @a1_projects ? product / studio surface.) Tj
+0 -26 Td
+/F1 13 Tf
+(- @winstead_works ? founder / build-in-public.) Tj
+0 -26 Td
+/F1 13 Tf
+(- If a count is not in grok_stats or X analytics, leave it blank.) Tj
+ET
+endstream endobj
+7 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 6 0 R /Resources << /Font << /F1 3 0 R >> >> >> endobj
+8 0 obj << /Length 425 >> stream
+BT
+/F1 16 Tf
+36 560 Td
+(Grow Render Studio social presence) Tj
+0 -28 Td
+/F1 22 Tf
+(What to publish) Tj
+0 -18 Td
+/F1 11 Tf
+(mktpitch1  3/5  point left/right to step) Tj
+0 -26 Td
+/F1 13 Tf
+(- GIF 2?6s for tools. MP4 for Record / VR spectator. PNG for logo/OG.) Tj
+0 -26 Td
+/F1 13 Tf
+(- Caption footer: Built in Render Studio https://render3d.app) Tj
+0 -26 Td
+/F1 13 Tf
+(- Draft with x_post confirm=false. Live needs Sam.) Tj
+ET
+endstream endobj
+9 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 8 0 R /Resources << /Font << /F1 3 0 R >> >> >> endobj
+10 0 obj << /Length 448 >> stream
+BT
+/F1 16 Tf
+36 560 Td
+(Grow Render Studio social presence) Tj
+0 -28 Td
+/F1 22 Tf
+(Share-to-X loop) Tj
+0 -18 Td
+/F1 11 Tf
+(mktpitch1  4/5  point left/right to step) Tj
+0 -26 Td
+/F1 13 Tf
+(- Record ? stop ? You?re done recording ? Share to X \(download-then-compose\).) Tj
+0 -26 Td
+/F1 13 Tf
+(- Same path from markup, clip editor, VR POV, Reference Files.) Tj
+0 -26 Td
+/F1 13 Tf
+(- Bot never fires paid Generate or posts without confirm=true.) Tj
+ET
+endstream endobj
+11 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 10 0 R /Resources << /Font << /F1 3 0 R >> >> >> endobj
+12 0 obj << /Length 461 >> stream
+BT
+/F1 16 Tf
+36 560 Td
+(Grow Render Studio social presence) Tj
+0 -28 Td
+/F1 22 Tf
+(How to run this deck) Tj
+0 -18 Td
+/F1 11 Tf
+(mktpitch1  5/5  point left/right to step) Tj
+0 -26 Td
+/F1 13 Tf
+(- Generate: grok_pitch_deck or POST /mcp/sandbox/pitch) Tj
+0 -26 Td
+/F1 13 Tf
+(- Open Super IDE PDF tab \(pitch\) or Files ? examples/pitch-social-growth.*) Tj
+0 -26 Td
+/F1 13 Tf
+(- Point left/right on the PDF to step slides \(same Draw/point as Bambu plates\).) Tj
+ET
+endstream endobj
+13 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Contents 12 0 R /Resources << /Font << /F1 3 0 R >> >> >> endobj
+xref
+0 14
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000141 00000 n 
+0000000211 00000 n 
+0000000685 00000 n 
+0000000811 00000 n 
+0000001269 00000 n 
+0000001395 00000 n 
+0000001871 00000 n 
+0000001997 00000 n 
+0000002497 00000 n 
+0000002625 00000 n 
+0000003138 00000 n 
+trailer << /Size 14 /Root 1 0 R >>
+startxref
+3266
+%%EOF

@@ -120,6 +120,14 @@ def add_request(
     }
     data["items"].append(item)
     _save(data)
+    uid = str((user or {}).get("id") or "").strip()
+    if uid:
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            sbusers.increment_activity(uid, item["kind"])
+        except Exception:
+            pass
     return item
 
 

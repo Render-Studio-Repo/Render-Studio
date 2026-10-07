@@ -5,6 +5,9 @@ Supports:
   - OAuth 2.0 PKCE (Client ID + Client Secret) when TWITTER_OAUTH_MODE=oauth2
 
 Stores user tokens so the browser can Connect X once and post without leaving Render Studio.
+
+Share-to-X signing prefers per-user consumer keys on public."Users"
+(x_consumer_key / x_consumer_secret) when present, then TWITTER_CLIENT_* env.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from requests_oauthlib import OAuth1
 
 from backend.config import settings
 from backend.database import get_conn
+from backend.services.video_ffmpeg import ffmpeg_bin, x_h264_vf, x_output_rate_args
 
 logger = logging.getLogger("render3d.twitter")
 
@@ -54,22 +58,60 @@ def _now_iso() -> str:
     return _now().isoformat()
 
 
-def configured() -> bool:
-    return bool(
-        (settings.twitter_client_id or "").strip()
-        and (settings.twitter_client_secret or "").strip()
-        and (settings.twitter_redirect_uri or "").strip()
+def _env_app_credentials() -> tuple[str, str]:
+    return (
+        (settings.twitter_client_id or "").strip(),
+        (settings.twitter_client_secret or "").strip(),
     )
 
 
-def auth_mode() -> str:
-    """oauth1 (API Key) by default; set TWITTER_OAUTH_MODE=oauth2 for Client ID flow."""
+def consumer_credentials(user_id: str | None = None) -> tuple[str, str]:
+    """Prefer this user's stored X developer-app keys; else server env."""
+    uid = str(user_id or "").strip()
+    if uid:
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            stored = sbusers.x_consumer_credentials(uid)
+            if stored:
+                key, secret = str(stored[0] or "").strip(), str(stored[1] or "").strip()
+                if key and secret:
+                    return key, secret
+        except Exception:
+            logger.debug("user x consumer lookup skipped", exc_info=True)
+    return _env_app_credentials()
+
+
+def configured(user_id: str | None = None) -> bool:
+    client_id, client_secret = consumer_credentials(user_id)
+    return bool(client_id and client_secret and (settings.twitter_redirect_uri or "").strip())
+
+
+def auth_mode(user_id: str | None = None) -> str:
+    """oauth1 (API Key) by default; set TWITTER_OAUTH_MODE=oauth2 for Client ID flow.
+
+    A per-user stored consumer key wins the heuristic so Share to X uses that
+    developer app even when the server env is an OAuth 2 client.
+    """
+    uid = str(user_id or "").strip()
+    if uid:
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            stored = sbusers.x_consumer_credentials(uid)
+            if stored and str(stored[0] or "").strip() and str(stored[1] or "").strip():
+                cid = str(stored[0]).strip()
+                if len(cid) > 30:
+                    return "oauth2"
+                return "oauth1"
+        except Exception:
+            logger.debug("user x consumer auth_mode skipped", exc_info=True)
     mode = str(getattr(settings, "twitter_oauth_mode", "") or "").strip().lower()
     if mode in {"oauth2", "oauth1", "auto"}:
         if mode != "auto":
             return mode
     # Heuristic: OAuth 2 Client IDs from the portal are usually longer than API Keys (~25).
-    cid = (settings.twitter_client_id or "").strip()
+    cid, _ = _env_app_credentials()
     if len(cid) > 30:
         return "oauth2"
     return "oauth1"
@@ -109,15 +151,17 @@ def _pkce_pair() -> tuple[str, str]:
     return verifier, challenge
 
 
-def _basic_auth_header() -> str:
-    raw = f"{settings.twitter_client_id}:{settings.twitter_client_secret}".encode("utf-8")
+def _basic_auth_header(user_id: str | None = None) -> str:
+    client_id, client_secret = consumer_credentials(user_id)
+    raw = f"{client_id}:{client_secret}".encode("utf-8")
     return "Basic " + base64.b64encode(raw).decode("ascii")
 
 
-def _request_oauth1_token(callback_uri: str) -> tuple[str, str]:
+def _request_oauth1_token(callback_uri: str, user_id: str | None = None) -> tuple[str, str]:
+    client_id, client_secret = consumer_credentials(user_id)
     oauth = OAuth1(
-        settings.twitter_client_id,
-        client_secret=settings.twitter_client_secret,
+        client_id,
+        client_secret=client_secret,
         callback_uri=callback_uri,
         signature_method="HMAC-SHA1",
     )
@@ -159,11 +203,11 @@ def _link_url_oauth1(user_id: str) -> dict[str, Any]:
     _ensure_tables()
     mode = "redirect"
     try:
-        oauth_token, oauth_token_secret = _request_oauth1_token(settings.twitter_redirect_uri)
+        oauth_token, oauth_token_secret = _request_oauth1_token(settings.twitter_redirect_uri, user_id)
     except RuntimeError as exc:
         detail = str(exc)
         if "oob" in detail.lower() or "417" in detail or "Desktop applications" in detail:
-            oauth_token, oauth_token_secret = _request_oauth1_token("oob")
+            oauth_token, oauth_token_secret = _request_oauth1_token("oob", user_id)
             mode = "oob"
         else:
             raise RuntimeError(
@@ -188,9 +232,10 @@ def _link_url_oauth2(user_id: str) -> str:
             "INSERT INTO twitter_oauth_pending (state, user_id, code_verifier, created_at) VALUES (?, ?, ?, ?)",
             (state, user_id, verifier, _now_iso()),
         )
+    client_id, _ = consumer_credentials(user_id)
     params = {
         "response_type": "code",
-        "client_id": settings.twitter_client_id,
+        "client_id": client_id,
         "redirect_uri": settings.twitter_redirect_uri,
         "scope": SCOPES,
         "state": state,
@@ -206,10 +251,10 @@ def link_url(user_id: str) -> str:
 
 
 def link_start(user_id: str) -> dict[str, Any]:
-    if not configured():
+    if not configured(user_id):
         raise RuntimeError("X (Twitter) OAuth is not configured. Set TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, and TWITTER_REDIRECT_URI.")
     _ensure_tables()
-    if auth_mode() == "oauth2":
+    if auth_mode(user_id) == "oauth2":
         url = _link_url_oauth2(user_id)
         # Extract state from URL for completeness
         q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
@@ -219,7 +264,7 @@ def link_start(user_id: str) -> dict[str, Any]:
 
 def complete_oob(user_id: str, state: str, pin: str) -> dict[str, Any]:
     """Finish Desktop/Native (oob) OAuth using the PIN shown on X."""
-    if not configured():
+    if not configured(user_id):
         raise RuntimeError("X OAuth is not configured.")
     state = str(state or "").strip()
     pin = str(pin or "").strip()
@@ -249,7 +294,8 @@ def complete_oob(user_id: str, state: str, pin: str) -> dict[str, Any]:
     return upsert_link_oauth1(oauth_token.strip(), pin, user_id=user_id, request_secret=oauth_token_secret.strip())
 
 
-def _exchange_code(code: str, code_verifier: str) -> dict[str, Any]:
+def _exchange_code(code: str, code_verifier: str, user_id: str | None = None) -> dict[str, Any]:
+    client_id, _ = consumer_credentials(user_id)
     resp = httpx.post(
         TOKEN_URL,
         data={
@@ -257,10 +303,10 @@ def _exchange_code(code: str, code_verifier: str) -> dict[str, Any]:
             "code": code,
             "redirect_uri": settings.twitter_redirect_uri,
             "code_verifier": code_verifier,
-            "client_id": settings.twitter_client_id,
+            "client_id": client_id,
         },
         headers={
-            "Authorization": _basic_auth_header(),
+            "Authorization": _basic_auth_header(user_id),
             "Content-Type": "application/x-www-form-urlencoded",
         },
         timeout=30,
@@ -270,16 +316,17 @@ def _exchange_code(code: str, code_verifier: str) -> dict[str, Any]:
     return resp.json()
 
 
-def _refresh_access_token(refresh_token: str) -> dict[str, Any]:
+def _refresh_access_token(refresh_token: str, user_id: str | None = None) -> dict[str, Any]:
+    client_id, _ = consumer_credentials(user_id)
     resp = httpx.post(
         TOKEN_URL,
         data={
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
-            "client_id": settings.twitter_client_id,
+            "client_id": client_id,
         },
         headers={
-            "Authorization": _basic_auth_header(),
+            "Authorization": _basic_auth_header(user_id),
             "Content-Type": "application/x-www-form-urlencoded",
         },
         timeout=30,
@@ -370,6 +417,28 @@ def _store_tokens(user_id: str, token: dict[str, Any], profile: dict[str, Any] |
                 """,
                 (twitter_user_id, user_id, username, display_name, picture, now, now),
             )
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.oauth_upsert(
+            user_id,
+            "twitter",
+            access_token=access,
+            refresh_token=refresh,
+            expires_at=expires_at,
+            provider_user_id=twitter_user_id,
+            provider_name=display_name,
+            extra={
+                "twitter_user_id": twitter_user_id,
+                "username": username,
+                "display_name": display_name,
+                "picture_url": picture,
+                "scope": scope,
+                "created_at": now,
+            },
+        )
+    except Exception:
+        logger.debug("twitter oauth remote upsert skipped", exc_info=True)
     return {
         "twitter_user_id": twitter_user_id,
         "username": username,
@@ -379,8 +448,6 @@ def _store_tokens(user_id: str, token: dict[str, Any], profile: dict[str, Any] |
 
 
 def upsert_link(user_id: str, code: str, state: str) -> dict[str, Any]:
-    if not configured():
-        raise RuntimeError("X OAuth is not configured.")
     _ensure_tables()
     with get_conn() as conn:
         row = conn.execute(
@@ -393,12 +460,14 @@ def upsert_link(user_id: str, code: str, state: str) -> dict[str, Any]:
         if not row:
             raise RuntimeError("Invalid or expired X OAuth state.")
         user_id = str(row["user_id"])
+    if not configured(user_id):
+        raise RuntimeError("X OAuth is not configured.")
     created = datetime.fromisoformat(str(row["created_at"]))
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     if _now() - created > timedelta(minutes=20):
         raise RuntimeError("X OAuth state expired. Try connecting again.")
-    token = _exchange_code(code, str(row["code_verifier"]))
+    token = _exchange_code(code, str(row["code_verifier"]), user_id)
     return _store_tokens(user_id, token)
 
 
@@ -410,8 +479,6 @@ def upsert_link_oauth1(
     request_secret: str | None = None,
 ) -> dict[str, Any]:
     """Finish OAuth 1.0a after X redirects back (or PIN entry) with oauth_token + verifier."""
-    if not configured():
-        raise RuntimeError("X OAuth is not configured.")
     oauth_token = str(oauth_token or "").strip()
     oauth_verifier = str(oauth_verifier or "").strip()
     if not oauth_token or not oauth_verifier:
@@ -439,9 +506,12 @@ def upsert_link_oauth1(
             created = created.replace(tzinfo=timezone.utc)
         if _now() - created > timedelta(minutes=20):
             raise RuntimeError("X OAuth state expired. Try connecting again.")
+    if not configured(user_id):
+        raise RuntimeError("X OAuth is not configured.")
+    client_id, client_secret = consumer_credentials(user_id)
     oauth = OAuth1(
-        settings.twitter_client_id,
-        client_secret=settings.twitter_client_secret,
+        client_id,
+        client_secret=client_secret,
         resource_owner_key=oauth_token,
         resource_owner_secret=request_secret,
         verifier=oauth_verifier,
@@ -461,8 +531,8 @@ def upsert_link_oauth1(
     profile: dict[str, Any] = {"id": twitter_user_id, "username": username, "name": username}
     try:
         auth = OAuth1(
-            settings.twitter_client_id,
-            client_secret=settings.twitter_client_secret,
+            client_id,
+            client_secret=client_secret,
             resource_owner_key=access_token,
             resource_owner_secret=access_secret,
             signature_method="HMAC-SHA1",
@@ -486,8 +556,41 @@ def upsert_link_oauth1(
     return _store_tokens(user_id, token, profile)
 
 
+def studio_user_id_for_twitter(twitter_user_id: str) -> str | None:
+    """Studio user_id linked to this X user id, if Connect X ran."""
+    tid = str(twitter_user_id or "").strip()
+    if not tid:
+        return None
+    _ensure_tables()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM twitter_oauth_tokens WHERE twitter_user_id = ?",
+            (tid,),
+        ).fetchone()
+    if row and row["user_id"]:
+        return str(row["user_id"])
+    return None
+
+
 def linked_account(user_id: str) -> dict[str, Any] | None:
     _ensure_tables()
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        if ws.live():
+            packed = ws.oauth_get(user_id, "twitter")
+            if packed:
+                extra = packed.get("extra") or {}
+                return {
+                    "twitter_user_id": packed.get("provider_user_id") or extra.get("twitter_user_id"),
+                    "username": extra.get("username"),
+                    "display_name": packed.get("provider_name") or extra.get("display_name"),
+                    "picture_url": extra.get("picture_url"),
+                    "updated_at": packed.get("updated_at"),
+                    "has_refresh": bool(packed.get("refresh_token")),
+                }
+    except Exception:
+        logger.debug("twitter linked_account remote skipped", exc_info=True)
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -522,15 +625,22 @@ def unlink(user_id: str) -> None:
                 "DELETE FROM social_accounts WHERE provider = 'twitter' AND provider_user_id = ? AND user_id = ?",
                 (row["twitter_user_id"], user_id),
             )
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.oauth_delete(user_id, "twitter")
+    except Exception:
+        logger.debug("twitter oauth remote delete skipped", exc_info=True)
 
 
 def status(user: dict[str, Any]) -> dict[str, Any]:
-    account = linked_account(user["id"])
+    uid = str(user.get("id") or "")
+    account = linked_account(uid)
     return {
-        "configured": configured(),
+        "configured": configured(uid),
         "connected": bool(account),
         "account": account,
-        "auth_mode": auth_mode(),
+        "auth_mode": auth_mode(uid),
     }
 
 
@@ -541,11 +651,28 @@ def get_user_auth(user_id: str) -> dict[str, Any]:
     oauth2: {mode, access_token}
     """
     _ensure_tables()
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT access_token, refresh_token, expires_at, scope FROM twitter_oauth_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
+    row = None
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        if ws.live():
+            packed = ws.oauth_get(user_id, "twitter")
+            if packed:
+                extra = packed.get("extra") or {}
+                row = {
+                    "access_token": packed.get("access_token"),
+                    "refresh_token": packed.get("refresh_token"),
+                    "expires_at": packed.get("expires_at"),
+                    "scope": extra.get("scope") or "",
+                }
+    except Exception:
+        logger.debug("twitter get_user_auth remote skipped", exc_info=True)
+    if row is None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT access_token, refresh_token, expires_at, scope FROM twitter_oauth_tokens WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
     if not row:
         raise RuntimeError("Connect your X account first.")
     access = str(row["access_token"] or "")
@@ -554,9 +681,10 @@ def get_user_auth(user_id: str) -> dict[str, Any]:
         secret = refresh[len(OAUTH1_SECRET_PREFIX):] if refresh.startswith(OAUTH1_SECRET_PREFIX) else refresh
         if not access or not secret:
             raise RuntimeError("X session incomplete. Reconnect your X account.")
+        client_id, client_secret = consumer_credentials(user_id)
         auth = OAuth1(
-            settings.twitter_client_id,
-            client_secret=settings.twitter_client_secret,
+            client_id,
+            client_secret=client_secret,
             resource_owner_key=access,
             resource_owner_secret=secret,
             signature_method="HMAC-SHA1",
@@ -577,7 +705,7 @@ def get_user_auth(user_id: str) -> dict[str, Any]:
         return {"mode": "oauth2", "access_token": access}
     if not refresh:
         raise RuntimeError("X session expired. Reconnect your X account.")
-    token = _refresh_access_token(refresh)
+    token = _refresh_access_token(refresh, user_id)
     _store_tokens(user_id, token)
     return {"mode": "oauth2", "access_token": str(token.get("access_token") or "")}
 
@@ -592,33 +720,40 @@ def get_valid_access_token(user_id: str) -> str:
 
 def _ensure_mp4(path: Path, mime: str) -> Path:
     mime = (mime or "").lower()
-    if path.suffix.lower() in {".mp4", ".m4v"} or "mp4" in mime:
-        return path
-    out = path.with_suffix(".mp4")
-    # Viewport MediaRecorder WebMs are often video-only (no audio track). Forcing
-    # `-c:a aac` then fails with "Nothing was written into output file".
+    # Always re-encode for X. Passing through a browser canvas remux (or odd-sized
+    # WebM) lets X's transcode smear CAD/UI detail. Chrome WebM timestamps are 1 ms
+    # (reported as 1000 fps) — fps=60 + -r 60 is required or X rejects the upload.
+    out = path.with_name(f"{path.stem}-x.mp4")
+    x_vf = x_h264_vf()
+    rate = x_output_rate_args()
+    ff = ffmpeg_bin()
     attempts = [
         [
-            "ffmpeg", "-y", "-i", str(path),
+            ff, "-y", "-fflags", "+genpts", "-i", str(path),
+            "-vf", x_vf,
+            *rate,
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-preset", "veryfast", "-crf", "23",
-            "-an",
-            "-movflags", "+faststart",
-            str(out),
-        ],
-        [
-            "ffmpeg", "-y", "-i", str(path),
-            "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-preset", "veryfast", "-crf", "23",
-            "-c:a", "aac", "-ac", "2", "-ar", "44100",
+            "-profile:v", "high", "-preset", "medium", "-crf", "17",
+            "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "44100",
             "-shortest",
             "-movflags", "+faststart",
             str(out),
         ],
         [
-            "ffmpeg", "-y", "-fflags", "+genpts", "-i", str(path),
-            "-vf", "format=yuv420p",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            ff, "-y", "-fflags", "+genpts", "-i", str(path),
+            "-vf", x_vf,
+            *rate,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-profile:v", "high", "-preset", "medium", "-crf", "17",
+            "-an",
+            "-movflags", "+faststart",
+            str(out),
+        ],
+        [
+            ff, "-y", "-fflags", "+genpts", "-i", str(path),
+            "-vf", "fps=60,format=yuv420p",
+            *rate,
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
             "-an",
             "-movflags", "+faststart",
             str(out),
@@ -632,7 +767,7 @@ def _ensure_mp4(path: Path, mime: str) -> Path:
                     out.unlink()
                 except OSError:
                     pass
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
             if proc.returncode == 0 and out.is_file() and out.stat().st_size > 0:
                 return out
             last_detail = (proc.stderr or proc.stdout or "")[-400:]

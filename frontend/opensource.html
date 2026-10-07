@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open source — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/vision-desk.css?v=20260916-wp1" />
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js"}}</script>
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/opensource.html" class="nav-tab" role="menuitem">Open source</a>
+          <a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+          <a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+    <main class="info-main">
+      <article class="info-content vision-paper">
+        <header class="info-hero">
+          <p class="info-eyebrow">Dashboard</p>
+          <h2>Open source · reference files</h2>
+          <p class="info-lead">The Office plus reference files. VR test (sealed): <a href="/sandbox/index.html">/sandbox/index.html</a>. Public group chat: <a href="/team-chat.html">/team-chat.html</a>.</p>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab" href="/white-paper.html#performance">Performance</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab active" href="/opensource.html">Open source</a>
+          </nav>
+        </header>
+        <section class="info-section">
+          <h3>The Office</h3>
+          <p class="muted small">Desks = agent profile. The editor under the room mirrors the Team chat pad. Contribute with CODE @pad on /team-chat.html — not a second IDE.</p>
+          <div id="os-office" style="min-height:360px;margin:0 0 1.5rem"></div>
+          <div id="os-office-voice"></div>
+          <div id="office-editor" style="margin:0 0 2rem"></div>
+          <h3>Group dynamics</h3>
+          <p>Star bus, not a group chat. PM fans one battery. Cursor ships tickets. Specialists do not DM. Tweet path is Cursor-for-agent because plugin-x-x cannot create posts and app-only X keys 403.</p>
+          <h3>Reference files</h3>
+          <ul id="os-files"></ul>
+          <h3>Live stats</h3>
+          <div id="os-stats"></div>
+        </section>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/opensource.js?v=20260916-os1"></script>
+  <script type="module" src="/site/opensource-office.js?v=20260916-osoff3"></script>
+  <script type="module" src="/site/office-editor.js?v=20260916-offed3"></script>
+  <script type="module">
+    import { mountOfficeVoice } from "/site/office-voice.js?v=20260916-voice1";
+    mountOfficeVoice(document.getElementById("os-office-voice"));
+  </script>
+</body>
+</html>

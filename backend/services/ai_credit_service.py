@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from backend.config import settings
+from backend.config import DEFAULT_OPENAI_MODEL, settings
 from backend.database import get_conn
 
 MARKUP_PERCENT = 15
@@ -28,6 +28,28 @@ TRIAL_QUALITY_OPENAI_FALLBACK = "gpt-5.6-sol"
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _ws_live() -> bool:
+    try:
+        from backend.services.supabase_workspace_store import live
+
+        return live()
+    except Exception:
+        return False
+
+
+def _account_from_remote(row: dict[str, Any] | None, user_id: str) -> dict[str, Any]:
+    if not row:
+        return {"user_id": user_id, "balance_cents": 0}
+    out = dict(row)
+    for key in (
+        "auto_refill_enabled",
+        "use_platform_key",
+    ):
+        if key in out:
+            out[key] = 1 if out.get(key) in (True, 1, "1") else 0
+    return out
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -143,25 +165,39 @@ def normalize_platform_provider(provider: str | None) -> str:
     return "openai"
 
 
+_RETIRED_OPENAI_MODELS = frozenset({"gpt-5.5-pro"})
+
+
+def _is_retired_openai_model(model: str | None) -> bool:
+    m = str(model or "").strip().lower()
+    return m in _RETIRED_OPENAI_MODELS or m.startswith("gpt-5.5-pro")
+
+
 def platform_models() -> list[dict[str, str]]:
     models: list[tuple[str, str]] = []
     if platform_openai_configured():
-        models.extend(
-            [
-                ("openai", settings.openai_model),
-                ("openai", settings.openai_model_quality),
-                ("openai", "gpt-5.5"),
-                ("openai", "gpt-5.5-pro"),
-                ("openai", "gpt-5.3-codex"),
-                ("openai", "gpt-5.6-sol"),
-            ]
-        )
+        seen: set[str] = set()
+        for candidate in (
+            settings.openai_model,
+            getattr(settings, "openai_model_quality", None),
+            "gpt-6.1-sol",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-5.5",
+        ):
+            model = str(candidate or "").strip()
+            if not model or _is_retired_openai_model(model) or model.lower() in seen:
+                continue
+            seen.add(model.lower())
+            models.append(("openai", model))
     if platform_anthropic_configured():
         models.extend(
             [
                 ("anthropic", settings.anthropic_model),
                 ("anthropic", getattr(settings, "anthropic_model_quality", None) or "claude-opus-4-8"),
                 ("anthropic", "claude-opus-5"),
+                ("anthropic", "claude-fable-5-1"),
                 ("anthropic", "claude-fable-5"),
                 ("anthropic", "claude-sonnet-4-5"),
                 ("anthropic", "claude-opus-4-8"),
@@ -191,7 +227,6 @@ def platform_models() -> list[dict[str, str]]:
 
 def _platform_models_for_account(account: dict[str, Any] | None) -> list[dict[str, str]]:
     models = platform_models()
-    # UI still lists GPT-5.5 for Speed; Quality selection is blocked server-side for free trial.
     # Annotate restricted models so the client can hide them in Quality mode.
     on_trial = is_free_trial_credits_account(account)
     out: list[dict[str, str]] = []
@@ -226,8 +261,10 @@ def _default_platform_model(provider: str, *, speed: str = "fast") -> str:
         if speed == "fast":
             return str(getattr(settings, "kimi_model", None) or "kimi-k2.6")
         return str(getattr(settings, "kimi_model_quality", None) or "kimi-k3")
-    # Never default a provider switch to Pro — Quality mode can still pick Pro when OpenAI is active.
-    return str(settings.openai_model or "gpt-5.5")
+    fast = str(settings.openai_model or "").strip() or DEFAULT_OPENAI_MODEL
+    if _is_retired_openai_model(fast):
+        return DEFAULT_OPENAI_MODEL
+    return fast
 
 
 def resolve_platform_credentials(
@@ -305,6 +342,10 @@ def resolve_platform_credentials(
         return None
     if pinned and not _platform_model_matches_provider(pinned, "openai"):
         pinned = ""
+    if pinned and "codex" in pinned.lower():
+        pinned = ""
+    if pinned and _is_retired_openai_model(pinned):
+        pinned = DEFAULT_OPENAI_MODEL
     if pinned and speed != "fast":
         chosen = pinned
     elif speed == "fast":
@@ -330,6 +371,50 @@ def resolve_platform_credentials(
 
 def ensure_account(user_id: str) -> dict[str, Any]:
     now = _now()
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        row = ws.get_credit_account(user_id)
+        if not row:
+            payload = {
+                "user_id": user_id,
+                "balance_cents": 0,
+                "auto_refill_enabled": False,
+                "auto_refill_threshold_cents": DEFAULT_REFILL_THRESHOLD_CENTS,
+                "auto_refill_amount_cents": DEFAULT_REFILL_CENTS,
+                "use_platform_key": False,
+                "platform_provider": "openai",
+                "platform_model": "",
+                "created_at": now,
+                "updated_at": now,
+            }
+            ws.upsert_credit_account(payload)
+            row = ws.get_credit_account(user_id) or payload
+        with get_conn() as conn:
+            existing = conn.execute("SELECT user_id FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
+            if not existing:
+                conn.execute(
+                    """
+                    INSERT INTO ai_credit_accounts (
+                      user_id, balance_cents, auto_refill_enabled, auto_refill_threshold_cents,
+                      auto_refill_amount_cents, use_platform_key, platform_provider, platform_model,
+                      created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        int(row.get("balance_cents") or 0),
+                        1 if row.get("auto_refill_enabled") else 0,
+                        int(row.get("auto_refill_threshold_cents") or DEFAULT_REFILL_THRESHOLD_CENTS),
+                        int(row.get("auto_refill_amount_cents") or DEFAULT_REFILL_CENTS),
+                        1 if row.get("use_platform_key") else 0,
+                        str(row.get("platform_provider") or "openai"),
+                        str(row.get("platform_model") or ""),
+                        row.get("created_at") or now,
+                        row.get("updated_at") or now,
+                    ),
+                )
+        return _account_from_remote(row, user_id)
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
         if not row:
@@ -345,6 +430,16 @@ def ensure_account(user_id: str) -> dict[str, Any]:
             )
             row = conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
     return dict(row) if row else {"user_id": user_id, "balance_cents": 0}
+
+
+def _mirror_credits_to_users(user_id: str, balance_cents: int) -> None:
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        if sbusers.prefer_supabase():
+            sbusers.patch_user(user_id, credits_balance_cents=int(balance_cents or 0))
+    except Exception:
+        pass
 
 
 def _user_on_trial_waitlist(user_id: str) -> bool:
@@ -383,8 +478,9 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         "granted": bool(granted_at),
         "granted_at": granted_at,
         "reclaimed_at": reclaimed_at,
-        "amount_cents": SIGNUP_TRIAL_CENTS,
-        "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
+        "kind": "credits" if granted_at else "chatgpt_renders",
+        "amount_cents": SIGNUP_TRIAL_CENTS if granted_at else 0,
+        "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2) if granted_at else 0,
         "duration_days": TRIAL_DURATION_DAYS,
         "idle_reclaim_days": TRIAL_IDLE_RECLAIM_DAYS,
         "weekly_grant_cap": TRIAL_GRANTS_PER_WEEK,
@@ -396,9 +492,21 @@ def _trial_info(account: dict[str, Any]) -> dict[str, Any]:
         "waitlisted": waitlisted,
         "blocked_weekly_cap": waitlisted,
         "quality_blocked_openai_models": sorted(TRIAL_QUALITY_BLOCKED_OPENAI),
-        "key_label": "Render Studio Key",
+        "key_label": "Render Studio Key" if granted_at else "ChatGPT trial",
+        "renders_limit": 3,
+        "renders_used": 0,
+        "renders_remaining": 0,
     }
 
+
+def _overlay_trial_info(account: dict[str, Any]) -> dict[str, Any]:
+    info = _trial_info(account)
+    try:
+        from backend.services import chatgpt_share_service
+
+        return chatgpt_share_service.overlay_trial_info(info, str(account.get("user_id") or ""))
+    except Exception:
+        return info
 
 
 def is_free_trial_credits_account(account: dict[str, Any] | None, user_id: str | None = None) -> bool:
@@ -837,17 +945,22 @@ def grant_signup_trial_if_needed(
     *,
     client_ip: str | None = None,
 ) -> dict[str, Any]:
-    """One-time $10 Render Studio-key trial (max 10 company-funded grants / rolling week).
+    """One-time 3 ChatGPT trial renders (max 10 new grants / rolling week).
 
-    Idle unused balances are reclaimed after a week and redistributed from the pool
-    to waitlisted users. Idempotent per user; one trial per client IP.
+    Existing accounts that already received the old $10 platform-key trial keep it.
+    New grants no longer add cents or enable the Render Studio Key.
     """
+    from backend.services import chatgpt_share_service
+
     empty = {
         "granted": False,
         "just_granted": False,
         "show_popup": False,
-        "amount_cents": SIGNUP_TRIAL_CENTS,
-        "amount_usd": round(SIGNUP_TRIAL_CENTS / 100, 2),
+        "kind": chatgpt_share_service.TRIAL_KIND,
+        "amount_cents": 0,
+        "amount_usd": 0,
+        "renders_limit": chatgpt_share_service.TRIAL_RENDER_LIMIT,
+        "renders_remaining": 0,
         "email_sent": False,
         "blocked_ip": False,
         "blocked_weekly_cap": False,
@@ -856,7 +969,6 @@ def grant_signup_trial_if_needed(
     if not user or not user.get("id"):
         return empty
 
-    # Opportunistic reclaim/redistribute before deciding new grants.
     try:
         reclaim_idle_trial_credits()
     except Exception:
@@ -868,14 +980,6 @@ def grant_signup_trial_if_needed(
         get_client_ip = lambda: ""  # noqa: E731
     ip = str(client_ip if client_ip is not None else get_client_ip() or "").strip()
 
-    if not (platform_openai_configured() or platform_anthropic_configured() or platform_kimi_configured()):
-        account = ensure_account(user["id"])
-        info = _trial_info(account)
-        info["just_granted"] = False
-        info["blocked_ip"] = False
-        info["blocked_weekly_cap"] = False
-        return info
-
     account = ensure_account(user["id"])
     if str(account.get("trial_granted_at") or "").strip():
         if ip:
@@ -886,8 +990,17 @@ def grant_signup_trial_if_needed(
         info["blocked_weekly_cap"] = False
         return info
 
+    chatgpt_share_service.ensure_tables()
+    existing_render = chatgpt_share_service.trial_row(user["id"])
+    if existing_render:
+        info = chatgpt_share_service.overlay_trial_info(_trial_info(account), user["id"])
+        info["just_granted"] = False
+        info["blocked_ip"] = False
+        info["blocked_weekly_cap"] = False
+        return info
+
     if not ip:
-        info = _trial_info(account)
+        info = chatgpt_share_service.overlay_trial_info(_trial_info(account), user["id"])
         info["just_granted"] = False
         info["blocked_ip"] = True
         info["blocked_weekly_cap"] = False
@@ -898,22 +1011,20 @@ def grant_signup_trial_if_needed(
         )
         return info
 
-    amount = SIGNUP_TRIAL_CENTS
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with get_conn() as conn:
         _ensure_trial_pool(conn)
-        # Supabase IP ledger is authoritative when connected.
         try:
             from backend.services import supabase_security_store as sbsec
 
             remote_owner = sbsec.ip_owner(ip)
             if remote_owner and remote_owner != str(user["id"]):
-                info = _trial_info(account)
+                info = chatgpt_share_service.overlay_trial_info(_trial_info(account), user["id"])
                 info["just_granted"] = False
                 info["blocked_ip"] = True
                 info["blocked_weekly_cap"] = False
                 info["show_popup"] = False
-                info["blocked_reason"] = "Free trial credits were already claimed from this network."
+                info["blocked_reason"] = "Free trial renders were already claimed from this network."
                 return info
         except Exception:
             pass
@@ -922,56 +1033,34 @@ def grant_signup_trial_if_needed(
             (ip,),
         ).fetchone()
         if prior and str(prior["user_id"]) != str(user["id"]):
-            info = _trial_info(account)
+            info = chatgpt_share_service.overlay_trial_info(_trial_info(account), user["id"])
             info["just_granted"] = False
             info["blocked_ip"] = True
             info["blocked_weekly_cap"] = False
             info["show_popup"] = False
-            info["blocked_reason"] = "Free trial credits were already claimed from this network."
+            info["blocked_reason"] = "Free trial renders were already claimed from this network."
             return info
 
         company_grants = _company_trial_grants_since(conn, week_ago)
-        pool_row = conn.execute("SELECT balance_cents FROM ai_credit_trial_pool WHERE id = 1").fetchone()
-        pool_bal = int((pool_row["balance_cents"] if pool_row else 0) or 0)
-        from_pool = False
         if company_grants >= TRIAL_GRANTS_PER_WEEK:
-            if pool_bal >= amount:
-                from_pool = True
-            else:
-                _enqueue_trial_waitlist(conn, user["id"], ip)
-                info = _trial_info(account)
-                info["just_granted"] = False
-                info["blocked_ip"] = False
-                info["blocked_weekly_cap"] = True
-                info["waitlisted"] = True
-                info["show_popup"] = False
-                info["blocked_reason"] = (
-                    f"Free trial spots are limited to {TRIAL_GRANTS_PER_WEEK} new users per week. "
-                    "You're on the waitlist — unused credits from idle trials may open a spot."
-                )
-                return info
-
-        ok = _grant_trial_to_user(
-            conn,
-            user_id=user["id"],
-            ip=ip,
-            from_pool=from_pool,
-            amount=amount,
-        )
-        if not ok:
-            account = ensure_account(user["id"])
-            info = _trial_info(account)
+            _enqueue_trial_waitlist(conn, user["id"], ip)
+            info = chatgpt_share_service.overlay_trial_info(_trial_info(account), user["id"])
             info["just_granted"] = False
             info["blocked_ip"] = False
-            info["blocked_weekly_cap"] = False
+            info["blocked_weekly_cap"] = True
+            info["waitlisted"] = True
+            info["show_popup"] = False
+            info["blocked_reason"] = (
+                f"Free trial spots are limited to {TRIAL_GRANTS_PER_WEEK} new users per week. "
+                "You're on the waitlist — try again next week or add your own ChatGPT login."
+            )
             return info
 
-    account = ensure_account(user["id"])
-    info = _trial_info(account)
-    info["just_granted"] = True
+    ok = chatgpt_share_service.grant_trial_renders(user["id"], ip)
+    info = chatgpt_share_service.overlay_trial_info(_trial_info(ensure_account(user["id"])), user["id"])
+    info["just_granted"] = bool(ok)
     info["blocked_ip"] = False
     info["blocked_weekly_cap"] = False
-    info["from_pool"] = from_pool
     return info
 
 
@@ -984,19 +1073,30 @@ def ack_trial_popup(user_id: str) -> dict[str, Any]:
                 "UPDATE ai_credit_accounts SET trial_popup_seen_at = ?, updated_at = ? WHERE user_id = ?",
                 (now, now, user_id),
             )
+    try:
+        from backend.services import chatgpt_share_service
+
+        chatgpt_share_service.ack_trial_popup(user_id)
+    except Exception:
+        pass
     return status({"id": user_id})
 
 
 def mark_trial_email_sent(user_id: str) -> None:
     account = ensure_account(user_id)
-    if str(account.get("trial_email_sent_at") or "").strip():
-        return
     now = _now()
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE ai_credit_accounts SET trial_email_sent_at = ?, updated_at = ? WHERE user_id = ?",
-            (now, now, user_id),
-        )
+    if not str(account.get("trial_email_sent_at") or "").strip():
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE ai_credit_accounts SET trial_email_sent_at = ?, updated_at = ? WHERE user_id = ?",
+                (now, now, user_id),
+            )
+    try:
+        from backend.services import chatgpt_share_service
+
+        chatgpt_share_service.mark_trial_email_sent(user_id)
+    except Exception:
+        pass
 
 
 def status(user: dict[str, Any]) -> dict[str, Any]:
@@ -1043,13 +1143,17 @@ def status(user: dict[str, Any]) -> dict[str, Any]:
             "stripe_payment_link": bool(_payment_link_url()) and not bool(_stripe()),
             "paypal": False,
         },
-        "trial": _trial_info(account),
+        "trial": _overlay_trial_info(account),
         "on_free_trial": is_free_trial_credits_account(account, user_id=user["id"]),
         "key_configured": any(providers.values()),
     }
 
 
 def _last_purchase(user_id: str) -> dict[str, Any] | None:
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        return ws.last_purchase(user_id)
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -1065,6 +1169,20 @@ def _last_purchase(user_id: str) -> dict[str, Any] | None:
 
 def list_transactions(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
     ensure_account(user_id)
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        rows = ws.list_credit_transactions(user_id, limit=limit)
+        out: list[dict[str, Any]] = []
+        for item in rows:
+            row = dict(item)
+            meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+            row["meta"] = meta
+            row.pop("meta_json", None)
+            row["amount_usd"] = round(int(row.get("amount_cents") or 0) / 100, 4)
+            row["balance_after_usd"] = round(int(row.get("balance_after_cents") or 0) / 100, 2)
+            out.append(row)
+        return out
     lim = max(1, min(100, int(limit or 40)))
     with get_conn() as conn:
         rows = conn.execute(
@@ -1141,6 +1259,8 @@ def update_settings(
             if platform_model is not None
             else str(account.get("platform_model") or "").strip()[:120]
         )
+        if provider == "openai" and _is_retired_openai_model(model):
+            model = DEFAULT_OPENAI_MODEL
         if not _platform_model_matches_provider(model, provider):
             # Selecting Anthropic/Kimi must never keep a leftover GPT pin (and vice versa).
             model = _default_platform_model(
@@ -1159,6 +1279,11 @@ def update_settings(
         vals.extend([_now(), user_id])
         with get_conn() as conn:
             conn.execute(f"UPDATE ai_credit_accounts SET {', '.join(sets)} WHERE user_id = ?", vals)
+            row = conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
+        if _ws_live() and row:
+            from backend.services import supabase_workspace_store as ws
+
+            ws.upsert_credit_account(dict(row))
     return ensure_account(user_id)
 
 
@@ -1167,6 +1292,7 @@ def add_credits(user_id: str, amount_cents: int, *, provider: str, meta: dict[st
     account = ensure_account(user_id)
     balance = int(account.get("balance_cents") or 0) + amount
     now = _now()
+    tx_id = str(uuid.uuid4())
     with get_conn() as conn:
         conn.execute(
             "UPDATE ai_credit_accounts SET balance_cents = ?, updated_at = ? WHERE user_id = ?",
@@ -1178,8 +1304,27 @@ def add_credits(user_id: str, amount_cents: int, *, provider: str, meta: dict[st
               id, user_id, kind, amount_cents, balance_after_cents, provider, meta_json, created_at
             ) VALUES (?, ?, 'purchase', ?, ?, ?, ?, ?)
             """,
-            (str(uuid.uuid4()), user_id, amount, balance, provider, json.dumps(meta or {}), now),
+            (tx_id, user_id, amount, balance, provider, json.dumps(meta or {}), now),
         )
+        row = conn.execute("SELECT * FROM ai_credit_accounts WHERE user_id = ?", (user_id,)).fetchone()
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        if row:
+            ws.upsert_credit_account(dict(row))
+        ws.upsert_credit_tx(
+            {
+                "id": tx_id,
+                "user_id": user_id,
+                "kind": "purchase",
+                "amount_cents": amount,
+                "balance_after_cents": balance,
+                "provider": provider,
+                "meta": meta or {},
+                "created_at": now,
+            }
+        )
+    _mirror_credits_to_users(user_id, balance)
     return ensure_account(user_id)
 
 
@@ -1193,6 +1338,67 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
     charge_cents = max(1, round(base_cents * (1 + MARKUP_PERCENT / 100)))
     ensure_account(user_id)
     now = _now()
+    tx_id = str(uuid.uuid4())
+    meta = {"base_cost_usd": base_cost, "markup_percent": MARKUP_PERCENT}
+    if _ws_live():
+        from backend.services import supabase_workspace_store as ws
+
+        result = ws.debit_credits(user_id, charge_cents)
+        if not result.get("ok"):
+            raise ValueError("Not enough shared-key credits. Buy more credits to continue.")
+        new_balance = int(result.get("balance_cents") or 0)
+        disable_platform = new_balance <= 0
+        ws.upsert_credit_tx(
+            {
+                "id": tx_id,
+                "user_id": user_id,
+                "kind": "usage",
+                "amount_cents": -charge_cents,
+                "balance_after_cents": new_balance,
+                "provider": str(trace.get("provider") or "openai"),
+                "model": str(trace.get("model") or ""),
+                "project_id": project_id,
+                "meta": meta,
+                "created_at": now,
+            }
+        )
+        with get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE ai_credit_accounts
+                   SET balance_cents = ?,
+                       use_platform_key = CASE WHEN ? THEN 0 ELSE use_platform_key END,
+                       updated_at = ?
+                 WHERE user_id = ?
+                """,
+                (new_balance, 1 if disable_platform else 0, now, user_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_credit_transactions (
+                  id, user_id, kind, amount_cents, balance_after_cents, provider, model,
+                  project_id, meta_json, created_at
+                ) VALUES (?, ?, 'usage', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tx_id,
+                    user_id,
+                    -charge_cents,
+                    new_balance,
+                    str(trace.get("provider") or "openai"),
+                    str(trace.get("model") or ""),
+                    project_id,
+                    json.dumps(meta),
+                    now,
+                ),
+            )
+        _mirror_credits_to_users(user_id, new_balance)
+        return {
+            "charged_cents": charge_cents,
+            "balance_cents": new_balance,
+            "markup_percent": MARKUP_PERCENT,
+            "platform_key_disabled": bool(disable_platform),
+        }
     with get_conn() as conn:
         # Atomic debit — prevents concurrent overspend past the prepaid balance.
         cur = conn.execute(
@@ -1236,6 +1442,7 @@ def spend_for_trace(user_id: str, trace: dict[str, Any] | None, *, project_id: s
                 now,
             ),
         )
+    _mirror_credits_to_users(user_id, new_balance)
     return {
         "charged_cents": charge_cents,
         "balance_cents": new_balance,

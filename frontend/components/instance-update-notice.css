@@ -1,0 +1,5 @@
+.instance-update-notice { position: fixed; right: 18px; bottom: 18px; z-index: 10040; width: min(360px, calc(100vw - 28px)); display: grid; gap: 8px; padding: 16px; border: 1px solid #3b82f6; border-radius: 14px; background: #111820; color: #f0f6fc; box-shadow: 0 18px 60px #000a; }
+.instance-update-notice span { color: #9da7b3; font-size: 13px; line-height: 1.4; }
+.instance-update-notice div { display: flex; justify-content: flex-end; gap: 8px; }
+.instance-update-notice button, .instance-update-notice a { border: 1px solid #3b82f6; border-radius: 8px; padding: 7px 10px; background: transparent; color: #dbeafe; font: inherit; text-decoration: none; cursor: pointer; }
+.instance-update-notice a { background: #1d4ed8; color: white; }

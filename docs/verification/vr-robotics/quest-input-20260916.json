@@ -1,0 +1,75 @@
+{
+  "checks": [
+    "left squeeze alone acquires laser-targeted model with Quest grip rotation",
+    "one-hand model follows grip without trigger",
+    "poll-only grip release drops model",
+    "right squeeze alone acquires laser-targeted model with Quest grip rotation",
+    "one-hand model follows grip without trigger",
+    "poll-only grip release drops model",
+    "new mapping from separate settings module acquires in active VR session",
+    "remapped grab survives subsequent update frames",
+    "remapped release drops",
+    "old physical binding no longer acquires",
+    "reordered Quest inputSources preserve left-hand grip",
+    "empty-space squeeze acquires nothing",
+    "remap regression aims at visible Files tab",
+    "old trigger native event and poll cannot bypass new mapping",
+    "new trigger mapping clicks menu immediately without VR re-entry"
+  ],
+  "count": 15,
+  "threeRevision": "172",
+  "passed": true,
+  "logs": [
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x1240049fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x1240049fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x1240049fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x1240049fc00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    },
+    {
+      "kind": "warning",
+      "text": "Could not find menu_pressed_min in the model"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    }
+  ],
+  "hardware_tested": false,
+  "pi_capabilities": {
+    "checked": "2026-09-16",
+    "host": "192.168.1.77",
+    "setup_version": "1.0.1",
+    "y_map": "tap_pause_hold3_kill",
+    "reset_action": "session_reset",
+    "joint_homing": "Explicitly excluded by live /robotics/config; no Home action advertised",
+    "ssh": "Configured steve@192.168.1.77 rejected existing authentication (publickey,password)"
+  },
+  "separate_tab_regression": "all four opened panels remain available assertion also fails using pre-change viewport snapshot; /private/tmp/xr-tabs-input-baseline/report.json"
+}

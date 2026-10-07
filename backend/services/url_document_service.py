@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import ipaddress
+import json
 import re
 import socket
 import urllib.error
@@ -14,10 +15,16 @@ from html import unescape
 from typing import Any
 
 URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.I)
-MAX_URLS = 3
+AMAZON_ASIN_RE = re.compile(r"(?:/dp/|/gp/product/|/gp/aw/d/|/product/)([A-Z0-9]{10})", re.I)
+AMAZON_HOST_RE = re.compile(r"(?:^|\.)amazon\.[a-z.]+$", re.I)
+MAX_URLS = 4
 MAX_DOWNLOAD_BYTES = 8_000_000
 MAX_TEXT_CHARS = 24_000
 FETCH_TIMEOUT_SEC = 20
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
 
 
 def _is_blocked_host(hostname: str | None) -> bool:
@@ -59,6 +66,29 @@ def _is_blocked_host(hostname: str | None) -> bool:
     return False
 
 
+def amazon_asin(url: str | None) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(raw)
+    except ValueError:
+        return ""
+    match = AMAZON_ASIN_RE.search(parsed.path or "")
+    if match:
+        return match.group(1).upper()
+    qs = urllib.parse.parse_qs(parsed.query or "")
+    for key in ("asin", "ASIN"):
+        vals = qs.get(key) or []
+        if vals and re.fullmatch(r"[A-Z0-9]{10}", str(vals[0] or ""), re.I):
+            return str(vals[0]).upper()
+    return ""
+
+
+def _is_amazon_host(hostname: str | None) -> bool:
+    return bool(AMAZON_HOST_RE.search(str(hostname or "").strip().lower()))
+
+
 def clean_url(url: str | None) -> str | None:
     raw = (url or "").strip().rstrip(".,;:!?)\"]'")
     if not raw:
@@ -67,10 +97,13 @@ def clean_url(url: str | None) -> str | None:
         parsed = urllib.parse.urlparse(raw)
     except ValueError:
         return None
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
         return None
     if _is_blocked_host(parsed.hostname):
         return None
+    asin = amazon_asin(raw)
+    if asin and _is_amazon_host(parsed.hostname):
+        return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, f"/dp/{asin}", "", "", ""))
     return urllib.parse.urlunparse(
         (parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, "")
     )
@@ -153,6 +186,100 @@ def _extract_html_text(raw: bytes, charset: str | None) -> tuple[str, str]:
     return text, title
 
 
+def _amazon_page_facts(html: str, url: str) -> tuple[str, str]:
+    """Title + bullets for Amazon product pages (JS-heavy; title tag is reliable)."""
+    asin = amazon_asin(url)
+    title = ""
+    title_span = re.search(r'<span[^>]+id=["\']productTitle["\'][^>]*>(.*?)</span>', html, re.I | re.S)
+    if title_span:
+        title = _collapse_ws(unescape(re.sub(r"<[^>]+>", " ", title_span.group(1))))[:240]
+    if not title:
+        og = re.search(
+            r'<meta[^>]+(?:property|name)=["\']og:title["\'][^>]+content=["\'](.*?)["\']',
+            html,
+            re.I | re.S,
+        )
+        if og:
+            title = _collapse_ws(unescape(og.group(1)))[:240]
+    if not title:
+        tm = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+        if tm:
+            title = _collapse_ws(unescape(re.sub(r"<[^>]+>", " ", tm.group(1))))[:240]
+    bullets: list[str] = []
+    for raw in re.findall(
+        r'id="feature-bullets".{0,12000}',
+        html,
+        re.I | re.S,
+    )[:1]:
+        for item in re.findall(r'class="a-list-item"[^>]*>(.*?)</(?:span|li)>', raw, re.I | re.S):
+            line = _collapse_ws(unescape(re.sub(r"<[^>]+>", " ", item)))
+            if line and len(line) > 8:
+                bullets.append(line[:400])
+            if len(bullets) >= 8:
+                break
+    lines = [
+        f"Amazon product ASIN {asin}" if asin else "Amazon product page",
+        f"URL: {url}",
+    ]
+    if title:
+        lines.append(f"Title: {title}")
+    if bullets:
+        lines.append("Product details:")
+        lines.extend(f"- {b}" for b in bullets)
+    text = _collapse_ws("\n".join(lines))
+    return text[:MAX_TEXT_CHARS], title
+
+
+def extract_html_image(html: str, base_url: str) -> str:
+    """Best-effort product photo URL from og:image / Amazon landing image."""
+    text = html or ""
+    for pattern in (
+        r'<meta[^>]+(?:property|name)=["\'](?:og:image|og:image:url|twitter:image)["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\'](?:og:image|og:image:url|twitter:image)["\']',
+        r'id=["\']landingImage["\'][^>]+data-old-hires=["\']([^"\']+)["\']',
+        r'data-old-hires=["\']([^"\']+)["\'][^>]*id=["\']landingImage["\']',
+        r'<link[^>]+rel=["\']image_src["\'][^>]+href=["\']([^"\']+)["\']',
+    ):
+        match = re.search(pattern, text, re.I | re.S)
+        if match:
+            resolved = _absolute_public_url(match.group(1), base_url)
+            if resolved:
+                return resolved
+    dyn = re.search(r'data-a-dynamic-image=["\'](\{.*?\})["\']', text, re.I | re.S)
+    if dyn:
+        try:
+            payload = json.loads(unescape(dyn.group(1)))
+            if isinstance(payload, dict) and payload:
+                best = max(
+                    payload.items(),
+                    key=lambda item: (
+                        int(item[1][0]) * int(item[1][1])
+                        if isinstance(item[1], (list, tuple)) and len(item[1]) >= 2
+                        else 0
+                    ),
+                )
+                resolved = _absolute_public_url(str(best[0]), base_url)
+                if resolved:
+                    return resolved
+        except Exception:
+            pass
+    return ""
+
+
+def _absolute_public_url(raw: str, base_url: str) -> str:
+    url = unescape(str(raw or "")).strip()
+    if not url or url.startswith("data:"):
+        return ""
+    try:
+        joined = urllib.parse.urljoin(base_url or "", url)
+        parsed = urllib.parse.urlparse(joined)
+    except ValueError:
+        return ""
+    if parsed.scheme not in {"http", "https"} or _is_blocked_host(parsed.hostname):
+        return ""
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", parsed.query, ""))
+
+
 def fetch_url_document(url: str) -> dict[str, Any]:
     clean = clean_url(url)
     if not clean:
@@ -166,24 +293,39 @@ def fetch_url_document(url: str) -> dict[str, Any]:
         }
     parsed = urllib.parse.urlparse(clean)
     path_lower = (parsed.path or "").lower()
-    accept = "application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    accept = "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,*/*;q=0.8"
     req = urllib.request.Request(
         clean,
         headers={
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; RenderStudioBot/1.0; +https://render3d.app) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-            ),
+            "User-Agent": _BROWSER_UA,
             "Accept": accept,
+            "Accept-Language": "en-US,en;q=0.9",
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT_SEC) as resp:
+        from backend.services.link_preview import public_opener
+        opener = public_opener()
+        with opener.open(req, timeout=FETCH_TIMEOUT_SEC) as resp:
             ctype = (resp.headers.get("content-type") or "").lower()
             charset = resp.headers.get_content_charset()
             final_url = clean_url(str(resp.geturl() or clean)) or clean
             data = resp.read(MAX_DOWNLOAD_BYTES + 1)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        asin = amazon_asin(clean)
+        if asin:
+            title = f"Amazon ASIN {asin}"
+            return {
+                "url": clean,
+                "ok": True,
+                "error": str(exc)[:240],
+                "title": title,
+                "text": (
+                    f"Amazon product ASIN {asin}\nURL: {clean}\n"
+                    f"Could not download the product page ({str(exc)[:180]}). "
+                    "Identify the part from the ASIN/title and ask the user for electrical specs if needed."
+                ),
+                "kind": "html",
+            }
         return {
             "url": clean,
             "ok": False,
@@ -224,6 +366,31 @@ def fetch_url_document(url: str) -> dict[str, Any]:
         }
 
     text, title = _extract_html_text(data, charset)
+    html = ""
+    try:
+        html = data.decode(charset or "utf-8", errors="ignore")
+    except LookupError:
+        html = data.decode("utf-8", errors="ignore")
+    image = extract_html_image(html, final_url)
+    amazon = _is_amazon_host(urllib.parse.urlparse(final_url).hostname)
+    if amazon:
+        amazon_text, amazon_title = _amazon_page_facts(html, final_url)
+        if amazon_title:
+            title = amazon_title
+        if amazon_text:
+            text = amazon_text if len(amazon_text) >= 40 else f"{amazon_text}\n\n{text}".strip()
+        if (not text or re.search(r"continue shopping|captcha|robot check|access denied", text, re.I)) and amazon_asin(final_url):
+            asin = amazon_asin(final_url)
+            title = title or f"Amazon ASIN {asin}"
+            text = (
+                f"Amazon product ASIN {asin}\n"
+                f"URL: {final_url}\n"
+                f"Title: {title}\n"
+                "Amazon blocked a full product-page scrape. Use the ASIN/title for part identity "
+                "and ask the user for electrical specs (voltage, current, pinout) if they are not in the title."
+            )
+        if not image:
+            image = extract_html_image(html, final_url)
     if not text:
         return {
             "url": final_url,
@@ -232,6 +399,7 @@ def fetch_url_document(url: str) -> dict[str, Any]:
             "title": title,
             "text": "",
             "kind": "html",
+            "image": image,
         }
     return {
         "url": final_url,
@@ -240,6 +408,7 @@ def fetch_url_document(url: str) -> dict[str, Any]:
         "title": title or stem_from_url(final_url) or "Product page",
         "text": text,
         "kind": "html",
+        "image": image,
     }
 
 

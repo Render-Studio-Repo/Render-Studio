@@ -27,6 +27,21 @@ MAX_IMAGE_BYTES = 8_000_000
 ALLOWED_REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀")
 RENDER_AGENT_ID = "render-agent"
 RENDER_AGENT_NAME = "Render Agent"
+CHAT_AGENTS = (
+    {"id": "render-agent", "display_name": "Render Agent", "handle": "RenderAgent"},
+    {"id": "cad-bot", "display_name": "CAD bot", "handle": "CadBot"},
+    {"id": "astra", "display_name": "Astra", "handle": "Astra"},
+    {"id": "cursor-engineer", "display_name": "Cursor", "handle": "Cursor"},
+    {"id": "grok-bot", "display_name": "Grok bot", "handle": "Grok"},
+    {"id": "vibe-rnd", "display_name": "RnD", "handle": "RnD"},
+    {"id": "analytics", "display_name": "Analytics", "handle": "analytics"},
+    {"id": "harness-mule", "display_name": "Harness Mule", "handle": "harness"},
+    {"id": "instruction-auditor", "display_name": "Auditor", "handle": "auditor"},
+    {"id": "ledger", "display_name": "Ledger", "handle": "ledger"},
+    {"id": "vibe-marketing", "display_name": "Marketing", "handle": "Marketing"},
+    {"id": "printer-bot", "display_name": "Print-bot", "handle": "PrintBot"},
+)
+CHAT_AGENT_IDS = {str(a["id"]) for a in CHAT_AGENTS}
 GLOBAL_PUBLIC_CHAT_IDS = {"render3d-public", "public", "global-public"}
 _LOCKS_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
@@ -176,7 +191,7 @@ def _sender(user: dict[str, Any] | None, *, as_agent: bool = False) -> dict[str,
         return {
             "id": RENDER_AGENT_ID,
             "display_name": RENDER_AGENT_NAME,
-            "avatar_url": "/render3d-logo.png?v=20260715-new-logo",
+            "avatar_url": "/render-logo-gear-still.png?v=20260915-logo1",
             "is_agent": True,
         }
     return {
@@ -526,6 +541,7 @@ def create_thread(
     workspace_role: str | None = None,
     kind: str | None = None,
     invite_user_ids: list[str] | None = None,
+    invite_agent_ids: list[str] | None = None,
     workspace_id: str | None = None,
 ) -> dict[str, Any]:
     if workspace_id:
@@ -564,6 +580,23 @@ def create_thread(
                     "avatar_url": profile.get("avatar_url"),
                     "role": "member",
                     "joined_at": _now(),
+                }
+            )
+        for agent_id in invite_agent_ids or []:
+            aid = str(agent_id or "").strip()
+            meta = next((a for a in CHAT_AGENTS if a["id"] == aid), None)
+            if not meta or any(str(m.get("id")) == aid for m in members):
+                continue
+            members.append(
+                {
+                    "id": meta["id"],
+                    "display_name": meta["display_name"],
+                    "handle": meta["handle"],
+                    "type": "agent",
+                    "role": "agent",
+                    "is_agent": True,
+                    "joined_at": _now(),
+                    "avatar_url": "/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1",
                 }
             )
         thread = {
@@ -752,12 +785,13 @@ def parse_mentions(body: str, candidates: list[dict[str, Any]] | None = None) ->
 def mention_candidates(project_members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = [
         {
-            "id": RENDER_AGENT_ID,
-            "display_name": RENDER_AGENT_NAME,
-            "avatar_url": "/render3d-logo.png?v=20260715-new-logo",
+            "id": a["id"],
+            "display_name": a["display_name"],
+            "avatar_url": "/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1",
             "type": "agent",
-            "handle": "RenderAgent",
+            "handle": a["handle"],
         }
+        for a in CHAT_AGENTS
     ]
     for member in project_members:
         display = member.get("display_name") or member.get("email") or "User"
@@ -883,7 +917,14 @@ def post_message(
                 "thread_id": thread["id"],
             }
         _save(storage_root, data)
-        return msg
+    if not as_agent and user.get("id"):
+        try:
+            from backend.services import supabase_users_store as sbusers
+
+            sbusers.increment_activity(str(user["id"]), "chat")
+        except Exception:
+            pass
+    return msg
 
 
 def edit_message(

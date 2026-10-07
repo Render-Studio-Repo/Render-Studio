@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Sandbox debugger — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/sandbox/sandbox.css?v=workspace3-lookdown1-sbdbg1f" />
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"}}</script>
+</head>
+<body class="info-page sb-dbg-page">
+  <div id="app" class="sb-dbg-app">
+    <header class="sb-dbg-chrome">
+      <a href="/" class="brand-link" aria-label="Render Studio home"><img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="32" height="32" /></a>
+      <div class="sb-workspace-title">
+        <strong id="sb-title">Debugger viewport</strong>
+        <span>One WebGL · workspace editor · sbdbg1</span>
+      </div>
+      <nav class="sb-dbg-nav" aria-label="Panes" data-sb-pane-toggles></nav>
+      <div class="sb-dbg-tools">
+        <button type="button" class="sb-agent-btn" data-sb-listen>Listen</button>
+        <button type="button" class="sb-agent-btn" data-sb-read-monitor>Read monitor</button>
+        <button type="button" class="sb-agent-btn sb-agent-btn--accent" data-sb-enter-workspace aria-pressed="false">Enter workspace</button>
+        <button type="button" class="sb-agent-btn" data-sb-open-editor aria-pressed="false">Editor</button>
+        <button type="button" class="sb-agent-btn" data-sb-enter-vr>Enter VR</button>
+        <span class="sb-live-pill" id="sb-api-state">API…</span>
+      </div>
+    </header>
+    <section id="sb-workspace-shell" class="sb-workspace-shell sb-workspace-canvas" hidden data-token="sbws1 workspace3 supasql1 fileide1 collabid1">
+      <header class="sb-workspace-toolbar">
+        <button type="button" class="sb-agent-btn" data-sb-exit-workspace>Back to debugger</button>
+        <div class="sb-workspace-title">
+          <strong>Workspace</strong>
+          <span>Super IDE editor · one WebGL · sbws1</span>
+        </div>
+        <button type="button" class="sb-agent-btn sb-agent-btn--accent" data-sb-open-editor>Workspace editor</button>
+      </header>
+      <div id="sb-collab-top" class="sb-collab-top"></div>
+      <div id="sb-mcp-toolbar" data-token="mcplisten1 mcpconn1"></div>
+      <div id="sb-super-ide"></div>
+      <div id="sb-agent-bar"></div>
+      <div id="sb-teleop"></div>
+      <aside data-workspace-docks class="sb-workspace-docks" aria-label="Workspace docks"></aside>
+      <div id="sb-live-feed" data-token="livefeed1" hidden></div>
+      <div id="sb-query-dashboard" hidden></div>
+      <a class="muted small" href="/sandbox/team-chat.html?embed=1" hidden>Team chat</a>
+    </section>
+    <main class="sb-dbg-grid">
+      <section class="sb-dbg-pane" data-pane="viewport" id="sb-pane-viewport" aria-label="Debugger viewport">
+        <div id="sb-collab-ide"></div>
+      </section>
+      <section class="sb-dbg-pane" data-pane="ide" id="sb-pane-ide" aria-label="Live IDE">
+        <div id="sb-live-ide"></div>
+      </section>
+      <section class="sb-dbg-pane" data-pane="crew" id="sb-pane-crew" aria-label="Crew floor"></section>
+      <section class="sb-dbg-pane" data-pane="hf" id="sb-pane-hf" aria-label="HF skills">
+        <p class="muted small" style="padding:10px 12px">Hugging Face (samwins) — pick a job on the crew floor, they walk to the green rack and emote the swap. OCR / TTS / stills / video.</p>
+      </section>
+      <section class="sb-dbg-pane" data-pane="voice" id="sb-pane-voice" aria-label="Voice look">
+        <div id="sb-voice"></div>
+        <p class="muted small" data-look-file style="padding:0 12px 12px"></p>
+      </section>
+      <section class="sb-dbg-pane" data-pane="bench" id="sb-pane-bench" aria-label="Bot bench"></section>
+      <section class="sb-dbg-pane" data-pane="arsenal" id="sb-pane-arsenal" aria-label="Knowledge arsenal"></section>
+    </main>
+  </div>
+  <script type="module" src="/sandbox/boot.js?v=20260923-draw-recordings1&singlevoice1&simrun=20260923-1&vrrobot=20260927-2"></script>
+</body>
+</html>

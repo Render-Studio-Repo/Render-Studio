@@ -1,0 +1,211 @@
+{
+  "token": "botbench1",
+  "at": "2026-09-18T06:08:16.546Z",
+  "runs": 3,
+  "avg": 67,
+  "label": "achieved",
+  "best_set": [
+    "cad-bot",
+    "cursor-engineer",
+    "instruction-auditor",
+    "analytics",
+    "clip-bot"
+  ],
+  "rows": [
+    {
+      "agent_id": "cad-bot",
+      "name": "CAD bot",
+      "runs": 3,
+      "score": 100,
+      "label": "exceeded",
+      "beneficial": true,
+      "change": "purse-0009c214: Scale retained_pin to Ø4 mm. Do not regen shells. Stop after 2 identical pin fails. | fused-shell-no-lid: Keep shell_lid as its own solid and bind Play to it.",
+      "detail": "3 goldens",
+      "samples": [
+        100,
+        100,
+        100
+      ]
+    },
+    {
+      "agent_id": "cursor-engineer",
+      "name": "Cursor",
+      "runs": 3,
+      "score": 80,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Keep writes in sandbox; auto-push",
+      "detail": "fileide1",
+      "samples": [
+        80,
+        80,
+        80
+      ]
+    },
+    {
+      "agent_id": "instruction-auditor",
+      "name": "Auditor",
+      "runs": 3,
+      "score": 78,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Flag app.js/main.py growth",
+      "detail": "census",
+      "samples": [
+        78,
+        78,
+        78
+      ]
+    },
+    {
+      "agent_id": "analytics",
+      "name": "Analytics",
+      "runs": 3,
+      "score": 75,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Log scores to knowledge lake weekly",
+      "detail": "kb1",
+      "samples": [
+        75,
+        75,
+        75
+      ]
+    },
+    {
+      "agent_id": "clip-bot",
+      "name": "Clip-bot",
+      "runs": 3,
+      "score": 70,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "QC empty URDF vs named lid",
+      "detail": "rigqc1 fixture",
+      "samples": [
+        70,
+        70,
+        70
+      ]
+    },
+    {
+      "agent_id": "astra",
+      "name": "Astra",
+      "runs": 3,
+      "score": 68,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "One speaker; stay quiet unless Sam asked",
+      "detail": "voice lock",
+      "samples": [
+        68,
+        68,
+        68
+      ]
+    },
+    {
+      "agent_id": "vibe-rnd",
+      "name": "RnD",
+      "runs": 3,
+      "score": 66,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Do not steal Quest XR from OpenArm",
+      "detail": "sam-y-engage-v2",
+      "samples": [
+        66,
+        66,
+        66
+      ]
+    },
+    {
+      "agent_id": "ledger",
+      "name": "Ledger",
+      "runs": 3,
+      "score": 64,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Stamp log_id on jobs",
+      "detail": "ops",
+      "samples": [
+        64,
+        64,
+        64
+      ]
+    },
+    {
+      "agent_id": "vibe-marketing",
+      "name": "Marketing",
+      "runs": 3,
+      "score": 62,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "Studio theme, not DB palettes",
+      "detail": "mkt",
+      "samples": [
+        62,
+        62,
+        62
+      ]
+    },
+    {
+      "agent_id": "printer-bot",
+      "name": "Print-bot",
+      "runs": 3,
+      "score": 60,
+      "label": "achieved",
+      "beneficial": true,
+      "change": "LAN printer probe only",
+      "detail": "print-bot",
+      "samples": [
+        60,
+        60,
+        60
+      ]
+    },
+    {
+      "agent_id": "project-manager",
+      "name": "PM",
+      "runs": 3,
+      "score": 50,
+      "label": "partial",
+      "beneficial": false,
+      "change": "Add a golden for this seat",
+      "detail": "stub",
+      "samples": [
+        50,
+        50,
+        50
+      ]
+    },
+    {
+      "agent_id": "comms",
+      "name": "Comms",
+      "runs": 3,
+      "score": 50,
+      "label": "partial",
+      "beneficial": false,
+      "change": "Add a golden for this seat",
+      "detail": "stub",
+      "samples": [
+        50,
+        50,
+        50
+      ]
+    },
+    {
+      "agent_id": "vibe-sales",
+      "name": "Sales",
+      "runs": 3,
+      "score": 50,
+      "label": "partial",
+      "beneficial": false,
+      "change": "Add a golden for this seat",
+      "detail": "stub",
+      "samples": [
+        50,
+        50,
+        50
+      ]
+    }
+  ]
+}

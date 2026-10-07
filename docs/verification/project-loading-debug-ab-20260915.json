@@ -1,0 +1,507 @@
+{
+  "date": "2026-09-15",
+  "origin": "https://render3d.app",
+  "browser": "Playwright Chromium with host WebGL, 1440x1000",
+  "method": "Separate browser runs before and after backend workspace-read fix. Open headset and robot once with Debug off, revisit with Debug on, then revisit with Debug off. Timings cover __openProject plus two animation frames. No generation or benchmarks submitted.",
+  "limitations": [
+    "Single before/after captures, not a statistical benchmark.",
+    "First model opens include download; revisits reuse cached GLB bytes.",
+    "Network, remote database and GPU latency vary. First robot open was slower after the fix; workspace-list improvements do not imply all model first opens improved."
+  ],
+  "validation": {
+    "python_tests_passed": 29,
+    "files": [
+      "test_workspace_loading_requests.py",
+      "test_project_permission_reads.py",
+      "test_project_list_summary.py"
+    ]
+  },
+  "before": {
+    "startup_requests": [
+      {
+        "url": "https://render3d.app/api/projects",
+        "ms": 1445.5999999940395,
+        "ttfb": 1439,
+        "bytes": 105825
+      },
+      {
+        "url": "https://render3d.app/api/teams/be195dc6/folders",
+        "ms": 3614.8000000044703,
+        "ttfb": 3614.10000000149,
+        "bytes": 862
+      },
+      {
+        "url": "https://render3d.app/api/teams/771b6c41/folders",
+        "ms": 3385.5,
+        "ttfb": 3384.89999999851,
+        "bytes": 568
+      },
+      {
+        "url": "https://render3d.app/api/teams/6af83624/folders",
+        "ms": 137.39999999850988,
+        "ttfb": 136.79999999701977,
+        "bytes": 369
+      },
+      {
+        "url": "https://render3d.app/api/teams/411c7bf6/folders",
+        "ms": 3614.6999999955297,
+        "ttfb": 3614,
+        "bytes": 566
+      }
+    ],
+    "project_opens": [
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": false,
+        "total_ms": 1038,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 25,
+            "ms": 307.5,
+            "ttfb": 307.09999999403954,
+            "download": 0.20000000298023224,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 31.100000001490116,
+            "ms": 304.29999999701977,
+            "ttfb": 304,
+            "download": 0.10000000149011612,
+            "bytes": 2256
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 63.70000000298023,
+            "ms": 389.29999999701977,
+            "ttfb": 388.70000000298023,
+            "download": 0.29999999701976776,
+            "bytes": 6272
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/files/vibecad/Curved_Cradle_Revision_Edit_Selected_object_Exte.glb",
+            "start": 497.20000000298023,
+            "ms": 205,
+            "ttfb": 184,
+            "download": 20.80000000447035,
+            "bytes": 56764
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": false,
+        "total_ms": 1687.4,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 13.700000002980232,
+            "ms": 300.3999999985099,
+            "ttfb": 299.8999999985099,
+            "download": 0.20000000298023224,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 19.5,
+            "ms": 295.29999999701977,
+            "ttfb": 295,
+            "download": 0.09999999403953552,
+            "bytes": 708
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 32.29999999701977,
+            "ms": 305.40000000596046,
+            "ttfb": 304.8999999985099,
+            "download": 0.20000000298023224,
+            "bytes": 5191
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/files/vibecad/Robotic_Base_Similar_This_Size_Specs_Sure.glb",
+            "start": 385.1000000014901,
+            "ms": 481.5,
+            "ttfb": 214.60000000149012,
+            "download": 266.70000000298023,
+            "bytes": 8903852
+          }
+        ]
+      },
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": true,
+        "total_ms": 690.9,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 17.200000002980232,
+            "ms": 268.19999999552965,
+            "ttfb": 267.80000000447035,
+            "download": 0.19999999552965164,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 22.600000001490116,
+            "ms": 267.5,
+            "ttfb": 267.1000000014901,
+            "download": 0.10000000149011612,
+            "bytes": 2255
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 48.899999998509884,
+            "ms": 267.30000000447035,
+            "ttfb": 266.69999999552965,
+            "download": 0.20000000298023224,
+            "bytes": 6273
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": true,
+        "total_ms": 1162.8,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 15.899999998509884,
+            "ms": 273.1000000014901,
+            "ttfb": 272.6000000014901,
+            "download": 0.20000000298023224,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 23.299999997019768,
+            "ms": 280.3999999985099,
+            "ttfb": 280,
+            "download": 0.09999999403953552,
+            "bytes": 707
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 38.600000001490116,
+            "ms": 275,
+            "ttfb": 274.3999999985099,
+            "download": 0.30000000447034836,
+            "bytes": 5191
+          }
+        ]
+      },
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": false,
+        "total_ms": 642.6,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 19.700000002980232,
+            "ms": 188.39999999850988,
+            "ttfb": 188,
+            "download": 0.20000000298023224,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 25.399999998509884,
+            "ms": 187.70000000298023,
+            "ttfb": 187.19999999552965,
+            "download": 0.20000000298023224,
+            "bytes": 2255
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 54.899999998509884,
+            "ms": 258.80000000447035,
+            "ttfb": 258.3999999985099,
+            "download": 0.20000000298023224,
+            "bytes": 6274
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": false,
+        "total_ms": 1090,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 13.700000002980232,
+            "ms": 208.79999999701977,
+            "ttfb": 207.40000000596046,
+            "download": 1.1999999955296516,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 19.30000000447035,
+            "ms": 206.89999999850988,
+            "ttfb": 206.5,
+            "download": 0.20000000298023224,
+            "bytes": 707
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 32.30000000447035,
+            "ms": 213,
+            "ttfb": 212.39999999850988,
+            "download": 0.30000000447034836,
+            "bytes": 5190
+          }
+        ]
+      }
+    ],
+    "page_errors": [],
+    "micro_edit_api_requests": []
+  },
+  "after": {
+    "startup_requests": [
+      {
+        "url": "https://render3d.app/api/projects",
+        "ms": 958.8999999985099,
+        "ttfb": 949.1000000014901,
+        "bytes": 105514
+      },
+      {
+        "url": "https://render3d.app/api/teams/6af83624/folders",
+        "ms": 234.79999999701977,
+        "ttfb": 233.89999999850988,
+        "bytes": 369
+      },
+      {
+        "url": "https://render3d.app/api/teams/771b6c41/folders",
+        "ms": 590.8999999985099,
+        "ttfb": 590.1000000014901,
+        "bytes": 568
+      },
+      {
+        "url": "https://render3d.app/api/teams/be195dc6/folders",
+        "ms": 963.8999999985099,
+        "ttfb": 963.5999999940395,
+        "bytes": 862
+      },
+      {
+        "url": "https://render3d.app/api/teams/411c7bf6/folders",
+        "ms": 963.6999999955297,
+        "ttfb": 962.8999999985099,
+        "bytes": 566
+      }
+    ],
+    "project_opens": [
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": false,
+        "total_ms": 889,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 22.80000000447035,
+            "ms": 285.3999999985099,
+            "ttfb": 285.1000000014901,
+            "download": 0.10000000149011612,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 28.30000000447035,
+            "ms": 279.8999999985099,
+            "ttfb": 279.3999999985099,
+            "download": 0.3999999985098839,
+            "bytes": 2256
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 54.100000001490116,
+            "ms": 278,
+            "ttfb": 277.6000000014901,
+            "download": 0.19999999552965164,
+            "bytes": 6273
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/files/vibecad/Curved_Cradle_Revision_Edit_Selected_object_Exte.glb",
+            "start": 381.6000000014901,
+            "ms": 210,
+            "ttfb": 204.79999999701977,
+            "download": 4.899999998509884,
+            "bytes": 56764
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": false,
+        "total_ms": 2477,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 13.899999998509884,
+            "ms": 909.5,
+            "ttfb": 909.2999999970198,
+            "download": 0.10000000149011612,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 20.19999999552965,
+            "ms": 908.9000000059605,
+            "ttfb": 908.6000000014901,
+            "download": 0.20000000298023224,
+            "bytes": 705
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 33.79999999701977,
+            "ms": 987.5,
+            "ttfb": 987,
+            "download": 0.19999999552965164,
+            "bytes": 5197
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/files/vibecad/Robotic_Base_Similar_This_Size_Specs_Sure.glb",
+            "start": 1036.6000000014901,
+            "ms": 651.5,
+            "ttfb": 308.29999999701977,
+            "download": 342.90000000596046,
+            "bytes": 8903852
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring",
+            "start": 1311,
+            "ms": 258.19999999552965,
+            "ttfb": 257.70000000298023,
+            "download": 0.29999999701976776,
+            "bytes": 328
+          }
+        ]
+      },
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": true,
+        "total_ms": 812,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 18.5,
+            "ms": 425.79999999701977,
+            "ttfb": 425.1000000014901,
+            "download": 0.29999999701976776,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 24.19999999552965,
+            "ms": 337.80000000447035,
+            "ttfb": 337.5,
+            "download": 0.20000000298023224,
+            "bytes": 2254
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 50,
+            "ms": 426.69999999552965,
+            "ttfb": 426.20000000298023,
+            "download": 0.19999999552965164,
+            "bytes": 6272
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": true,
+        "total_ms": 1064.7,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 14,
+            "ms": 295.1000000014901,
+            "ttfb": 294.79999999701977,
+            "download": 0.10000000149011612,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 19.5,
+            "ms": 142.20000000298023,
+            "ttfb": 142,
+            "download": 0.10000000149011612,
+            "bytes": 707
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 32.29999999701977,
+            "ms": 144.90000000596046,
+            "ttfb": 144.5,
+            "download": 0.20000000298023224,
+            "bytes": 5194
+          }
+        ]
+      },
+      {
+        "project_id": "2ee4d857",
+        "debug_enabled": false,
+        "total_ms": 715.4,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/wiring/diagnose-photo/status",
+            "start": 16.799999997019768,
+            "ms": 289,
+            "ttfb": 288.5,
+            "download": 0.19999999552965164,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857/opened",
+            "start": 21.899999998509884,
+            "ms": 245,
+            "ttfb": 244.60000000149012,
+            "download": 0.19999999552965164,
+            "bytes": 2256
+          },
+          {
+            "url": "https://render3d.app/api/projects/2ee4d857",
+            "start": 47.29999999701977,
+            "ms": 293.30000000447035,
+            "ttfb": 292.8999999985099,
+            "download": 0.20000000298023224,
+            "bytes": 6270
+          }
+        ]
+      },
+      {
+        "project_id": "f730285c",
+        "debug_enabled": false,
+        "total_ms": 1087,
+        "requests": [
+          {
+            "url": "https://render3d.app/api/projects/f730285c/wiring/diagnose-photo/status",
+            "start": 13.799999997019768,
+            "ms": 245.10000000149012,
+            "ttfb": 244.79999999701977,
+            "download": 0.20000000298023224,
+            "bytes": 317
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c/opened",
+            "start": 19.19999999552965,
+            "ms": 247.5,
+            "ttfb": 247.10000000149012,
+            "download": 0.19999999552965164,
+            "bytes": 707
+          },
+          {
+            "url": "https://render3d.app/api/projects/f730285c",
+            "start": 32.100000001490116,
+            "ms": 244.09999999403954,
+            "ttfb": 243.70000000298023,
+            "download": 0.29999999701976776,
+            "bytes": 5195
+          }
+        ]
+      }
+    ],
+    "page_errors": [],
+    "micro_edit_api_requests": []
+  }
+}

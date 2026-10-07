@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Start the local PTY sidecar (off until you run this)."""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+venv_py = ROOT / ".venv" / "bin" / "python"
+if venv_py.is_file() and Path(sys.executable).resolve() != venv_py.resolve():
+    try:
+        import websockets  # noqa: F401
+    except ImportError:
+        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
+
+sys.path.insert(0, str(ROOT / "integrations" / "cursor-bridge"))
+
+from pty_sidecar import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

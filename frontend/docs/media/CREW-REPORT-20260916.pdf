@@ -1,0 +1,62 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1513 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 36 760 Tm (CREW REPORT 16 Sep 2026 Render Studio) Tj
+1 0 0 1 36 742 Tm (PDF: /docs/media/CREW-REPORT-20260916.pdf) Tj
+1 0 0 1 36 724 Tm (Bender = project-manager \(Projects Manager\)) Tj
+1 0 0 1 36 706 Tm () Tj
+1 0 0 1 36 688 Tm (ID 892e057b-5393-40e5-ab7b-ce7931736cc1: not in repo. PM emailed to resolve.) Tj
+1 0 0 1 36 670 Tm () Tj
+1 0 0 1 36 652 Tm (API/logs/system: YES agent_ops MCP weekly-reports debug-training.) Tj
+1 0 0 1 36 634 Tm (Missed: Playwright clips, Gmail weekly tab, full autonomy.) Tj
+1 0 0 1 36 616 Tm () Tj
+1 0 0 1 36 598 Tm (VALUE most to least) Tj
+1 0 0 1 36 580 Tm (22 Sam Founder) Tj
+1 0 0 1 36 562 Tm (18 Cursor cursor-engineer) Tj
+1 0 0 1 36 544 Tm (16 project-manager Projects Manager BENDER) Tj
+1 0 0 1 36 526 Tm (9 instruction-auditor) Tj
+1 0 0 1 36 508 Tm (8 analytics) Tj
+1 0 0 1 36 490 Tm (7 vibe-rnd) Tj
+1 0 0 1 36 472 Tm (6 vibe-marketing Vibe Marketing) Tj
+1 0 0 1 36 454 Tm (5 comms-bridge) Tj
+1 0 0 1 36 436 Tm (5 vibe-sales Vibe Sales gold bowtie not Bender) Tj
+1 0 0 1 36 418 Tm (4 clip-bot) Tj
+1 0 0 1 36 400 Tm () Tj
+1 0 0 1 36 382 Tm (PROMPTS improved) Tj
+1 0 0 1 36 364 Tm (PM 2 MOST \(fan-out + talk-to-cursor\)) Tj
+1 0 0 1 36 346 Tm (marketing 2 \(lane + X whitepaper\)) Tj
+1 0 0 1 36 328 Tm (all other named roles 1) Tj
+1 0 0 1 36 310 Tm (clip-bot LEAST \(no clip contract\)) Tj
+1 0 0 1 36 292 Tm () Tj
+1 0 0 1 36 274 Tm (Avatars: PNG missing frontend/docs/media/employees/) Tj
+1 0 0 1 36 256 Tm (Costume sheets only. Gear pin on chest.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001806 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+1874
+%%EOF

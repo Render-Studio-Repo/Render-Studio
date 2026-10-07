@@ -1,0 +1,36 @@
+{
+  "joined": true,
+  "joining": false,
+  "actions": [
+    "public_join"
+  ],
+  "moves": [],
+  "statuses": [
+    {
+      "kind": "ok",
+      "message": "Connecting to public room\u2026"
+    },
+    {
+      "kind": "ok",
+      "message": "Connected to public room"
+    }
+  ],
+  "panelPosition": [
+    0,
+    1.4,
+    -1
+  ],
+  "pageErrors": [],
+  "backgroundClickStationary": true,
+  "source": "Real viewport selection functions and lobby module; authenticated public-origin WebSocket. No chat, poses or robot commands sent.",
+  "editor": {
+    "editorStarted": true,
+    "pageErrors": [],
+    "piRequestsWithoutEnable": [],
+    "appModule": "/studio/app.js?v=20260915-menuroom1-20260915-pitriggerviser2-20260915-pistopsave1-20260915-picontrols1-20260915-landiscovery2-20260915-load-resources2"
+  },
+  "automatedTests": {
+    "nodePassed": 56,
+    "backendPassed": 4
+  }
+}

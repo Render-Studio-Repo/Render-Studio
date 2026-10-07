@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-label="Render VR headset with rotating gear, growing to twice its size in three seconds">
+<defs>
+<linearGradient id="shell" x2="0.2" y2="1"><stop stop-color="#536273"/><stop offset=".22" stop-color="#202d3c"/><stop offset=".55" stop-color="#101720"/><stop offset="1" stop-color="#02050a"/></linearGradient>
+<linearGradient id="steel" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#f6fcff"/><stop offset=".23" stop-color="#8899aa"/><stop offset=".4" stop-color="#e0e8ef"/><stop offset=".56" stop-color="#697a8d"/><stop offset=".77" stop-color="#d6e0e9"/><stop offset="1" stop-color="#506477"/></linearGradient>
+<linearGradient id="glass" x2=".2" y2="1"><stop stop-color="#193b55"/><stop offset=".5" stop-color="#081522"/><stop offset="1" stop-color="#02070e"/></linearGradient>
+<radialGradient id="light"><stop stop-color="#008dde" stop-opacity=".28"/><stop offset="1" stop-color="#008dde" stop-opacity="0"/></radialGradient>
+<filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<g transform="translate(540 540)"><g>
+<animateTransform attributeName="transform" type="scale" values="0.5;1;1;0.5" keyTimes="0;0.75;0.9999;1" dur="4s" repeatCount="indefinite"/>
+<!-- A three-second zoom, one-second hold, then restart. -->
+<ellipse rx="430" ry="350" fill="url(#light)"/>
+<!-- overhead and side straps -->
+<path d="M-214-111 C-211-340 211-340 214-111" fill="none" stroke="#090f18" stroke-width="67"/>
+<path d="M-214-111 C-211-340 211-340 214-111" fill="none" stroke="#607185" stroke-width="4"/>
+<path d="M-355-49 C-483-82-483 106-352 123 M355-49 C483-82 483 106 352 123" fill="none" stroke="#162230" stroke-width="47"/>
+<path d="M-355-49 C-483-82-483 106-352 123 M355-49 C483-82 483 106 352 123" fill="none" stroke="#64788b" stroke-width="3"/>
+<!-- main headset shell -->
+<path d="M-288-171 Q-378-165-384-74 L-369 115 Q-361 192-275 204 L-122 215 Q-78 211-55 167 Q0 118 55 167 Q78 211 122 215 L275 204 Q361 192 369 115 L384-74 Q378-165 288-171 Q0-214-288-171Z" fill="url(#shell)" stroke="#8ba2b6" stroke-width="5"/>
+<path d="M-281-143 Q-347-142-353-75 L-337 98 Q-332 151-272 162 L-117 174 Q0 69 117 174 L272 162 Q332 151 337 98 L353-75 Q347-142 281-143 Q0-180-281-143Z" fill="url(#glass)" stroke="#21bfff" stroke-width="3"/>
+<path d="M-280-130 Q0-166 280-130" fill="none" stroke="#a1e9ff" stroke-width="2" opacity=".5"/>
+<!-- physical cameras -->
+<g fill="#030710" stroke="#516c80" stroke-width="3"><circle cx="-284" cy="7" r="24"/><circle cx="284" cy="7" r="24"/></g>
+<g fill="#096394" stroke="#4cd9ff"><circle cx="-284" cy="7" r="11"/><circle cx="284" cy="7" r="11"/></g>
+<!-- Render emblem inside visor: independently spinning gear -->
+<g transform="translate(-27 -13)"><g fill="url(#steel)" stroke="#8bdcff" stroke-width="2">
+<animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3s" repeatCount="indefinite"/>
+<rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(0)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(30)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(60)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(90)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(120)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(150)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(180)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(210)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(240)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(270)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(300)"/><rect x="-14" y="-119" width="28" height="39" rx="4" transform="rotate(330)"/>
+<circle r="99"/><circle r="77" fill="#081421"/><circle r="67" fill="none" stroke="#00caff" stroke-width="5"/>
+</g>
+<!-- stout foreground R -->
+<path d="M-45-96 H65 Q128-96 128-40 Q128-1 89 13 L139 89 H77 L29 17 H7 V89 H-45Z M7-52 V-22 H60 Q77-22 77-37 Q77-52 60-52Z" fill="#02060b" stroke="#03101b" stroke-width="12" transform="translate(5 7)" fill-rule="evenodd"/>
+<path d="M-45-96 H65 Q128-96 128-40 Q128-1 89 13 L139 89 H77 L29 17 H7 V89 H-45Z M7-52 V-22 H60 Q77-22 77-37 Q77-52 60-52Z" fill="url(#steel)" stroke="#def5ff" stroke-width="2.5" fill-rule="evenodd"/>
+</g>
+<!-- electrical pulses in visor -->
+<g fill="none" stroke="#37d6ff" stroke-width="2" filter="url(#glow)">
+<path d="M-244 65 L-211 65-195 46-163 46 M162-61 L187-61 199-83 238-83 M-233-76 L-207-76-193-92-158-92 M167 62 L190 62 207 81 249 81"/>
+<path d="M-171-35 l-17 17 12 8-23 24 M171-15 l19 17-10 13 22 16"><animate attributeName="opacity" values="1;.25;1;.6;1" dur=".7s" repeatCount="indefinite"/></path>
+</g>
+<text x="0" y="259" text-anchor="middle" fill="#c1dbea" font-family="Arial,sans-serif" font-size="25" font-weight="700" letter-spacing="9">RENDER VR</text>
+<g fill="#02060c"><rect x="-252" y="178" width="45" height="7" rx="3"/><rect x="207" y="178" width="45" height="7" rx="3"/></g>
+</g></g></svg>

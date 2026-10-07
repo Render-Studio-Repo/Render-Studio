@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marketplace roadmap — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1" />
+  <link rel="stylesheet" href="/marketplace/marketplace-roadmap.css?v=20261001-1" />
+</head>
+<body class="info-page marketplace-roadmap-page">
+  <main class="marketplace-roadmap">
+    <a class="marketplace-roadmap-back" href="/marketplace.html">← Marketplace</a>
+    <header>
+      <p class="marketplace-roadmap-kicker">Marketplace preview</p>
+      <h1>Building the marketplace for robotics work</h1>
+      <p>The marketplace is still in development. This is the direction we are building toward, not a promise that every capability is available today.</p>
+    </header>
+    <section class="marketplace-roadmap-grid">
+      <article><span>01</span><h2>Creators and reusable work</h2><p>Publish models, CAD generators, robot assets, skills, knowledge packs, electronics references, and complete project templates. Creator profiles, reviews, licensing, version history, and seller payouts will make reusable work easier to trust and maintain.</p></article>
+      <article><span>02</span><h2>Verified robotics assets</h2><p>Listings should expose supported robots, machines, formats, dependencies, licenses, safety assumptions, and validation evidence. Verified badges will reflect reproducible checks rather than marketing claims.</p></article>
+      <article><span>03</span><h2>Paid cloud simulation compute</h2><p>Teams will be able to purchase bounded cloud jobs for robot simulation, policy evaluation, synthetic data generation, and heavier CAD or mesh processing. Every job should show its estimated cost, limits, artifacts, logs, and completion state before more compute is charged.</p></article>
+      <article><span>04</span><h2>Connected open-source instances</h2><p>Independent Render installations can browse approved public listings through limited APIs. Identity, paid entitlements, platform fees, premium downloads, abuse controls, and seller payouts remain enforced by Render’s hosted control plane.</p></article>
+      <article><span>05</span><h2>Safe purchasing and support</h2><p>Planned commerce includes clear license terms, compatibility declarations, secure checkout, refund policies, seller support, update notices, reporting, and revocation for unsafe or misleading listings.</p></article>
+      <article><span>06</span><h2>Community-shaped priorities</h2><p>Builders can tell us which robot platforms, simulation workloads, file formats, integrations, and seller tools matter first. Suggestions are reviewed as product input, not treated as automatic commitments.</p></article>
+    </section>
+    <section class="marketplace-inquiry" id="marketplace-inquiry">
+      <div><p class="marketplace-roadmap-kicker">Help shape it</p><h2>Suggestion or marketplace inquiry</h2><p>Tell us what you want to sell, buy, simulate, or integrate. Your message is saved to the Render management inbox and emailed from info@render3d.app to sam@render3d.app.</p></div>
+      <form id="marketplace-inquiry-form">
+        <label>Type<select name="kind"><option value="idea">Marketplace suggestion</option><option value="business">Seller or business inquiry</option></select></label>
+        <label>Message<textarea name="message" rows="6" minlength="4" maxlength="4000" required placeholder="What should the marketplace support?"></textarea></label>
+        <button type="submit">Send to Render</button>
+        <p id="marketplace-inquiry-status" role="status"></p>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/marketplace/marketplace-roadmap.js?v=20261001-1"></script>
+</body>
+</html>

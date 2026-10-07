@@ -1,0 +1,153 @@
+{
+  "browserRegression": {
+    "checks": [
+      "Manual import enables room visibility",
+      "Stale room response cannot delete newly imported OpenArm",
+      "Imported geometry and live scene handshake are ready",
+      "A room member receives robot geometry without enabling teleop",
+      "Disconnected viewer reconnects even after a late server status",
+      "Placement updates match for owner and guest",
+      "Live joint transforms reach the guest",
+      "Owner reconnects to the same scene identity",
+      "Leaving the room removes remote robot geometry",
+      "Closing VR cancels a late room response",
+      "Missing server scene is recreated once and remains shared",
+      "Recovery preserves the robot placement"
+    ],
+    "passed": true,
+    "statuses": [
+      [
+        "error",
+        "Live robot disconnected. Reconnecting\u2026"
+      ],
+      [
+        "error",
+        "Live robot disconnected. Reconnecting\u2026"
+      ]
+    ],
+    "source": "Real Three.js and workspace/Viser renderer with mocked API and WebSockets; no robot commands.",
+    "pageErrors": []
+  },
+  "twoBrowserLivePi": {
+    "owner": {
+      "id": "30e885f5aff44770a7a9eb8e09055be4",
+      "meshes": 22,
+      "nodes": 145,
+      "shared": true,
+      "connected": true,
+      "pose": [
+        0,
+        0.75,
+        -0.75
+      ],
+      "errors": []
+    },
+    "guest": {
+      "id": "30e885f5aff44770a7a9eb8e09055be4",
+      "meshes": 22,
+      "nodes": 145,
+      "shared": true,
+      "connected": true,
+      "pose": [
+        0,
+        0.75,
+        -0.75
+      ],
+      "errors": []
+    },
+    "reconnect": {
+      "id": "30e885f5aff44770a7a9eb8e09055be4",
+      "pose": [
+        0.25,
+        0.8,
+        -0.75
+      ],
+      "sockets": 2
+    },
+    "guestAfterOwnerReconnect": {
+      "connected": true,
+      "pose": [
+        0.25,
+        0.8,
+        -0.75
+      ]
+    },
+    "pageErrors": [],
+    "scope": "Two isolated browser clients, real backend scene and asset routes, read-only live Pi Viser geometry; test room identities; no control or motion commands."
+  },
+  "publicOriginImport": {
+    "statuses": [],
+    "robots": 1,
+    "descriptor": {
+      "id": "5603e3e8d82041a1bf7a5e69c094264c",
+      "owner": "6500dec9-c06",
+      "owner_name": "Sam W",
+      "share": true,
+      "emotes_shared": false,
+      "cameras_shared": false,
+      "pose": {
+        "position": [
+          0,
+          0.75,
+          -0.75
+        ],
+        "quaternion": [
+          -0.06622725767146541,
+          0,
+          0,
+          0.9978045652036861
+        ],
+        "scale": 0.55
+      },
+      "status": "live",
+      "error": ""
+    },
+    "nodes": 145,
+    "meshes": 22,
+    "labels": [
+      "Join public room to share OpenArm",
+      "Choose room robot",
+      "Room visibility \u00b7 on",
+      "Let room users play emotes \u00b7 off",
+      "Share both hand cameras \u00b7 off",
+      "Both hand cameras \u00b7 one window",
+      "Emotes \u00b7 X",
+      "Save current paused pose",
+      "Save edited target",
+      "Saved target presets",
+      "manipulation.obstacles \u00b7 true",
+      "Scene grid \u00b7 true",
+      "Robot display \u00b7 Visual",
+      "left_arm",
+      "right_arm",
+      "both_arms",
+      "Preset \u00b7 Select preset...",
+      "Next plan speed \u00b7 1",
+      "Planning mode \u00b7 Joint space",
+      "Plan (unavailable)",
+      "Preview (unavailable)",
+      "Execute (unavailable)",
+      "Clear plan",
+      "left_arm/openarm_left_joint1 \u00b7 0",
+      "left_arm/openarm_left_joint2 \u00b7 0",
+      "left_arm/openarm_left_joint3 \u00b7 0",
+      "left_arm/openarm_left_joint4 \u00b7 0",
+      "left_arm/openarm_left_joint5 \u00b7 0",
+      "left_arm/openarm_left_joint6 \u00b7 0",
+      "left_arm/openarm_left_joint7 \u00b7 0"
+    ],
+    "pageErrors": []
+  },
+  "editor": {
+    "editorStarted": true,
+    "pageErrors": [],
+    "piRequestsWithoutEnable": [],
+    "appModule": "/studio/app.js?v=20260915-viserroom2-20260915-menuroom1-20260915-pitriggerviser2-20260915-pistopsave1-20260915-picontrols1-20260915-landiscovery2-2026"
+  },
+  "tests": {
+    "nodePassed": 56,
+    "roboticsBackendPassed": 8,
+    "roomRelayPassed": 4
+  },
+  "headsetChecks": "Physical Quest controls, resume, and simultaneous headsets remain unverified."
+}

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Database configuration — Render Studio Docs</title>
+  <meta name="description" content="Connect your Supabase project or store Render Studio users locally. Copy SQL and the harness prompt for a self-hosted instance." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:title" content="Database configuration — Render Studio Docs" />
+  <meta property="og:description" content="Connect your Supabase project or keep sqlite local users. Service role never goes in the browser." />
+  <meta property="og:url" content="https://render3d.app/database.html" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/getting-started-hero.css?v=20260914-docslayout1-lanip1-docui1-docui2" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/setup-instance.css?v=20260914-installsb1-dbgtrain1b" />
+</head>
+<body class="info-page docs-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab active" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+      <div class="toolbar-spacer"></div>
+      <button type="button" id="btn-auth" class="btn-auth" title="Sign in" aria-label="Sign in">
+        <span class="auth-icon" aria-hidden="true">👤</span>
+        <span id="auth-avatar" class="auth-avatar hidden" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main class="info-main docs-main">
+      <article class="info-content docs-content" id="database-configuration">
+        <header class="info-hero docs-hero">
+          <div class="gs-hero-banner gs-hero-banner--plain">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker">Docs · Self-host</p>
+              <img class="docs-chrome-wordmark" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="Render Studio" width="979" height="148" decoding="async" />
+              <h2 class="gs-hero-title">Database configuration</h2>
+              <p class="gs-hero-lead">
+                Point this clone at <strong>your</strong> Supabase (passwords and AI keys off the box, RLS)
+                or keep the old sqlite file. Service role never goes in the browser.
+              </p>
+              <div class="docs-hero-actions gs-hero-actions">
+                <a class="btn accent" href="#setup-form">Connect your database</a>
+                <a class="btn secondary" href="https://supabase.com/dashboard/new" target="_blank" rel="noopener noreferrer">Create a Supabase project</a>
+                <a class="btn secondary" href="/setup.html">First-run install</a>
+              </div>
+            </div>
+            <img class="docs-hero-gear" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="168" height="168" decoding="async" aria-hidden="true" />
+            <a class="docs-hero-github" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+              <span class="docs-hero-github-copy">
+                <strong>Interested in contributing?</strong>
+                <small>Developers welcome on GitHub</small>
+              </span>
+            </a>
+          </div>
+          <nav class="docs-category-tabs gs-hero-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab docs-category-tab--started" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+            <a class="docs-category-tab active" href="/database.html">Database configuration</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="/getting-started.html#tips-library-20260915-xrdispatch4">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+          </nav>
+        </header>
+
+        <div class="setup-page setup-page--docs">
+          <p class="setup-kicker">Self-host install</p>
+          <h3>Where should this instance store users?</h3>
+          <p class="setup-lead">
+            Downloaders connect <strong>their</strong> Supabase project, or keep the old local sqlite file.
+            Service role / PAT are posted only to this origin and written to gitignored <code>.env</code> — never to the browser bundle.
+            The same connect flow also lives at <a href="/setup.html">/setup.html</a>.
+          </p>
+          <p class="setup-meta">
+            Backend now: <code id="setup-backend">…</code>
+            · Users rows: <span id="setup-count">—</span>
+            · Save: <span id="setup-unlocked">…</span>
+          </p>
+          <p class="setup-status" id="setup-status"></p>
+
+          <section class="setup-card" id="why-supabase">
+            <h3>Don’t have a project yet?</h3>
+            <p>Supabase is safer for a shared instance: password hashes and Fernet-wrapped AI keys live behind RLS, not only in <code>data/render3d.db</code> on the box. Rotate keys in the dashboard without copying sqlite around.</p>
+            <ul class="setup-why">
+              <li>Create a free project at <a href="https://supabase.com/dashboard/new" target="_blank" rel="noopener noreferrer">supabase.com/dashboard/new</a>.</li>
+              <li>Project Settings → API: copy the Project URL and <strong>service_role</strong> (server only). Publishable/anon is optional here.</li>
+              <li>Paste them below, apply the SQL, then Connect.</li>
+            </ul>
+          </section>
+
+          <section class="setup-card">
+            <h3>Connect your Supabase</h3>
+            <p>Origin-only. The service_role field is a password input and is cleared after a successful save.</p>
+            <form id="setup-form" class="setup-fields" autocomplete="off">
+              <label>SUPABASE_URL
+                <input name="url" type="url" required placeholder="https://YOUR_PROJECT_REF.supabase.co" autocomplete="off" />
+              </label>
+              <label>Publishable / anon key (optional)
+                <input name="publishable_key" type="text" placeholder="sb_publishable_… or anon JWT" autocomplete="off" />
+              </label>
+              <label>Service role (server only, required)
+                <input name="service_role_key" type="password" required placeholder="YOUR_SERVICE_ROLE_KEY" autocomplete="new-password" />
+              </label>
+              <label>Secret key alias (optional if service role is set)
+                <input name="secret_key" type="password" placeholder="sb_secret_… or same as service role" autocomplete="new-password" />
+              </label>
+              <label>Management PAT (optional — applies SQL for you)
+                <input name="access_token" type="password" placeholder="sbp_… optional" autocomplete="new-password" />
+              </label>
+              <div class="setup-actions">
+                <button type="submit" class="btn accent">Connect database</button>
+              </div>
+              <p class="setup-status" id="connect-status"></p>
+            </form>
+          </section>
+
+          <section class="setup-card">
+            <h3>Just created the project? Apply our table settings</h3>
+            <p>Same CREATE TABLE + RLS + grants this repo uses. Dashboard → SQL Editor, or:</p>
+            <p><code id="setup-copy-cmd">psql "$DATABASE_URL" -f integrations/supabase/install_users.sql</code>
+              <button type="button" class="btn secondary" id="btn-copy-cmd">Copy command</button>
+            </p>
+            <div class="setup-actions">
+              <button type="button" class="btn secondary" id="btn-copy-sql">Copy SQL</button>
+              <button type="button" class="btn secondary" id="btn-copy-prompt">Copy harness prompt</button>
+            </div>
+            <p class="muted small">SQL lives at <code>integrations/supabase/install_users.sql</code>. Prompt: <code>integrations/supabase/HARNESS_PROMPT.md</code>.</p>
+            <pre class="setup-pre" id="setup-sql"></pre>
+            <h3>Prompt for Cursor / Codex</h3>
+            <pre class="setup-pre" id="setup-prompt"></pre>
+          </section>
+
+          <section class="setup-card" id="setup-telemetry-card">
+            <h3>Help improve Render</h3>
+            <p id="setup-telemetry-lead">
+              We actually listen to what the community hits. Opt in and this clone only uploads
+              <strong>that issue’s traceback</strong> plus a <strong>system feature check</strong>
+              (which features were ok / broken). No prompts, no project files, no API keys.
+            </p>
+            <p>
+              Those packets train Grok to match the same bug across servers and to open or fix
+              GitHub issues on its own — traceback id + instance id, not a dump of your machine.
+            </p>
+            <p class="setup-meta" id="setup-telemetry-id"></p>
+            <div class="setup-actions" id="setup-telemetry-actions" hidden>
+              <button type="button" class="btn accent" id="btn-telemetry-yes">Share debug logs</button>
+              <button type="button" class="btn secondary" id="btn-telemetry-no">Keep logs on this machine</button>
+            </div>
+            <p class="setup-status" id="telemetry-status"></p>
+          </section>
+
+          <section class="setup-card">
+            <h3>Store it locally</h3>
+            <p>Old method: sqlite <code>data/render3d.db</code> for users, bcrypt passwords, and Fernet AI keys. Fine for a single laptop. Sets <code>USERS_BACKEND=local</code>.</p>
+            <div class="setup-actions">
+              <button type="button" class="btn secondary" id="btn-local">Store it locally</button>
+            </div>
+            <p class="setup-status" id="local-status"></p>
+          </section>
+
+          <section class="setup-card">
+            <h3>Not Supabase? Other databases</h3>
+            <p>
+              This app’s user table is sqlite (<code>backend/database.py</code>) or Supabase <code>public."Users"</code>
+              (<code>backend/services/supabase_users_store.py</code>). Optional env <code>DATABASE_URL</code> is for your own
+              Postgres tooling — the origin does not auto-map Users onto a generic SQLAlchemy URL yet. Point those two modules
+              if you bring your own Postgres.
+            </p>
+            <p><a href="/getting-started.html">Getting Started</a> · <a href="/docs.html#quick-start">Docs quick start</a> · <a href="/setup.html">First-run install</a> · <a href="/setup-marketplace.html">Marketplace install</a></p>
+          </section>
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <a class="docs-credibility-corner" href="/credibility.html">Credibility</a>
+
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/setup-instance.js?v=20261006-ecosystem1"></script>
+  <script type="module" src="/site/docs-agent.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

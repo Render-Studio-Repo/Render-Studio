@@ -1,0 +1,118 @@
+{
+  "checks": [
+    "capture/history anchor follows actual left grip",
+    "capture folder starts collapsed",
+    "small Capture, Undo and Redo are available on left wrist",
+    "record, share and passthrough live inside folder",
+    "duplicate legacy recording strip stays hidden",
+    "left wrist undo is clickable",
+    "left wrist redo is clickable",
+    "wrist history buttons dispatch existing undo/redo actions",
+    "right trigger ray targets left Capture folder",
+    "click expands controller popup",
+    "expanded folder exposes capture/share/passthrough actions",
+    "left wrist capture follows translated controller without freezing",
+    "recording shows Pause and Stop in same popup",
+    "folder can collapse during recording without floating buttons",
+    "recording controls remain accessible when reopened",
+    "finished clip actions stay inside folder",
+    "selecting Draw opens tool options immediately",
+    "Draw options follow actual right grip",
+    "Draw popup cannot inherit hidden controller-model visibility",
+    "Draw brush options are visible",
+    "active Draw popup restores visibility after external tracking/hide updates",
+    "Draw popup tracks subsequent controller movement",
+    "right controller left flick dispatches Undo in the viewport",
+    "return motion does not accidentally redo",
+    "right controller right flick dispatches Redo in the viewport",
+    "controller keeps physical material, texture and normal detail",
+    "controller body keeps correct surface occlusion",
+    "controller is not overbright emissive white",
+    "controller material is prepared once, not rebuilt per frame",
+    "recorded controller model uses current grip pose independent of target ray",
+    "recording viewpoint uses eye midpoint instead of left-eye offset",
+    "recording projection matches video aspect without stretching controller positions",
+    "live controller surface controller_mesh: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"root\"}",
+    "live controller surface x_button: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"x_button_pressed_value\"}",
+    "live controller surface squeeze: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_squeeze_pressed_value\"}",
+    "live controller surface thumbstick: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_thumbstick_yaxis_pressed_value\"}",
+    "live controller surface trigger: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_trigger_pressed_value\"}",
+    "live controller surface y_button: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"y_button_pressed_value\"}",
+    "live controller surface a_button: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"a_button_pressed_value\"}",
+    "live controller surface b_button: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"b_button_pressed_value\"}",
+    "live controller surface controller_mesh: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"root\"}",
+    "live controller surface squeeze: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_squeeze_pressed_value\"}",
+    "live controller surface thumbstick: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_thumbstick_yaxis_pressed_value\"}",
+    "live controller surface trigger: {\"ready\":true,\"depth\":true,\"emit\":0,\"type\":\"MeshStandardMaterial\",\"parent\":\"xr_standard_trigger_pressed_value\"}",
+    "wrist background fills lower-left quadrant instead of a transparent white triangle"
+  ],
+  "count": 45,
+  "threeRevision": "172",
+  "passed": true,
+  "logs": [
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x13c004d5400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x13c004d5400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x13c004d5400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "kind": "warning",
+      "text": "[.WebGL-0x13c004d5400]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    },
+    {
+      "kind": "warning",
+      "text": "Could not find menu_pressed_min in the model"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    },
+    {
+      "kind": "warning",
+      "text": "[viewport-xr] voice NotFoundError: Requested device not found"
+    }
+  ]
+}

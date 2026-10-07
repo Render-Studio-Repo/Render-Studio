@@ -1,0 +1,402 @@
+"""Render shim: run gen_urdf() from CAD Python (Jake 0.5 dropped this CLI)."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import inspect
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+import xml.etree.ElementTree as ET
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+from contextlib import contextmanager as _cm
+from dataclasses import dataclass as _dc
+
+@_dc(frozen=True)
+class GenerationOutput:
+    path: Path
+    kind: str
+
+@_cm
+def track_generation_run(*, source_path, generator, outputs):
+    yield
+
+def python_source_identity(path):
+    return {"path": str(path)}
+
+def xml_with_text_to_cad_metadata(xml, identity, *, output_path=None, source_path=None):
+    return xml
+
+from urdf.source import read_urdf_source
+from urdf.cad_globals import seed_cad_runtime_globals
+
+
+@dataclass(frozen=True)
+class _TargetSpec:
+    source_path: Path
+    output_path: Path
+
+
+def generate_urdf_targets(targets: Sequence[str], *, output: str | Path | None = None) -> int:
+    target_specs = _resolve_target_specs(targets, output=output)
+    _validate_unique_outputs(target_specs)
+    for target_spec in target_specs:
+        _generate_target(target_spec.source_path, output_path=target_spec.output_path)
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="urdf",
+        description="Generate explicit URDF targets from Python sources.",
+    )
+    parser.add_argument(
+        "targets",
+        nargs="+",
+        help="Explicit Python source file or SOURCE.py=OUTPUT.urdf pair defining gen_urdf() to generate.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        metavar="PATH",
+        help="Write the generated URDF file to this path. Valid only with one plain Python target.",
+    )
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    if args.output is not None:
+        if _targets_include_output_pairs(args.targets):
+            parser.error("--output cannot be combined with SOURCE=OUTPUT targets")
+        if len(args.targets) != 1:
+            parser.error("--output can only be used with exactly one target")
+    return generate_urdf_targets(args.targets, output=args.output)
+
+
+def _resolve_target_specs(targets: Sequence[str], *, output: str | Path | None = None) -> list[_TargetSpec]:
+    if output is not None and _targets_include_output_pairs(targets):
+        raise ValueError("urdf --output cannot be combined with SOURCE=OUTPUT targets")
+    if output is not None and len(targets) != 1:
+        raise ValueError("urdf --output can only be used with exactly one target")
+
+    specs: list[_TargetSpec] = []
+    for raw_target in targets:
+        target_text = str(raw_target or "").strip()
+        if "=" in target_text:
+            raw_source, raw_output = target_text.split("=", 1)
+            source_path = _resolve_source_path(raw_source)
+            output_path = _resolve_cli_output_path(raw_output)
+        else:
+            source_path = _resolve_source_path(target_text)
+            output_path = _resolve_cli_output_path(output) if output is not None else source_path.with_suffix(".urdf")
+        specs.append(_TargetSpec(source_path=source_path, output_path=output_path))
+    return specs
+
+
+def _resolve_source_path(raw_source: object) -> Path:
+    value = str(raw_source or "").strip()
+    if not value:
+        raise ValueError("urdf target source must be a non-empty path")
+    source_path = Path(value).expanduser()
+    return source_path.resolve() if source_path.is_absolute() else (Path.cwd() / source_path).resolve()
+
+
+def _resolve_cli_output_path(raw_output: object) -> Path:
+    value = str(raw_output or "").strip()
+    if not value:
+        raise ValueError("urdf output must be a non-empty path")
+    if "\\" in value:
+        raise ValueError("urdf output must use POSIX '/' separators")
+    output_path = Path(value).expanduser()
+    resolved = output_path.resolve() if output_path.is_absolute() else (Path.cwd() / output_path).resolve()
+    if resolved.suffix.lower() != ".urdf":
+        raise ValueError("urdf output must end in .urdf")
+    return resolved
+
+
+def _targets_include_output_pairs(targets: Sequence[str]) -> bool:
+    return any("=" in str(target or "") for target in targets)
+
+
+def _validate_unique_outputs(target_specs: Sequence[_TargetSpec]) -> None:
+    seen: dict[Path, Path] = {}
+    for target_spec in target_specs:
+        output_path = target_spec.output_path.resolve()
+        previous = seen.get(output_path)
+        if previous is not None:
+            raise ValueError(f"urdf output path is used more than once: {_display_path(target_spec.output_path)}")
+        seen[output_path] = target_spec.output_path
+
+
+def _generate_target(script_path: Path, *, output_path: Path) -> Path:
+    script_path = script_path.resolve()
+    if script_path.suffix.lower() != ".py":
+        raise ValueError(f"{_display_path(script_path)} must be a Python source file")
+    if not script_path.is_file():
+        raise FileNotFoundError(f"Python source not found: {_display_path(script_path)}")
+
+    with track_generation_run(
+        source_path=script_path,
+        generator="gen_urdf",
+        outputs=[GenerationOutput(output_path, "urdf")],
+    ):
+        return _generate_target_inner(script_path, output_path=output_path)
+
+
+def _generate_target_inner(script_path: Path, *, output_path: Path) -> Path:
+
+    module = _load_generator_module(script_path)
+    generator = getattr(module, "gen_urdf", None)
+    if not callable(generator):
+        raise RuntimeError(f"{_display_path(script_path)} does not define callable gen_urdf()")
+    if inspect.signature(generator).parameters:
+        raise ValueError(f"{_display_path(script_path)} gen_urdf() must not accept arguments")
+
+    payload = _normalize_urdf_payload(generator(), script_path=script_path)
+    _write_urdf_payload(payload, output_path=output_path, script_path=script_path)
+    if not output_path.exists():
+        raise RuntimeError(f"{_display_path(script_path)} did not write {_display_path(output_path)}")
+    read_urdf_source(output_path)
+    return output_path
+
+
+def _load_generator_module(script_path: Path) -> object:
+    module_name = (
+        "_urdf_tool_"
+        + _display_path(script_path).replace("/", "_").replace("\\", "_").replace("-", "_").replace(".", "_")
+    )
+    module_spec = importlib.util.spec_from_file_location(module_name, script_path)
+    if module_spec is None or module_spec.loader is None:
+        raise RuntimeError(f"Failed to load generator module from {_display_path(script_path)}")
+
+    module = importlib.util.module_from_spec(module_spec)
+    original_sys_path = list(sys.path)
+    search_paths = [
+        str(Path.cwd().resolve()),
+        str(script_path.parent),
+    ]
+    for candidate in reversed(search_paths):
+        if candidate not in sys.path:
+            sys.path.insert(0, candidate)
+
+    try:
+        sys.modules[module_name] = module
+        seed_cad_runtime_globals(module, script_path)
+        module_spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = original_sys_path
+
+    return module
+
+
+def _ensure_referenced_links(root: ET.Element) -> None:
+    """AI gen_urdf() often parents joints to base_link without creating the link."""
+    names = {str(el.attrib.get("name") or "").strip() for el in root.findall("link")}
+    names.discard("")
+    needed: set[str] = set()
+    for joint in root.findall("joint"):
+        for tag in ("parent", "child"):
+            el = joint.find(tag)
+            link = str(el.attrib.get("link") if el is not None else "").strip()
+            if link:
+                needed.add(link)
+    for name in sorted(needed - names):
+        ET.SubElement(root, "link", name=name)
+
+
+def _normalize_urdf_payload(raw_payload: object, *, script_path: Path) -> dict[str, object]:
+    # Jake-style generators often return ElementTree; unwrap to the root Element.
+    raw_payload = _coerce_xml_root(raw_payload)
+    if _is_xml_element(raw_payload):
+        _ensure_referenced_links(raw_payload)
+        return {"xml": _coerce_primitive_geometry_attrs(_serialize_xml_element(raw_payload))}
+    if isinstance(raw_payload, str):
+        try:
+            root = ET.fromstring(raw_payload)
+            _ensure_referenced_links(root)
+            return {"xml": _coerce_primitive_geometry_attrs(_serialize_xml_element(root))}
+        except ET.ParseError:
+            return {"xml": raw_payload}
+    if not isinstance(raw_payload, dict):
+        raise TypeError(
+            f"{_display_path(script_path)} gen_urdf() must return a URDF XML root element, XML string, "
+            "or generator envelope dict"
+        )
+    allowed_fields = {"xml"}
+    extra_fields = sorted(str(key) for key in raw_payload if key not in allowed_fields)
+    if extra_fields:
+        joined = ", ".join(extra_fields)
+        raise TypeError(f"{_display_path(script_path)} gen_urdf() envelope has unsupported field(s): {joined}")
+    if "xml" not in raw_payload:
+        raise TypeError(f"{_display_path(script_path)} gen_urdf() envelope must define 'xml'")
+    payload = dict(raw_payload)
+    payload["xml"] = _normalize_xml_value(payload["xml"], script_path=script_path, label="gen_urdf() envelope field 'xml'")
+    return payload
+
+
+def _write_urdf_payload(payload: dict[str, object], *, output_path: Path, script_path: Path) -> None:
+    xml = payload.get("xml")
+    if not isinstance(xml, str):
+        raise TypeError(
+            f"{_display_path(script_path)} gen_urdf() envelope field 'xml' must be a string, "
+            f"got {type(xml).__name__}"
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    identity = python_source_identity(script_path)
+    xml = xml_with_text_to_cad_metadata(xml, identity, output_path=output_path, source_path=script_path)
+    text = xml if xml.endswith("\n") else xml + "\n"
+    output_path.write_text(text, encoding="utf-8")
+    print(f"Wrote URDF: {output_path}")
+
+
+def _normalize_xml_value(raw_xml: object, *, script_path: Path, label: str) -> str:
+    raw_xml = _coerce_xml_root(raw_xml)
+    if _is_xml_element(raw_xml):
+        _ensure_referenced_links(raw_xml)
+        xml = _serialize_xml_element(raw_xml)
+    elif isinstance(raw_xml, str):
+        xml = raw_xml
+    else:
+        raise TypeError(
+            f"{_display_path(script_path)} {label} must be an xml.etree.ElementTree.Element "
+            f"(or ElementTree), or string, got {type(raw_xml).__name__}"
+        )
+    return _coerce_primitive_geometry_attrs(xml)
+
+
+def _coerce_primitive_geometry_attrs(xml_text: str) -> str:
+    """Fix common AI mistakes: <box><size>x y z</size></box> → <box size="x y z"/>.
+
+    URDF requires size/radius/length as attributes, not child elements.
+    """
+    text = str(xml_text or "")
+    if not text.strip():
+        return text
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        # Keep original; downstream validation will report the parse error.
+        return text
+
+    changed = False
+    for geom_tag, attr_names in (
+        ("box", ("size",)),
+        ("cylinder", ("radius", "length")),
+        ("sphere", ("radius",)),
+    ):
+        for element in root.iter(geom_tag):
+            for attr_name in attr_names:
+                if str(element.attrib.get(attr_name) or "").strip():
+                    continue
+                child = element.find(attr_name)
+                if child is None:
+                    continue
+                value = str(child.text or "").strip()
+                if not value:
+                    continue
+                element.set(attr_name, value)
+                element.remove(child)
+                changed = True
+            # Drop empty leftover text-only children that some generators leave behind.
+            for child in list(element):
+                if child.tag in attr_names and not str(child.attrib) and not list(child):
+                    # Already handled above when value was present; remove empty shells.
+                    if not str(child.text or "").strip():
+                        element.remove(child)
+                        changed = True
+
+    for inertia in root.iter("inertia"):
+        def _f(key: str) -> float:
+            raw = str(inertia.attrib.get(key) or "").strip()
+            try:
+                return float(raw) if raw else 0.0
+            except ValueError:
+                return 0.0
+
+        ixx, iyy, izz = _f("ixx"), _f("iyy"), _f("izz")
+        ixy, ixz, iyz = _f("ixy"), _f("ixz"), _f("iyz")
+        for key, value in (("ixx", ixx), ("iyy", iyy), ("izz", izz)):
+            if value <= 0:
+                inertia.set(key, "1e-6")
+                if key == "ixx":
+                    ixx = 1e-6
+                elif key == "iyy":
+                    iyy = 1e-6
+                else:
+                    izz = 1e-6
+                changed = True
+        # AI often swaps (ixx,iyy,izz,…) into (ixx,ixy,ixz,…) so products are huge.
+        if (
+            ixx * iyy < ixy * ixy
+            or ixx * izz < ixz * ixz
+            or iyy * izz < iyz * iyz
+        ):
+            inertia.set("ixy", "0")
+            inertia.set("ixz", "0")
+            inertia.set("iyz", "0")
+            changed = True
+
+    for link in root.findall("link"):
+        stray = [child for child in list(link) if child.tag == "origin"]
+        if not stray:
+            continue
+        inertial = link.find("inertial")
+        if inertial is not None and inertial.find("origin") is None:
+            inertial.insert(0, stray[0])
+            link.remove(stray[0])
+            stray = stray[1:]
+            changed = True
+        for extra in stray:
+            link.remove(extra)
+            changed = True
+
+    if not changed:
+        return text
+    # Preserve XML declaration if the input had one.
+    body = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    if text.lstrip().startswith("<?xml"):
+        return f'<?xml version="1.0"?>\n{body}'
+    return body
+
+
+def _is_xml_element(value: object) -> bool:
+    return isinstance(value, ET.Element)
+
+
+def _coerce_xml_root(value: object) -> object:
+    """Accept ElementTree the same way Jake-style scripts often return it."""
+    if isinstance(value, ET.ElementTree):
+        root = value.getroot()
+        return root if root is not None else value
+    # Duck-type other ElementTree-like objects (e.g. lxml) that expose getroot().
+    getroot = getattr(value, "getroot", None)
+    if callable(getroot) and not _is_xml_element(value) and not isinstance(value, (str, dict, bytes)):
+        try:
+            root = getroot()
+        except Exception:
+            return value
+        if _is_xml_element(root):
+            return root
+    return value
+
+
+def _serialize_xml_element(root: ET.Element) -> str:
+    ET.indent(root, space="  ")
+    body = ET.tostring(root, encoding="unicode", short_empty_elements=True)
+    return f'<?xml version="1.0"?>\n{body}'
+
+
+def _display_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "checks": [
+    "2D schematic load preserves actual pin coordinates, wire specifications, route data",
+    "3D opens inside wiring workspace without CAD model or project",
+    "Supplied physical pins and route are respected",
+    "Linked schematic appears in inspector context",
+    "Missing physical anchors and wire gauge remain explicitly unknown",
+    "Highlighting preserves endpoints and route geometry",
+    "Next wire selects actual metadata and dispatches wiring-selection",
+    "AR prepares the exact wiring group before requesting immersive-ar",
+    "Schematic returns with original canvas preserved",
+    "Mouse hovering and clicking real 3D wire geometry shows and retains wire info",
+    "Transformed/scaled CAD root applies physical pin coordinates exactly once",
+    "XR mounts wiring-only geometry with real unit conversion and hides the source copy",
+    "XR ray selects wire metadata and dispatches contextual selection event",
+    "XR exit restores original visibility and releases only owned geometry/materials",
+    "Physical-contact single-hand grip freely moves and rotates wiring for AR alignment",
+    "AR remains at 1:1 scale and inspector follows assembly placement",
+    "Native documentation button opens desktop source sheet with exact links"
+  ],
+  "count": 17,
+  "pageErrors": []
+}

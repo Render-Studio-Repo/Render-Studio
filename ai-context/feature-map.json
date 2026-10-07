@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-06T22:00:00.000Z",
+  "updated_at": "2026-10-06T23:40:00.000Z",
   "policy": {
     "source_of_truth": true,
     "preflight": "node scripts/feature-map.mjs preflight --changed <paths>",
@@ -9,11 +9,91 @@
   },
   "features": [
     {
+      "id": "release.public-source",
+      "name": "Complete public Render Studio source release",
+      "lock": "on",
+      "criticality": "high",
+      "contract": "The public branch contains the complete runnable product source and installer while excluding credentials, user data, generated recordings, private deployment profiles, and personal administrator defaults.",
+      "paths": [
+        ".env.example",
+        ".github/",
+        ".gitignore",
+        "Install Render Studio.cmd",
+        "Install Render Studio.command",
+        "README.md",
+        "Start Render Studio.cmd",
+        "Start Render Studio.command",
+        "ai-context/",
+        "backend/",
+        "demos/",
+        "deploy/",
+        "docs/",
+        "extensions/",
+        "frontend/",
+        "integrations/",
+        "mac-render-studio/",
+        "mcp/",
+        "requirements-freeze.txt",
+        "requirements.txt",
+        "scripts/",
+        "server-configurations/",
+        "services/",
+        "snap/",
+        "static/",
+        "supabase/"
+      ],
+      "receipt_ids": [
+        "RCPT-20261006-PUBLIC-FULL-RELEASE"
+      ],
+      "checks": [
+        {
+          "id": "public-release-audit",
+          "argv": [
+            "python3",
+            "scripts/public-release-audit.py"
+          ],
+          "mandatory": true
+        },
+        {
+          "id": "public-installer-contract",
+          "argv": [
+            "python3",
+            "-m",
+            "unittest",
+            "scripts.test-installers",
+            "-v"
+          ],
+          "mandatory": true
+        },
+        {
+          "id": "public-backend-syntax",
+          "argv": [
+            "python3",
+            "-m",
+            "py_compile",
+            "backend/main.py",
+            "backend/config.py",
+            "backend/services/platform_roles_service.py",
+            "backend/services/instance_network_client.py",
+            "backend/services/marketplace_config_service.py",
+            "backend/services/marketplace_hub_client.py",
+            "backend/services/marketplace_catalog_service.py",
+            "backend/routers/marketplace_v2.py"
+          ],
+          "mandatory": true
+        }
+      ],
+      "client_checks": [
+        "Start the public backend and confirm GET /api/health returns status ok.",
+        "Open /setup.html and confirm the first-run account, database, AI access, and instance choices render."
+      ]
+    },
+    {
       "id": "install.desktop-one-click",
       "name": "One-click desktop installation",
       "lock": "on",
       "criticality": "high",
-      "contract": "Windows and macOS users can install Render Studio, create or sign in to a Render account, configure AI access, verify the local service, and start the workspace without manually creating a Python environment.",
+      "contract": "Windows and macOS users can install Render Studio, choose hosted Render login or an independent local setup, configure AI access, verify the local service, and start the workspace without manually creating a Python environment.",
       "paths": [
         ".env.example",
         "Install Render Studio.cmd",
@@ -21,9 +101,9 @@
         "README.md",
         "Start Render Studio.cmd",
         "Start Render Studio.command",
-        "frontend/setup.css",
-        "frontend/setup.html",
-        "frontend/setup.js",
+        "frontend/site/setup.css",
+        "frontend/pages/setup.html",
+        "frontend/site/setup-instance.js",
         "ai-context/feature-map.json",
         "ai-context/ops/README.md",
         "ai-context/ops/debugger/.gitkeep",
@@ -42,12 +122,24 @@
       "checks": [
         {
           "id": "public-installer-contract",
-          "argv": ["python3", "-m", "unittest", "scripts.test-installers", "-v"],
+          "argv": [
+            "python3",
+            "-m",
+            "unittest",
+            "scripts.test-installers",
+            "-v"
+          ],
           "mandatory": true
         },
         {
           "id": "public-installer-shell-syntax",
-          "argv": ["bash", "-n", "Install Render Studio.command", "Start Render Studio.command", "scripts/install-render-studio.sh"],
+          "argv": [
+            "bash",
+            "-n",
+            "Install Render Studio.command",
+            "Start Render Studio.command",
+            "scripts/install-render-studio.sh"
+          ],
           "mandatory": true
         }
       ],

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="320" viewBox="0 0 320 320" role="img" aria-label="Render Studio">
+  <!-- Frozen still of the desktop VR collage: 12-tooth spur + R mark + electricity. No SMIL. -->
+  <title>Render gear mark</title>
+  <defs>
+    <linearGradient id="logoStillMetal" x1="12%" y1="6%" x2="88%" y2="94%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="22%" stop-color="#cbd5e1"/>
+      <stop offset="46%" stop-color="#64748b"/>
+      <stop offset="68%" stop-color="#e2e8f0"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+    <linearGradient id="logoStillBevel" x1="20%" y1="8%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="45%" stop-color="#94a3b8" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="logoStillElecGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="logoStillGearDrop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="#020610" flood-opacity="0.55"/>
+    </filter>
+    <filter id="logoStillMarkGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#22d3ee" flood-opacity="0.7"/>
+    </filter>
+  </defs>
+  <g filter="url(#logoStillGearDrop)">
+    <g transform="translate(5 6)" opacity="0.55">
+      <path fill="#0b1220" d="M148.08 46.62 Q149.38 29.43 151.48 12.25 A148.0 148.0 0 0 1 168.52 12.25 Q170.62 29.43 171.92 46.62 A114.0 114.0 0 0 1 206.37 55.86 Q216.09 41.61 226.50 27.78 A148.0 148.0 0 0 1 241.26 36.30 Q234.48 52.23 227.01 67.77 A114.0 114.0 0 0 1 252.23 92.99 Q267.77 85.52 283.70 78.74 A148.0 148.0 0 0 1 292.22 93.50 Q278.39 103.91 264.14 113.63 A114.0 114.0 0 0 1 273.38 148.08 Q290.57 149.38 307.75 151.48 A148.0 148.0 0 0 1 307.75 168.52 Q290.57 170.62 273.38 171.92 A114.0 114.0 0 0 1 264.14 206.37 Q278.39 216.09 292.22 226.50 A148.0 148.0 0 0 1 283.70 241.26 Q267.77 234.48 252.23 227.01 A114.0 114.0 0 0 1 227.01 252.23 Q234.48 267.77 241.26 283.70 A148.0 148.0 0 0 1 226.50 292.22 Q216.09 278.39 206.37 264.14 A114.0 114.0 0 0 1 171.92 273.38 Q170.62 290.57 168.52 307.75 A148.0 148.0 0 0 1 151.48 307.75 Q149.38 290.57 148.08 273.38 A114.0 114.0 0 0 1 113.63 264.14 Q103.91 278.39 93.50 292.22 A148.0 148.0 0 0 1 78.74 283.70 Q85.52 267.77 92.99 252.23 A114.0 114.0 0 0 1 67.77 227.01 Q52.23 234.48 36.30 241.26 A148.0 148.0 0 0 1 27.78 226.50 Q41.61 216.09 55.86 206.37 A114.0 114.0 0 0 1 46.62 171.92 Q29.43 170.62 12.25 168.52 A148.0 148.0 0 0 1 12.25 151.48 Q29.43 149.38 46.62 148.08 A114.0 114.0 0 0 1 55.86 113.63 Q41.61 103.91 27.78 93.50 A148.0 148.0 0 0 1 36.30 78.74 Q52.23 85.52 67.77 92.99 A114.0 114.0 0 0 1 92.99 67.77 Q85.52 52.23 78.74 36.30 A148.0 148.0 0 0 1 93.50 27.78 Q103.91 41.61 113.63 55.86 A114.0 114.0 0 0 1 148.08 46.62 Z"/>
+    </g>
+    <path fill="url(#logoStillMetal)" stroke="#e2e8f0" stroke-width="1.35" fill-rule="evenodd" d="M148.08 46.62 Q149.38 29.43 151.48 12.25 A148.0 148.0 0 0 1 168.52 12.25 Q170.62 29.43 171.92 46.62 A114.0 114.0 0 0 1 206.37 55.86 Q216.09 41.61 226.50 27.78 A148.0 148.0 0 0 1 241.26 36.30 Q234.48 52.23 227.01 67.77 A114.0 114.0 0 0 1 252.23 92.99 Q267.77 85.52 283.70 78.74 A148.0 148.0 0 0 1 292.22 93.50 Q278.39 103.91 264.14 113.63 A114.0 114.0 0 0 1 273.38 148.08 Q290.57 149.38 307.75 151.48 A148.0 148.0 0 0 1 307.75 168.52 Q290.57 170.62 273.38 171.92 A114.0 114.0 0 0 1 264.14 206.37 Q278.39 216.09 292.22 226.50 A148.0 148.0 0 0 1 283.70 241.26 Q267.77 234.48 252.23 227.01 A114.0 114.0 0 0 1 227.01 252.23 Q234.48 267.77 241.26 283.70 A148.0 148.0 0 0 1 226.50 292.22 Q216.09 278.39 206.37 264.14 A114.0 114.0 0 0 1 171.92 273.38 Q170.62 290.57 168.52 307.75 A148.0 148.0 0 0 1 151.48 307.75 Q149.38 290.57 148.08 273.38 A114.0 114.0 0 0 1 113.63 264.14 Q103.91 278.39 93.50 292.22 A148.0 148.0 0 0 1 78.74 283.70 Q85.52 267.77 92.99 252.23 A114.0 114.0 0 0 1 67.77 227.01 Q52.23 234.48 36.30 241.26 A148.0 148.0 0 0 1 27.78 226.50 Q41.61 216.09 55.86 206.37 A114.0 114.0 0 0 1 46.62 171.92 Q29.43 170.62 12.25 168.52 A148.0 148.0 0 0 1 12.25 151.48 Q29.43 149.38 46.62 148.08 A114.0 114.0 0 0 1 55.86 113.63 Q41.61 103.91 27.78 93.50 A148.0 148.0 0 0 1 36.30 78.74 Q52.23 85.52 67.77 92.99 A114.0 114.0 0 0 1 92.99 67.77 Q85.52 52.23 78.74 36.30 A148.0 148.0 0 0 1 93.50 27.78 Q103.91 41.61 113.63 55.86 A114.0 114.0 0 0 1 148.08 46.62 Z M160 160 m-40 0 a40 40 0 1 1 80 0 a40 40 0 1 1 -80 0 M203 85.52 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 M246 160 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 M203 234.48 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 M117 234.48 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 M74 160 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0 M117 85.52 m-8 0 a8 8 0 1 1 16 0 a8 8 0 1 1 -16 0"/>
+    <circle cx="160" cy="160" r="56" fill="none" stroke="url(#logoStillBevel)" stroke-width="8"/>
+    <circle cx="160" cy="160" r="56" fill="none" stroke="#e2e8f0" stroke-width="1.5"/>
+  </g>
+  <image href="render-logo-new-transparent.png" xlink:href="render-logo-new-transparent.png" x="44.8" y="44.8" width="230.4" height="230.4" preserveAspectRatio="xMidYMid meet" filter="url(#logoStillMarkGlow)"/>
+  <g filter="url(#logoStillElecGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#ecfeff" stroke-width="2.1" d="M78 92 L96 118 L78 132 L108 158 L88 176"/>
+    <path stroke="#67e8f9" stroke-width="1.9" d="M242 88 L218 114 L236 130 L206 156 L228 178"/>
+    <path stroke="#22d3ee" stroke-width="1.8" d="M96 230 L122 208 L138 236 L160 210 L182 238 L206 214"/>
+    <path stroke="#fb923c" stroke-width="2.2" d="M214 214 L236 198 L228 232 L258 218"/>
+    <path stroke="#fdba74" stroke-width="1.8" d="M70 188 L92 176 L84 210 L108 196"/>
+  </g>
+</svg>

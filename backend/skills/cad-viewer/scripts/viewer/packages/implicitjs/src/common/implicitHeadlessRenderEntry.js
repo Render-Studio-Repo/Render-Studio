@@ -1,7 +1,5 @@
 import gifencDefault, {
-  GIFEncoder as exportedGifEncoder,
-  applyPalette as exportedApplyPalette,
-  quantize as exportedQuantize
+  GIFEncoder as exportedGifEncoder
 } from "gifenc";
 import * as THREE from "three";
 import {
@@ -16,10 +14,9 @@ import {
 import {
   orbitFrameOutputs
 } from "./implicitHeadlessOrbitFrames.js";
+import { encodeGifFrameImageData } from "./gifFrameEncoder.js";
 
 const GIFEncoder = exportedGifEncoder || gifencDefault?.GIFEncoder || gifencDefault;
-const quantize = exportedQuantize || gifencDefault?.quantize;
-const applyPalette = exportedApplyPalette || gifencDefault?.applyPalette;
 const implicitModuleCache = new Map();
 
 function isObject(value) {
@@ -217,7 +214,7 @@ function implicitAnimationFrameOutputs(model, job) {
     durationSeconds,
     frameCount,
     loop: options?.loop !== false && animation.loop !== false,
-    appearance: output.appearance || job.appearance || "workbench",
+    theme: output.theme || job.theme || "workbench",
     graphics: {
       ...(isObject(job.graphics) ? job.graphics : {}),
       ...(isObject(output.graphics) ? output.graphics : {}),
@@ -262,30 +259,6 @@ function shouldEncodeTransparentGif(job = {}, output = {}) {
   return Boolean(job.render?.transparent || output.render?.transparent);
 }
 
-function encodeGifFrameImageData(imageData, { transparent = false } = {}) {
-  if (!transparent) {
-    const palette = quantize(imageData.data, 256);
-    return {
-      indexed: applyPalette(imageData.data, palette),
-      palette,
-      transparent: false,
-      transparentIndex: 0
-    };
-  }
-
-  const palette = quantize(imageData.data, 256, {
-    format: "rgba4444",
-    oneBitAlpha: true
-  });
-  const transparentIndex = palette.findIndex((color) => Number(color?.[3]) <= 127);
-  return {
-    indexed: applyPalette(imageData.data, palette, "rgba4444"),
-    palette,
-    transparent: transparentIndex >= 0,
-    transparentIndex: Math.max(transparentIndex, 0)
-  };
-}
-
 function gifDataUrlFromEncoder(encoder) {
   encoder.finish();
   const bytes = encoder.bytesView();
@@ -306,7 +279,7 @@ async function renderImplicitGifFrames(model, job, frameSpec, { mode = "orbit" }
       width: frameSpec.width,
       height: frameSpec.height,
       camera: frameOutput.camera || job.camera || "iso",
-      appearance: frameOutput.appearance || frameSpec.appearance,
+      theme: frameOutput.theme || frameSpec.theme,
       graphics: {
         ...(isObject(frameSpec.graphics) ? frameSpec.graphics : {}),
         ...(isObject(frameOutput.graphics) ? frameOutput.graphics : {}),

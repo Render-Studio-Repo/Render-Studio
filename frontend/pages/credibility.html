@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Credibility — Open source &amp; licenses — Render Studio Docs</title>
+  <meta name="description" content="Open-source projects and licenses behind Render Studio CAD, mesh, wiring, and the 3D viewport." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Render Studio: All-in-one robotics collaborative workspace" />
+  <meta property="og:title" content="Credibility — Open source &amp; licenses" />
+  <meta property="og:description" content="Jake, VibeCAD, img2threejs, Three.js, Fritzing, and the other open-source projects Render Studio builds on." />
+  <meta property="og:url" content="https://render3d.app/credibility.html" />
+  <meta property="og:image" content="https://render3d.app/getting-started-preview.png?v=20260715-docs-preview" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Credibility — Open source &amp; licenses" />
+  <meta name="twitter:description" content="The open-source CAD, mesh, and wiring projects behind Render Studio." />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-48.png?v=20260915-browserdots1" sizes="48x48" />
+  <link rel="shortcut icon" href="/assets/brand/favicon.ico?v=20260915-browserdots1" />
+  <link rel="apple-touch-icon" href="/assets/brand/favicon-180.png?v=20260915-browserdots1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/getting-started-hero.css?v=20260914-docslayout1-lanip1-docui1-docui2" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+</head>
+<body class="info-page docs-body">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab active" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="info-main docs-main">
+      <article class="info-content docs-content">
+        <header class="info-hero docs-hero">
+          <div class="gs-hero-banner gs-hero-banner--plain">
+            <div class="gs-hero-copy">
+              <p class="gs-kicker">Docs · Attribution</p>
+              <img class="docs-chrome-wordmark" src="/assets/brand/render-studio-chrome-wordmark.png?v=20260914-chrome1" alt="Render Studio" width="979" height="148" decoding="async" />
+              <h2 class="gs-hero-title">Credibility</h2>
+              <p class="gs-hero-lead">
+                Render Studio is a product studio, not a from-scratch CAD kernel.
+                Generation, inspection, mesh rebuilds, and wiring graphics stand on
+                public open-source projects. This page is the license and provenance map.
+              </p>
+              <div class="docs-hero-actions gs-hero-actions">
+                <a class="btn accent" href="/getting-started.html">Getting Started</a>
+              </div>
+            </div>
+            <img class="docs-hero-gear" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="168" height="168" decoding="async" aria-hidden="true" />
+            <a class="docs-hero-github" data-boot-social="github" href="https://github.com/wprojects/Render-Studio" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+              <span class="docs-hero-github-copy">
+                <strong>Interested in contributing?</strong>
+                <small>Developers welcome on GitHub</small>
+              </span>
+            </a>
+          </div>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab docs-category-tab--started" href="/getting-started.html">Getting Started</a>
+            <a class="docs-category-tab" href="/docs.html#complete-docs">Full documentation</a>
+            <a class="docs-category-tab" href="/getting-started.html#robotics-configuration-20260915-xrdispatch4">Robotics Configuration</a>
+            <a class="docs-category-tab" href="/getting-started.html#vr-controls-20260915-xrdispatch4">VR Controls</a>
+            <a class="docs-category-tab" href="/database.html">Database configuration</a>
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab" href="/suggestions.html">Suggestions</a>
+            <a class="docs-category-tab" href="/getting-started.html#tips-library-20260915-xrdispatch4">Tips &amp; tricks</a>
+            <a class="docs-category-tab" href="/updates.html">Updates</a>
+          </nav>
+        </header>
+
+        <section class="info-section">
+          <h3>How to read this</h3>
+          <p>
+            Each card is a project we vendor, wrap, or call at runtime. License names
+            are the upstream SPDX-style terms we ship against. Links go to the public
+            repository or license text — not to a Render Studio fork unless that is the
+            source of truth in this tree.
+          </p>
+        </section>
+
+        <section class="info-section" id="cad-engines">
+          <h3>CAD engines</h3>
+          <p>
+            The CAD mode switcher (Jake, VibeCAD, MAC) is a harness over these runtimes.
+            Viewport never loads raw STEP; kernels publish GLB for Three.js.
+          </p>
+          <div class="info-feature-grid cred-grid">
+            <article class="info-feature-card">
+              <strong>Jake · text-to-cad</strong>
+              <span class="cred-license">MIT</span>
+              <span>
+                Parametric CAD agent skills (<code>@step</code>, inspect, snapshot) from
+                <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener noreferrer">earthtojake/text-to-cad</a>.
+                Copyright Thompson Labs LLC. Installed locally under <code>backend/skills/</code>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>cadgen</strong>
+              <span class="cred-license">MIT</span>
+              <span>
+                STEP-first generation runtime used by Jake: build123d authoring, inspection,
+                and CAD Viewer snapshots.
+                <a href="https://github.com/earthtojake/text-to-cad" target="_blank" rel="noopener noreferrer">Provenance: text-to-cad</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>VibeCAD</strong>
+              <span class="cred-license">Upstream</span>
+              <span>
+                FreeCAD / build123d sidecar for Mode 2.0 VibeCAD.
+                Adapted from
+                <a href="https://github.com/10-X-eng/vibecad" target="_blank" rel="noopener noreferrer">10-X-eng/vibecad</a>.
+                See that repository for the project license.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>build123d</strong>
+              <span class="cred-license">Apache-2.0</span>
+              <span>
+                Python CAD kernel used by Jake cadgen and the VibeCAD sidecar to emit STEP.
+                <a href="https://github.com/gumyr/build123d" target="_blank" rel="noopener noreferrer">gumyr/build123d</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>FreeCAD</strong>
+              <span class="cred-license">LGPL-2.1+</span>
+              <span>
+                Optional VibeCAD authoring path when FreeCADCmd is available.
+                <a href="https://github.com/FreeCAD/FreeCAD" target="_blank" rel="noopener noreferrer">FreeCAD/FreeCAD</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Open CASCADE (OCCT)</strong>
+              <span class="cred-license">LGPL-2.1</span>
+              <span>
+                Geometry kernel underneath build123d / FreeCAD STEP solids.
+                <a href="https://dev.opencascade.org/" target="_blank" rel="noopener noreferrer">dev.opencascade.org</a>.
+              </span>
+            </article>
+          </div>
+        </section>
+
+        <section class="info-section" id="mesh">
+          <h3>Mesh &amp; viewport</h3>
+          <div class="info-feature-grid cred-grid">
+            <article class="info-feature-card">
+              <strong>img2threejs</strong>
+              <span class="cred-license">Apache-2.0</span>
+              <span>
+                Procedural Three.js rebuild from a photo or text (Mesh mode).
+                <a href="https://github.com/img2threejs/img2threejs" target="_blank" rel="noopener noreferrer">img2threejs/img2threejs</a>
+                ·
+                <a href="https://github.com/img2threejs/img2threejs/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Three.js</strong>
+              <span class="cred-license">MIT</span>
+              <span>
+                Studio viewport, CAD Viewer, and Mesh GLB playback.
+                <a href="https://github.com/mrdoob/three.js" target="_blank" rel="noopener noreferrer">mrdoob/three.js</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>three-mesh-bvh</strong>
+              <span class="cred-license">MIT</span>
+              <span>
+                Mesh picking / BVH acceleration in CAD Viewer.
+                <a href="https://github.com/gkjohnson/three-mesh-bvh" target="_blank" rel="noopener noreferrer">gkjohnson/three-mesh-bvh</a>.
+              </span>
+            </article>
+            <article class="info-feature-card">
+              <strong>meshoptimizer</strong>
+              <span class="cred-license">MIT</span>
+              <span>
+                Bundled with cadgen-js viewer runtimes.
+                <a href="https://github.com/zeux/meshoptimizer" target="_blank" rel="noopener noreferrer">zeux/meshoptimizer</a>.
+              </span>
+            </article>
+          </div>
+        </section>
+
+        <section class="info-section" id="wiring">
+          <h3>Wiring graphics</h3>
+          <div class="info-feature-grid cred-grid">
+            <article class="info-feature-card">
+              <strong>Fritzing parts</strong>
+              <span class="cred-license">CC BY-SA 3.0</span>
+              <span>
+                Breadboard SVGs in the Wiring Simulator are a curated subset of
+                <a href="https://github.com/fritzing/fritzing-parts" target="_blank" rel="noopener noreferrer">fritzing/fritzing-parts</a>.
+                Credit: images created with Fritzing.
+                <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 3.0</a>.
+                Custom boards in <code>wiring-parts/custom/</code> are original Render Studio drawings.
+              </span>
+            </article>
+          </div>
+        </section>
+
+        <section class="info-section" id="runtime">
+          <h3>Runtime &amp; tooling</h3>
+          <div class="info-feature-grid cred-grid">
+            <article class="info-feature-card">
+              <strong>FastAPI</strong>
+              <span class="cred-license">MIT</span>
+              <span>Studio HTTP API. <a href="https://github.com/fastapi/fastapi" target="_blank" rel="noopener noreferrer">fastapi/fastapi</a>.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>Playwright</strong>
+              <span class="cred-license">Apache-2.0</span>
+              <span>Headless Chromium snapshots for cadgen inspect / Mesh capture. <a href="https://github.com/microsoft/playwright" target="_blank" rel="noopener noreferrer">microsoft/playwright</a>.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>trimesh</strong>
+              <span class="cred-license">MIT</span>
+              <span>Mesh I/O and repair helpers on the server. <a href="https://github.com/mikedh/trimesh" target="_blank" rel="noopener noreferrer">mikedh/trimesh</a>.</span>
+            </article>
+            <article class="info-feature-card">
+              <strong>ezdxf</strong>
+              <span class="cred-license">MIT</span>
+              <span>DXF drawing parse / preview. <a href="https://github.com/mozman/ezdxf" target="_blank" rel="noopener noreferrer">mozman/ezdxf</a>.</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="info-section" id="skills">
+          <h3>Jake skill pack (MIT)</h3>
+          <p>
+            These agent skills ship from text-to-cad and are MIT, Copyright (c) 2026 Thompson Labs LLC:
+            CAD, CAD Viewer, URDF, SRDF, SDF, DXF, G-code, STEP parts, Bambu Labs, SendCutSend, DFM check.
+            Local copies live under <code>backend/skills/</code> with the upstream LICENSE file.
+          </p>
+        </section>
+
+        <section class="info-section">
+          <h3>What this is not</h3>
+          <p>
+            McMaster-Carr catalog parts, Autodesk Fusion, Onshape, and model-provider APIs
+            (OpenAI, Anthropic, and others) are licensed services or catalogs — not open-source
+            kernels. They are not listed as OSS credits.
+          </p>
+        </section>
+
+        <section class="info-section">
+          <h3>Contact</h3>
+          <p>
+            License questions or missing attribution:
+            <a href="mailto:sam@render3d.app">sam@render3d.app</a>.
+          </p>
+          <p class="muted small">Last updated: September 6, 2026.</p>
+        </section>
+      </article>
+    </main>
+  </div>
+  <a class="docs-credibility-corner active" href="/credibility.html">Credibility</a>
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+</body>
+</html>

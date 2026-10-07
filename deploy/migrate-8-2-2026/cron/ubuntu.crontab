@@ -1,0 +1,7 @@
+*/30 * * * * /home/ubuntu/scripts/backup-code.sh cron >> /home/ubuntu/logs/backup-cron.log 2>&1
+0 3 * * * /home/ubuntu/scripts/backup-daily.sh >> /home/ubuntu/logs/backup-drive.log 2>&1
+0 * * * * /home/ubuntu/.venv/bin/python /home/ubuntu/scripts/linkedin-scheduled-post.py >> /home/ubuntu/logs/linkedin-scheduled-post.log 2>&1
+*/5 * * * * /home/ubuntu/scripts/cleanup-stale-render3d-processes.sh guard >> /home/ubuntu/logs/stale-process-cleanup.log 2>&1
+5 * * * * /home/ubuntu/.venv/bin/python /home/ubuntu/scripts/trial-credit-report.py >> /home/ubuntu/logs/trial-credit-report.log 2>&1
+
+15 * * * * /home/ubuntu/.venv/bin/python /home/ubuntu/scripts/trial-credit-reclaim.py >> /home/ubuntu/logs/trial-credit-reclaim.log 2>&1

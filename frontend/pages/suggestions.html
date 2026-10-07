@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0d1117" />
+  <style>html,body{background:#0d1117;color:#c9d1d9}</style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Suggestions — Render Studio</title>
+  <meta name="description" content="Markup canvas, image editor, and Render Agent. Send logs and notes back to Cursor." />
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/docs-agent.css?v=20260720-mobile-docs-agent" />
+  <link rel="stylesheet" href="/site/vision-desk.css?v=20260917-chat1" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand">
+        <a href="/" class="brand-link" aria-label="Render Studio">
+          <span class="brand-mark brand-mark--intro">
+            <img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" />
+          </span>
+          <h1 class="brand-title visually-hidden">Render Studio</h1>
+        </a>
+      </div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <button type="button" class="toolbar-nav-toggle" aria-expanded="false" aria-haspopup="true" aria-controls="toolbar-nav-menu" title="Main menu">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M2.75 4a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Zm0 3.25a.75.75 0 0 0 0 1.5h10.5a.75.75 0 0 0 0-1.5H2.75Z"/></svg>
+          <span class="toolbar-nav-toggle-label">Menu</span>
+        </button>
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu" role="menu">
+          <a href="/" class="nav-tab" role="menuitem">Studio</a>
+          <a href="/marketplace.html" class="nav-tab" role="menuitem">Marketplace</a>
+          <a href="/skills.html" class="nav-tab" role="menuitem">Skills Library</a>
+          <a href="/getting-started.html" class="nav-tab" role="menuitem">Docs</a>
+          <a href="/getting-started.html#tips-library-20260915-xrdispatch4" class="nav-tab" role="menuitem">Tips &amp; Tricks</a>
+<a href="/updates.html" class="nav-tab" role="menuitem">Updates</a>
+<a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+    <main class="info-main">
+      <article class="info-content">
+        <header class="info-hero">
+          <p class="info-eyebrow">Input back</p>
+          <h2>Suggestions</h2>
+          <p class="info-lead">
+            Markup the results, load a screenshot, ask Render Agent, send a log pack.
+            Those numbers below are <strong>not person scores</strong>.
+          </p>
+          <nav class="docs-category-tabs" aria-label="Docs categories">
+            <a class="docs-category-tab" href="/roadmap.html">Roadmap</a>
+            <a class="docs-category-tab" href="/white-paper.html#crew-report">Crew report</a>
+            <a class="docs-category-tab" href="/white-paper.html">White paper</a>
+            <a class="docs-category-tab active" href="/suggestions.html">Suggestions</a>
+          </nav>
+        </header>
+        <dl class="score-legend vision-card">
+          <dt>Method score (workflows, not people)</dt>
+          <dd>Suggestions markup+logs = <strong>78</strong>. PDF-only = <strong>45</strong>. Meaning: if we use this page to recover a first failure, predicted success is 78/100. A PDF you cannot scribble on is 45. Neither number is Sam or Cursor.</dd>
+          <dt>Person score (0–100)</dt>
+          <dd>Did this actor finish the jobs assigned to them today. 100 = assigned work landed. 0 = no useful output. Sam 52. Cursor 53. Employees listed below.</dd>
+          <dt>Team score</dt>
+          <dd>Average of the seven employees = <strong>47.6</strong>. Shared bench. A person above 47.6 is pulling the team up.</dd>
+          <dt>Credit score (the operation)</dt>
+          <dd>Cost, time, efficiency, reliability, unpredictability. Live value on this page. Not a person grade.</dd>
+        </dl>
+        <div class="vision-stats" id="sug-stats"></div>
+        <p id="sug-credit" class="muted"></p>
+        <p id="sug-census" class="muted"></p>
+        <section class="info-section">
+          <h3>Employees first to last (16 Sep 2026, 1-shot)</h3>
+          <p class="muted small">Overall = person score. Team = 47.6 (mean of these seven). Avatars: Rick = highest, Morty = #2, mafia = mid, Bender = last.</p>
+          <ol class="emp-roster">
+            <li>
+              <img src="/docs/media/employees/project-manager.png?v=20260916-score1" alt="Project manager as Rick with orange scarf" />
+              <div><strong>1. project-manager</strong><div class="muted small">Rick remix, orange scarf. Replied: hello, handshake deez nutz, OOO, logger diff, X-fail ack, TAG classification.</div></div>
+              <div class="emp-scores"><strong>64</strong> team 47.6</div>
+            </li>
+            <li>
+              <img src="/docs/media/employees/analytics.png?v=20260916-score1" alt="Analytics as Morty with gear pin" />
+              <div><strong>2. analytics</strong><div class="muted small">Morty remix, gear pin. OOO + logger diff.</div></div>
+              <div class="emp-scores"><strong>61</strong> team 47.6</div>
+            </li>
+            <li>
+              <img src="/docs/media/employees/vibe-rnd.png?v=20260916-score1" alt="Vibe R&amp;D portrait" />
+              <div><strong>3. vibe-rnd</strong><div class="muted small">Mafia mid-pack. OOO + logger diff.</div></div>
+              <div class="emp-scores"><strong>58</strong> team 47.6</div>
+            </li>
+            <li>
+              <div aria-hidden="true"></div>
+              <div><strong>4. coding-agent</strong><div class="muted small">No portrait. Followed logger skill; NameError on LOGGER. No shipping portrait generated.</div></div>
+              <div class="emp-scores"><strong>47</strong> team 47.6</div>
+            </li>
+            <li>
+              <img src="/docs/media/employees/vibe-marketing.png?v=20260916-score1" alt="Vibe marketing portrait" />
+              <div><strong>5. vibe-marketing</strong><div class="muted small">Drafted the X caption. Live post 403. task_id tsk_56e2da2101.</div></div>
+              <div class="emp-scores"><strong>42</strong> team 47.6</div>
+            </li>
+            <li>
+              <img src="/docs/media/employees/clip-bot.png?v=20260916-score1" alt="Clip bot portrait" />
+              <div><strong>6. clip-bot</strong><div class="muted small">Hello only. No clip loop this cycle.</div></div>
+              <div class="emp-scores"><strong>33</strong> team 47.6</div>
+            </li>
+            <li>
+              <img src="/docs/media/employees/vibe-sales.png?v=20260916-score1" alt="Vibe sales as dented Bender" />
+              <div><strong>7. vibe-sales</strong><div class="muted small">Bender. Hello only. Lowest employee.</div></div>
+              <div class="emp-scores"><strong>28</strong> team 47.6</div>
+            </li>
+          </ol>
+          <p class="muted small">Not on the employee bench: Cursor person score 53 · Sam person score 52. Shared operation credit is the live number under the stats (not 78).</p>
+        </section>
+        <div class="vision-canvas-wrap">
+          <div class="vision-toolbar">
+            <button type="button" data-tool="pen" class="active">Pen</button>
+            <button type="button" data-tool="hl">Highlight</button>
+            <button type="button" data-tool="eraser">Eraser</button>
+            <label>Image editor <input id="sug-image" type="file" accept="image/*" /></label>
+            <button type="button" id="sug-clear">Clear</button>
+            <button type="button" id="sug-send" class="btn accent">Send logs / markup</button>
+          </div>
+          <canvas id="sug-canvas" width="800" height="420"></canvas>
+        </div>
+        <div class="vision-desk-grid" style="margin-top:16px">
+          <div class="vision-card">
+            <h3>Note + logs</h3>
+            <textarea id="sug-note" class="vision-form" rows="5" placeholder="What broke, what you wanted, paste traceback ids…"></textarea>
+            <p id="sug-status" class="muted small"></p>
+          </div>
+          <div class="vision-card vision-card--ask">
+            <h3>Render Agent</h3>
+            <div id="sug-thread" class="vision-thread"></div>
+            <form id="sug-ask-form" class="vision-form vision-composer">
+              <div class="hw-composer-shell">
+                <textarea id="sug-ask" rows="2" required placeholder="Ask or dump a log excerpt"></textarea>
+                <button class="hw-ask-btn" type="submit" aria-label="Ask">
+                  <span>Ask</span>
+                  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M1.5 8.5 14 2.2l-3.1 11.4-2.7-4.1L1.5 8.5Zm7.1 1.1 1.5 2.3L12.4 5 8.6 9.6Z"/></svg>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </article>
+    </main>
+  </div>
+  <script type="module" src="/studio/toolbar-nav.js?v=20260908-social-bar-20260916-mobile-taps2"></script>
+  <script type="module" src="/site/suggestions.js?v=20260916-wp1"></script>
+  <script type="module" src="/site/docs-agent.js?v=20261006-designchat-hey-ai1"></script>
+</body>
+</html>

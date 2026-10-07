@@ -14,6 +14,7 @@ from jose import jwt
 
 from backend.config import settings
 from backend.database import get_conn
+from backend.services.account_email_identity import email_identity_transaction, find_email_user, normalize_email
 
 
 @dataclass(frozen=True)
@@ -104,29 +105,53 @@ def _apple_client_secret() -> str:
     )
 
 
-def create_oauth_state(user_id: str | None = None) -> str:
+def create_oauth_state(user_id: str | None = None, redirect_path: str | None = None) -> str:
     state = secrets.token_urlsafe(32)
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO oauth_state (state, user_id, created_at) VALUES (?, ?, ?)",
-            (state, user_id, _now()),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO oauth_state (state, user_id, created_at, redirect_uri) VALUES (?, ?, ?, ?)",
+                (state, user_id, _now(), redirect_path),
+            )
+        except Exception:
+            conn.execute(
+                "INSERT INTO oauth_state (state, user_id, created_at) VALUES (?, ?, ?)",
+                (state, user_id, _now()),
+            )
     return state
 
 
 def consume_oauth_state(state: str) -> str | None | bool:
+    rec = consume_oauth_state_record(state)
+    if rec is None:
+        return False
+    return rec.get("user_id")
+
+
+def consume_oauth_state_record(state: str) -> dict[str, Any] | None:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT user_id, created_at FROM oauth_state WHERE state = ?",
-            (state,),
-        ).fetchone()
+        try:
+            row = conn.execute(
+                "SELECT user_id, created_at, redirect_uri FROM oauth_state WHERE state = ?",
+                (state,),
+            ).fetchone()
+        except Exception:
+            row = conn.execute(
+                "SELECT user_id, created_at FROM oauth_state WHERE state = ?",
+                (state,),
+            ).fetchone()
         if not row:
-            return False
+            return None
         conn.execute("DELETE FROM oauth_state WHERE state = ?", (state,))
     created = datetime.fromisoformat(row["created_at"])
     if datetime.now(timezone.utc) - created > timedelta(minutes=10):
-        return False
-    return row["user_id"]
+        return None
+    redirect = ""
+    try:
+        redirect = str(row["redirect_uri"] or "")
+    except (KeyError, IndexError, TypeError):
+        redirect = ""
+    return {"user_id": row["user_id"], "redirect_uri": redirect}
 
 
 def configured_providers() -> list[dict[str, Any]]:
@@ -229,7 +254,7 @@ def _userinfo_profile(cfg: ProviderConfig, token: dict[str, Any]) -> dict[str, A
         "provider": cfg.key,
         "provider_user_id": provider_user_id,
         "email": email,
-        "email_verified": data.get("email_verified", True),
+        "email_verified": _truthy(data.get("email_verified", False)),
         "display_name": data.get("name") or data.get("displayName") or email.split("@")[0] or cfg.label,
         "picture_url": data.get("picture"),
     }
@@ -256,7 +281,7 @@ def _apple_profile(cfg: ProviderConfig, token: dict[str, Any]) -> dict[str, Any]
         "provider": cfg.key,
         "provider_user_id": str(claims.get("sub") or "").strip(),
         "email": email,
-        "email_verified": str(claims.get("email_verified", "true")).lower() == "true",
+        "email_verified": _truthy(claims.get("email_verified", False)),
         "display_name": email.split("@")[0] if email else "Apple User",
         "picture_url": None,
     }
@@ -267,14 +292,14 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
     provider_user_id = str(profile.get("provider_user_id") or "").strip()
     if not provider or not provider_user_id:
         raise RuntimeError("Social provider did not return a stable user id.")
-    email = str(profile.get("email") or "").strip().lower()
+    email = normalize_email(profile.get("email"))
     email_verified = _truthy(profile.get("email_verified"))
     display_name = str(profile.get("display_name") or "").strip() or (email.split("@")[0] if email else "Render Studio User")
     picture_url = str(profile.get("picture_url") or "").strip() or None
     now = _now()
     created_new_user = False
 
-    with get_conn() as conn:
+    with email_identity_transaction() as conn:
         row = conn.execute(
             "SELECT user_id FROM social_accounts WHERE provider = ? AND provider_user_id = ?",
             (provider, provider_user_id),
@@ -284,7 +309,7 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
         else:
             user_id = ""
             if email and email_verified:
-                existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+                existing = find_email_user(conn, email)
                 if existing:
                     user_id = existing["id"]
             if not user_id:
@@ -341,14 +366,15 @@ def upsert_social_user(profile: dict[str, Any]) -> dict[str, Any]:
             accepted_invites = teams_service.accept_pending_invites_for_user(user_id, email)
             if accepted_invites:
                 out["_accepted_invites"] = accepted_invites
-            try:
-                from backend.services import project_shares_service
-
-                project_shares_service.accept_pending_project_shares_for_user(user_id, email)
-            except Exception:
-                pass
+            # Project shares stay pending so the recipient can accept in chat.
         except Exception:
             # Social login must not fail just because invite cleanup had an issue.
             pass
     out["_created_new_user"] = created_new_user
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        sbusers.upsert_local_user(user_id)
+    except Exception:
+        pass
     return out

@@ -1,0 +1,28 @@
+{
+  "project": "f730285c",
+  "origin": "https://render3d.app",
+  "visible_rows": 8,
+  "unique_product_links": 8,
+  "names": [
+    "18-8 Stainless Steel General Purpose Washer, for M5 Screw Size, 5.3 mm ID, 10.0 mm OD",
+    "24V 50Ah LiFePO4 battery \u2014 B0B6FZM9FK",
+    "Black-Oxide Alloy Steel Socket Head Screw, US Origin, M6 x 1 mm Thread Size, 15 mm Long",
+    "Corrosion-Resistant 18-8 Stainless Steel Nylon-Insert Locknut, M5 x 0.8 mm Thread Size",
+    "Main battery disconnect \u2014 Blue Sea 6006",
+    "Passivated 18-8 Stainless Steel Pan Head Phillips Screws, M5 x 0.8mm Thread, 25mm Long",
+    "PCAN-USB FD interface",
+    "Sabertooth 2x32 motor driver (candidate)"
+  ],
+  "tab_counts": {
+    "home": 8,
+    "electronics": 4,
+    "mcmaster": 4,
+    "mechanical": 0
+  },
+  "search_checked": true,
+  "reopen_rows": 8,
+  "page_errors": [],
+  "before_rows": 289,
+  "tests_passed": 65,
+  "scope": "Unique sourced product links; original CAD and authoring records preserved. Existing candidate and fit caveats retained."
+}

@@ -1,0 +1,71 @@
+/* Wiring-only WebGL view and persistent bottom-left AR / 3D switcher. */
+.wiring-content-area .wiring-spatial-view { position:absolute; inset:0; min-height:220px; background:#101923; color:#e5edf5; z-index:4; }
+.wiring-content-area .wiring-spatial-view[hidden] { display:none; }
+.wiring-spatial-stage { position:absolute; inset:0; overflow:hidden; }
+.wiring-spatial-stage canvas { display:block; width:100%; height:100%; touch-action:none; }
+.wiring-spatial-heading { position:absolute; top:14px; left:16px; right:290px; display:flex; align-items:center; flex-wrap:wrap; gap:9px; pointer-events:none; }
+.wiring-spatial-heading strong { font-size:14px; }
+.wiring-spatial-heading span { color:#9aadbf; font-size:11px; }
+.wiring-spatial-heading button { pointer-events:auto; padding:5px 8px; border:1px solid #344757; border-radius:6px; color:#c8d9e8; background:#172430; font-size:11px; cursor:pointer; }
+.wiring-spatial-inspector { position:absolute; top:14px; right:14px; width:244px; max-height:calc(100% - 80px); overflow:auto; padding:15px; background:rgba(20,31,43,.96); border:1px solid #344553; border-radius:12px; box-shadow:0 12px 28px #0003; font-size:12px; }
+.wiring-spatial-inspector-empty { line-height:1.6; color:#99aec1; }
+.wiring-spatial-inspector-title { display:flex; flex-direction:column; gap:7px; padding-right:15px; }
+.wiring-spatial-inspector-title span { color:#76bdde; font-size:10px; letter-spacing:.12em; }
+.wiring-spatial-inspector-title strong { font-size:15px; line-height:1.4; }
+.wiring-spatial-endpoints { display:flex; flex-direction:column; gap:8px; margin:15px 0; padding:10px; border-radius:6px; background:#101d29; font-size:11px; }
+.wiring-spatial-endpoints span:nth-child(2) { color:#69b5d8; }
+.wiring-spatial-inspector dl { margin:12px 0; }
+.wiring-spatial-inspector dl div { display:flex; justify-content:space-between; gap:12px; margin:9px 0; font-size:11px; }
+.wiring-spatial-inspector dt { color:#91a6b8; flex:0 0 42%; }
+.wiring-spatial-inspector dd { margin:0; text-align:right; overflow-wrap:anywhere; }
+.wiring-spatial-evidence { padding:10px; border:1px solid #5a523c; border-radius:6px; background:#302b201f; color:#d1b987; font-size:11px; }
+.wiring-spatial-evidence p { margin:5px 0 0; line-height:1.6; }
+.wiring-spatial-docs { margin-top:14px; display:flex; flex-direction:column; gap:8px; font-size:11px; }
+.wiring-spatial-docs a { color:#88c6e5; text-decoration:none; overflow-wrap:anywhere; }
+.wiring-spatial-docs span { color:#93a6b8; line-height:1.5; }
+.wiring-spatial-clear { position:absolute; top:11px; right:10px; color:#a6bbca; background:none; border:0; cursor:pointer; font-size:20px; }
+.wiring-spatial-empty { position:absolute; left:12%; right:32%; top:48%; text-align:center; line-height:1.6; color:#91a7b9; }
+.wiring-spatial-empty[hidden] { display:none; }
+.wiring-spatial-schematic-hidden { visibility:hidden!important; pointer-events:none!important; }
+.wiring-content-area .wiring-spatial-switcher { position:absolute; left:14px; bottom:14px; z-index:9; display:flex; align-items:center; gap:5px; padding:5px; border-radius:10px; background:rgba(20,31,43,.96); border:1px solid #374957; box-shadow:0 3px 15px #0004; }
+.wiring-spatial-switcher .wiring-tool-btn { min-width:43px; border-radius:6px; padding:7px 10px; color:#d4e4f0; border:0; font-size:12px; background:transparent; }
+.wiring-spatial-switcher .wiring-tool-btn:hover { background:#304251; }
+.wiring-spatial-switcher .is-active { background:#286b89; color:#fff; }
+.wiring-spatial-switcher #btn-wiring-spatial-ar { color:#98d0ed; }
+@media(max-width:800px) { .wiring-spatial-inspector { width:190px; right:9px; padding:11px; } .wiring-spatial-heading { right:220px; } .wiring-spatial-heading span { display:none; } }
+
+.wiring-spatial-source-dialog { position:fixed; max-width:460px; width:calc(100% - 50px); max-height:80vh; overflow:auto; background:#142330; color:#e5edf5; border:1px solid #456174; border-radius:14px; padding:25px; font:13px system-ui; box-shadow:0 20px 70px #0009; }
+.wiring-spatial-source-dialog::backdrop { background:#060e16bb; }
+.wiring-spatial-source-dialog h2 { margin:0 0 8px; font-size:20px; }
+.wiring-spatial-source-dialog p { color:#a3b8ca; line-height:1.5; }
+.wiring-spatial-source-close { position:absolute; right:14px; top:10px; border:0; color:#c0d8e8; background:transparent; font-size:24px; cursor:pointer; }
+.wiring-spatial-source-dialog .wiring-spatial-inspector-title { margin-top:20px; }
+.wiring-spatial-source-dialog dl div { display:flex; justify-content:space-between; gap:14px; margin:8px 0; }
+.wiring-spatial-source-dialog dd { text-align:right; margin:0; }
+
+/* Keep the 2D power card and floating CAD browser from covering the 3D inspector. */
+.wiring-spatial-active .wiring-requirements { display:none!important; }
+#app.wiring-mode.wiring-inspect-3d #viewport-browser-panel,
+#app.wiring-mode.wiring-inspect-3d #btn-viewport-browser-expand { display:none!important; }
+/* The legacy viewport uses ID selectors and !important; match that specificity. */
+#app.wiring-mode.wiring-inspect-3d #wiring-viewport,
+#app.wiring-mode.wiring-inspect-3d #wiring-viewport.hidden { display:none!important; visibility:hidden!important; pointer-events:none!important; }
+body:has(#app.wiring-inspect-3d) .wiring-pin-tooltip { display:none!important; }
+.wiring-spatial-inspector[hidden] { display:none; }
+.wiring-spatial-heading { right:16px; padding:10px 12px; width:fit-content; max-width:calc(100% - 56px); border:1px solid #304457; border-radius:10px; background:#10202de8; }
+.wiring-spatial-heading button[aria-pressed="true"] { background:#256783; border-color:#74c7ef; color:#fff; }
+.wiring-spatial-inspector { top:78px; max-height:calc(100% - 156px); }
+.wiring-spatial-hint { position:absolute; bottom:20px; right:18px; max-width:50%; font:12px/1.5 system-ui; color:#b2c7d7; background:#101c28df; padding:8px 12px; border-radius:8px; pointer-events:none; }
+@media(max-width:650px) { .wiring-spatial-inspector { width:180px; max-height:50%; } .wiring-spatial-hint { bottom:70px; max-width:80%; } }
+
+.wiring-spatial-part-label { position:absolute; transform:translate(-50%,-140%); pointer-events:none; color:#e3f1fa; background:#0a1724e8; border:1px solid #334f62; padding:5px 9px; border-radius:6px; font:600 12px/1.35 system-ui; max-width:205px; text-align:center; }
+
+.wiring-wire-tooltip { position:absolute; z-index:8; pointer-events:none; max-width:264px; padding:8px 10px; border:1px solid #58a6ff; border-radius:8px; background:#0d1723; color:#e6edf3; font:12px/1.4 system-ui; box-shadow:0 4px 18px #0008; }
+.wiring-wire-tooltip[hidden] {display:none!important;}
+
+/* Harness editing controls wrap on narrow screens. */
+.wiring-spatial-heading { flex-wrap:wrap; max-width:calc(100% - 24px); }
+.wiring-route-option {display:flex;align-items:center;gap:4px;font-size:11px;pointer-events:auto;}
+.wiring-route-option[hidden] {display:none;}
+.wiring-route-option input {width:54px;background:#152431;color:#eee;border:1px solid #476073;border-radius:4px;padding:5px;}
+@media(max-width:700px){.wiring-spatial-heading>span{display:none}.wiring-spatial-heading{gap:5px}.wiring-spatial-heading button{min-height:36px}.wiring-spatial-hint{max-width:85%;bottom:58px;top:auto}}

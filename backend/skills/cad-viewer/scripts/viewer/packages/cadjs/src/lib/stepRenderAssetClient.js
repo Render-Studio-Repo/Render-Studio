@@ -6,9 +6,29 @@ import {
   isCurrentStepTopologySchemaVersion
 } from "../common/stepTopology.mjs";
 import { buildMeshDataFromGlbBuffer } from "./render/glbMeshData.js";
+import {
+  assertAssetSourceScope,
+  assetSourceScopeMatches,
+  releaseAssetSourceScope
+} from "./renderAssetSourceScope.js";
 
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseJsonFinite(text, fallback = null) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const repaired = raw.replace(/-Infinity\b|\bInfinity\b|\bNaN\b/g, "null");
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw error;
+    }
+  }
 }
 
 function fetchError(url, response) {
@@ -36,6 +56,7 @@ async function loadCached(cache, key, loader, { cachePending = true } = {}) {
   if (!key) {
     throw new Error("Missing asset cache key");
   }
+  assertAssetSourceScope(cache, key);
   if (cache.has(key)) {
     const cached = cache.get(key);
     if (cachePending || typeof cached?.then !== "function") {
@@ -51,6 +72,7 @@ async function loadCached(cache, key, loader, { cachePending = true } = {}) {
   pending = loader().catch((error) => {
     if (cache.get(key) === pending) {
       cache.delete(key);
+      releaseAssetSourceScope(cache, key);
     }
     throw error;
   });
@@ -59,6 +81,9 @@ async function loadCached(cache, key, loader, { cachePending = true } = {}) {
 }
 
 function peekCached(cache, key) {
+  if (!assetSourceScopeMatches(cache, key)) {
+    return null;
+  }
   const value = cache.get(key);
   return value && typeof value.then !== "function" ? value : null;
 }
@@ -161,6 +186,10 @@ export async function loadRenderArrayBuffer(url, { signal } = {}) {
   if (signal?.aborted) {
     throw makeAbortError();
   }
+  // After the abort check: a consumer that fetches nothing must not claim the URL for its source.
+  assertAssetSourceScope(arrayBufferCache, url, {
+    occupied: arrayBufferCache.has(url) || arrayBufferPendingCache.has(url)
+  });
   const cached = peekCached(arrayBufferCache, url);
   if (cached) {
     return cached;
@@ -169,6 +198,10 @@ export async function loadRenderArrayBuffer(url, { signal } = {}) {
   if (!pending) {
     pending = fetchArrayBuffer(url)
       .then((payload) => finalizeCached(arrayBufferCache, url, payload))
+      .catch((error) => {
+        releaseAssetSourceScope(arrayBufferCache, url);
+        throw error;
+      })
       .finally(() => {
         if (arrayBufferPendingCache.get(url) === pending) {
           arrayBufferPendingCache.delete(url);
@@ -205,7 +238,7 @@ function parseGlbContainer(arrayBuffer) {
       throw new Error("Invalid GLB chunk length");
     }
     if (chunkType === 0x4e4f534a) {
-      json = JSON.parse(new TextDecoder("utf-8").decode(arrayBuffer.slice(offset, offset + chunkLength)).trim());
+      json = parseJsonFinite(new TextDecoder("utf-8").decode(arrayBuffer.slice(offset, offset + chunkLength)).trim());
     } else if (chunkType === 0x004e4942) {
       bin = {
         buffer: arrayBuffer,
@@ -317,7 +350,7 @@ function parseJsonBufferView(glb, viewIndex, encoding = "utf-8") {
     return null;
   }
   const bytes = new Uint8Array(glb.bin.buffer, range.byteOffset, range.byteLength);
-  return JSON.parse(new TextDecoder(String(encoding || "utf-8")).decode(bytes));
+  return parseJsonFinite(new TextDecoder(String(encoding || "utf-8")).decode(bytes));
 }
 
 function topologyIndexFromGlbBuffer(arrayBuffer) {

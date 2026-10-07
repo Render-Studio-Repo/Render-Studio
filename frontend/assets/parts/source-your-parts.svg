@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 230" role="img" aria-labelledby="title desc">
+<title id="title">Source your Parts</title><desc id="desc">Mechanical lettering with screw heads, a gear, a bearing, and a hex nut.</desc>
+<defs>
+  <linearGradient id="metal" x2="0" y2="1"><stop stop-color="#f5f8fb"/><stop offset=".42" stop-color="#aab9c7"/><stop offset="1" stop-color="#5c7082"/></linearGradient>
+  <linearGradient id="bolt" x2="0" y2="1"><stop stop-color="#d7e2e9"/><stop offset="1" stop-color="#6b8190"/></linearGradient>
+  <filter id="shadow"><feDropShadow dx="1" dy="6" stdDeviation="5" flood-color="#05090d" flood-opacity=".75"/></filter>
+  <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#28404c" stroke-width=".6" opacity=".55"/></pattern>
+</defs>
+<rect width="1120" height="230" rx="18" fill="#101b22"/><rect width="1120" height="230" rx="18" fill="url(#grid)"/>
+<path d="M28 187H1090M28 41H1090" stroke="#455f6d" stroke-width="2" opacity=".65"/>
+<g fill="#b9c8d0" stroke="#526b79" stroke-width="2" filter="url(#shadow)">
+  <circle cx="77" cy="114" r="43"/><circle cx="1039" cy="114" r="48"/>
+</g>
+<g fill="#172a33" stroke="#617e8b" stroke-width="5"><circle cx="77" cy="114" r="26"/><circle cx="1039" cy="114" r="29"/></g>
+<g stroke="#91a9b4" stroke-width="5" stroke-linecap="round"><path d="M59 96l36 36M95 96l-36 36M1018 92l42 44M1060 92l-42 44"/></g>
+<text x="150" y="139" fill="url(#metal)" stroke="#3b5360" stroke-width="1.5" paint-order="stroke fill" font-family="Arial, Helvetica, sans-serif" font-size="72" font-weight="900" letter-spacing="1" filter="url(#shadow)">Source your Parts</text>
+<g fill="url(#bolt)" stroke="#354d59" stroke-width="3" filter="url(#shadow)">
+  <circle cx="189" cy="89" r="9"/><circle cx="348" cy="137" r="9"/><circle cx="574" cy="90" r="9"/><circle cx="806" cy="136" r="9"/><circle cx="969" cy="90" r="9"/>
+</g>
+<g stroke="#334a55" stroke-width="3" stroke-linecap="round"><path d="M183 83l12 12M342 131l12 12M568 84l12 12M800 130l12 12M963 84l12 12"/></g>
+<g stroke="#e4a86a" stroke-width="2" fill="none" opacity=".9"><path d="M150 160h824"/><path d="M278 157v15M693 157v15"/></g>
+<text x="151" y="199" fill="#93aab5" font-family="Arial, Helvetica, sans-serif" font-size="16" letter-spacing="4">FIND  ·  COMPARE  ·  BUILD</text>
+</svg>

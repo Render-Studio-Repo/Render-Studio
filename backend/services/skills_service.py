@@ -33,16 +33,94 @@ The kernel uses build123d internally and auto-exports STEP, STL, GLB, URDF, and 
 - Server auto-runs CAD step+inspect on exported STEP when the cad skill is enabled.
 """
 
+_VIBECAD_ADAPTER = """\
+━━━ RENDER3D VIBECAD SKILL (active: {skill_id}) ━━━
+You are authoring through the VibeCAD engine (build123d sidecar), NOT Jake Mode 2.0.
+Do not emit a Feature Program JSON. Do not call cadpy `scripts/step`, `gen_step()`,
+or `$cad-viewer`. One-shot authoring returns top-level JSON with keys model_name,
+source, parameters, expected_outputs, and optional input_objects.
+`source` is complete build123d Python that assigns result = {{...}} (named single-solid Shapes).
+Do not wrap that payload as a tool-call object (tool/args) unless vibecad_agent is on.
+Codex is the host for every model. Millimetres. Z-up. Align.MIN for stacked primitives.
+"""
+
 # Extra reference excerpts injected for common skills (keeps prompts smaller than full tree).
 _SKILL_EXTRAS: dict[str, list[str]] = {
     "cad": ["references/cad-brief.md", "references/build123d-modeling.md"],
+    "vibecad": ["references/build123d-primitives.md"],
     "urdf": ["references/urdf-workflow.md"],
     "step-parts": ["references/step-parts-api.md"],
     "blueprint-vision": ["references/vision-pipeline.md", "references/output-schema.md"],
 }
 
+_JAKE_ONLY_SKILLS = frozenset({"cad", "cad-viewer"})
+_VIBECAD_COMPAT_SKILLS = frozenset(
+    {"vibecad", "dxf", "blueprint-vision", "step-parts", "bambu-labs", "gcode"}
+)
+
 _COMPACT_SKILL_MAX_CHARS = 3200
 _MAX_REFERENCE_CHARS = 1200
+
+_BUNDLED_SKILL_MD = {
+    "vibecad": """---
+name: vibecad
+description: Author parametric mechanical CAD through Render Studio's VibeCAD engine (build123d sidecar and optional FreeCAD). Use for Mode 2.0 VibeCAD, named solids, STEP/GLB publish, DXF/image-driven parts, and mating to linked hardware.
+---
+
+# VibeCAD (Render Studio)
+
+Provenance: Render Studio skill pack, adapted from [10-X-eng/vibecad](https://github.com/10-X-eng/vibecad).
+This file is required for generation. Jake Mode 2.0 (`cad` skill / Feature Program JSON) is a different engine — do not emit Jake Feature Programs here.
+
+## Purpose
+
+Author millimetre, Z-up mechanical parts as complete build123d (or FreeCAD) Python that assigns an ordered `result` dict of named single-solid Shapes. The worker publishes STEP → GLB into the viewport.
+
+## Use this skill when
+
+The user selected the **VibeCAD** CAD engine, or the request is `mode=vibecad`. Also use it when they attach photos, DXF drawings, or @-linked STEP hardware to mate against.
+
+Do not use Jake `cad` Feature Program JSON, `cadpy`/`cadgen` `scripts/step`, `gen_step()`, or `$cad-viewer`.
+
+## Authoring contract
+
+- Units: millimetres. Z-up. Prefer `Align.MIN` for stacked primitives.
+- Driving dimensions arrive as `params`. Optional STEP imports arrive as `inputs`.
+- Assign `result: dict[str, Shape]` whose keys exactly match `expected_outputs` (same order).
+- Each value is one independently editable solid.
+- Do not import exporters, write files, or call the network.
+- Linked McMaster / @component STEP files: load via `inputs[alias]` and mate — do not reprint fasteners.
+- CAD brief McMaster parts list is required hardware for this engine, same as Jake/MAC. Import fetched STEPs; do not skip screws, bearings, standoffs, or electronics mounts.
+- Photos / canvas: read attached files WITH the prompt. `canvas-sketch` and line drawings explain layout (arrows, hanging off, beside, offset) — they are not the finished part. Photos of extrusion, rail, or hardware are mate targets. Product photos of the thing to make: match silhouette of THAT object. Do not sit a new motor/bracket on top of an extrusion unless the prompt and sketch say on-top.
+- DXF: `dxf_filename` is in the worker cwd. Reconstruct 3D from layers/polylines. `import_dxf()+make_face()+extrude()` only for an explicit flat plate.
+
+Hopper / funnel / vessel: one outer silhouette, then revolve or loft (`Pos(0, 0, z) * Circle(r)` stations), then cut the bore. Do not fuse centered Cylinder/Cone with `.translate((0, 0, z))`. If stacking primitives, every one needs `align=(Align.CENTER, Align.CENTER, Align.MIN)` and `z` is the BOTTOM of that solid.
+
+## Colour coding
+
+Colour every named solid with realistic shop materials from the prompt's `colors:` / materials clause
+(`srgb("#c0c6cc")` aluminum, `#8a939d` steel, `#3a3f44` black oxide, `#c4a574` brass, `#d9d3c7` POM,
+`#4a5560` rubber, `#c6d0da` fasteners). Required for from-scratch, Target Edit, Generate another, and
+imported STEP/GLB (white/grey tessellation is unauthored — not a finish to keep). The worker still
+injects `fill_color(i)` and `srgb("#hex")`.
+Do not cycle pastel CAD Viewer fills unless the user asked for workbench colours. Use a semantic/material
+colour whenever the prompt names that material. The worker paints leftover grey solids in `expected_outputs`
+order using shop swatches, not rainbow pastels.
+
+```python
+housing.color = srgb("#c0c6cc")
+lid.color = srgb("#3a3f44")
+```
+
+## Tools
+
+- `scripts/build123d_worker.py` — isolated build123d 0.11 sidecar (Render keeps this; upstream VibeCAD no longer vendors it).
+- FreeCADCmd when available (`backend/services/freecad_engine.py`).
+
+ChatGPT / OpenAI / Claude / Gemini: Codex is the host (one session). Debug only: inspect → one review → create/edit → repair → finish (`vibecad_agent` / `backend/services/vibecad_agent.py`). One-shot JSON is `vibecad_oneshot` only.
+
+""",
+}
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -62,6 +140,37 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, body
 
 
+def _ensure_skill_markdown(skill_dir: Path, skill_id: str) -> None:
+    """Write bundled SKILL.md if a skill sync wiped it (VibeCAD is Render-local).
+
+    macOS iCloud placeholders can look like files (`is_file()` True) but raise
+    FileNotFoundError on read — treat that as missing and rewrite.
+    """
+    body = _BUNDLED_SKILL_MD.get(skill_id)
+    if not body:
+        return
+    dest = skill_dir / "SKILL.md"
+    if dest.is_file():
+        try:
+            current = dest.read_text(encoding="utf-8")
+            # A Jake skill rsync + patch-skills used to append gen_step() notes
+            # onto VibeCAD. That contract is wrong for this engine.
+            if skill_id == "vibecad" and "<!-- render3d-studio -->" in current:
+                dest.write_text(body, encoding="utf-8")
+            return
+        except OSError:
+            pass
+    try:
+        dest.write_text(body, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def bundled_skill_markdown(skill_id: str) -> str:
+    """In-memory SKILL.md for local packs that rsync can wipe."""
+    return _BUNDLED_SKILL_MD.get((skill_id or "").strip().lower()) or ""
+
+
 def get_skill_dir(skill_id: str) -> Path | None:
     skill_id = (skill_id or "").strip().lower()
     if not skill_id or ".backup-" in skill_id:
@@ -69,6 +178,7 @@ def get_skill_dir(skill_id: str) -> Path | None:
     direct = SKILLS_DIR / skill_id
     if not direct.is_dir():
         return None
+    _ensure_skill_markdown(direct, skill_id)
     # Prefer canonical skill bundles that include SKILL.md, but accept
     # runtime-only bundles during sync windows so CAD v2 doesn't hard-fail.
     if (direct / "SKILL.md").is_file():
@@ -88,10 +198,15 @@ def _skill_paths() -> list[Path]:
             continue
         if ".backup-" in child.name:
             continue
-        if child.is_dir():
-            skill_md = child / "SKILL.md"
-            if skill_md.is_file():
-                paths.append(skill_md)
+        if not child.is_dir():
+            continue
+        skill_md = child / "SKILL.md"
+        if skill_md.is_file():
+            paths.append(skill_md)
+            continue
+        # Runtime-only packs (scripts/ or README) still list in the catalog.
+        if (child / "scripts").is_dir() or (child / "README.md").is_file():
+            paths.append(child / "SKILL.md")
     return paths
 
 
@@ -107,8 +222,13 @@ def _list_references(skill_dir: Path) -> list[str]:
 
 
 def _read_reference(skill_dir: Path, name: str, *, max_chars: int = _MAX_REFERENCE_CHARS) -> str | None:
-    path = skill_dir / "references" / name
-    if not path.is_file():
+    raw = str(name or "").lstrip("/")
+    candidates = (
+        skill_dir / "references" / Path(raw).name,
+        skill_dir / raw,
+    )
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
         return None
     text = path.read_text(encoding="utf-8").strip()
     if len(text) > max_chars:
@@ -137,10 +257,19 @@ def list_skills(*, user_id: str | None = None) -> list[dict[str, Any]]:
     installed = _installed_skill_set(user_id)
     out: list[dict[str, Any]] = []
     for path in _skill_paths():
-        text = path.read_text(encoding="utf-8")
+        skill_dir = path.parent if path.name == "SKILL.md" else path
+        skill_id = skill_dir.name
+        _ensure_skill_markdown(skill_dir, skill_id)
+        skill_md = skill_dir / "SKILL.md"
+        if skill_md.is_file():
+            text = skill_md.read_text(encoding="utf-8")
+        elif skill_id in _BUNDLED_SKILL_MD:
+            text = _BUNDLED_SKILL_MD[skill_id]
+        elif (skill_dir / "README.md").is_file():
+            text = (skill_dir / "README.md").read_text(encoding="utf-8")
+        else:
+            text = f"---\nname: {skill_id}\ndescription: {skill_id}\n---\n"
         meta, body = _parse_frontmatter(text)
-        skill_id = _skill_id_from_path(path)
-        skill_dir = path.parent
         preview = re.sub(r"\s+", " ", body).strip()[:280]
         tools: list[str] = []
         scripts = skill_dir / "scripts"
@@ -172,9 +301,22 @@ def get_skill(skill_id: str, *, include_references: bool = False) -> dict[str, A
     skill_dir = get_skill_dir(skill_id)
     if not skill_dir:
         return None
-    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    meta, body = _parse_frontmatter(text)
     skill_id = skill_dir.name
+    skill_md = skill_dir / "SKILL.md"
+    readme = skill_dir / "README.md"
+    text = ""
+    try:
+        if skill_md.is_file():
+            text = skill_md.read_text(encoding="utf-8")
+        elif skill_id in _BUNDLED_SKILL_MD:
+            text = _BUNDLED_SKILL_MD[skill_id]
+        elif readme.is_file():
+            text = readme.read_text(encoding="utf-8")
+        else:
+            text = f"---\nname: {skill_id}\ndescription: {skill_id}\n---\n"
+    except OSError:
+        text = _BUNDLED_SKILL_MD.get(skill_id) or f"---\nname: {skill_id}\ndescription: {skill_id}\n---\n"
+    meta, body = _parse_frontmatter(text)
     data: dict[str, Any] = {
         "id": skill_id,
         "name": meta.get("name") or skill_id,
@@ -310,15 +452,29 @@ def _prompt_matches(prompt: str, *needles: str) -> bool:
     return any(needle in lowered for needle in needles)
 
 
+def _is_vibecad_mode(mode: str | None) -> bool:
+    return (mode or "").strip().lower() in {"vibecad", "vibe", "vibecade"}
+
+
 def resolve_prompt_skills(
     skill_ids: list[str] | None,
     *,
     has_images: bool = False,
     prompt: str = "",
     user_id: str | None = None,
+    mode: str | None = None,
+    ref_types: list[str] | None = None,
+    filenames: list[str] | None = None,
 ) -> list[str]:
     """Select relevant skills from the user's available skill/app catalog."""
-    available = _available_skill_ids(skill_ids, user_id=user_id)
+    requested = list(skill_ids or [])
+    vibecad_mode = _is_vibecad_mode(mode)
+    if vibecad_mode:
+        requested = [s for s in requested if str(s).strip().lower() not in _JAKE_ONLY_SKILLS]
+        requested.append("vibecad")
+    # Empty requested would otherwise collapse VibeCAD to only "vibecad" and drop
+    # auto skills (blueprint-vision, dxf) needed for PDF/DXF reference files.
+    available = _available_skill_ids([], user_id=user_id)
     available_set = set(available)
     resolved: list[str] = []
 
@@ -326,11 +482,30 @@ def resolve_prompt_skills(
         if skill_id in available_set and skill_id not in resolved:
             resolved.append(skill_id)
 
-    # CAD is the base skill for Render Studio geometry generation.
-    add("cad")
+    for skill_id in requested:
+        add(str(skill_id).strip().lower())
 
-    if has_images or _prompt_matches(prompt, "blueprint", "schematic", "image", "photo", "drawing", "diagram"):
+    types = {str(t or "").strip().lower() for t in (ref_types or [])}
+    names = " ".join(str(n or "") for n in (filenames or [])).lower()
+    has_pdf = "pdf" in types or ".pdf" in names
+    has_dxf = "dxf" in types or ".dxf" in names
+    has_drawing = (
+        has_images
+        or has_pdf
+        or has_dxf
+        or _prompt_matches(prompt, "blueprint", "schematic", "image", "photo", "drawing", "diagram", "pdf")
+    )
+
+    # Engine-owned base skill. Jake 2.0 → cad. VibeCAD → vibecad (never Jake's cad).
+    if vibecad_mode:
+        add("vibecad")
+    else:
+        add("cad")
+
+    if has_drawing:
         add("blueprint-vision")
+    if has_dxf or _prompt_matches(prompt, "dxf", "laser", "waterjet", "2d profile", "flat pattern", "sheet"):
+        add("dxf")
 
     if _prompt_matches(prompt, "mold", "mould", "silicone", "casting", "negative cavity", "parting plane", "sprue", "vent"):
         add("silicone-mold-generation")
@@ -344,10 +519,21 @@ def resolve_prompt_skills(
     if _prompt_matches(prompt, "srdf", "moveit", "planning group", "collision matrix"):
         add("srdf")
 
-    if _prompt_matches(prompt, "dxf", "laser", "waterjet", "2d profile", "flat pattern", "sheet"):
-        add("dxf")
     if _prompt_matches(prompt, "sendcutsend", "send cut send", "sheet metal", "bend allowance"):
         add("sendcutsend")
+
+    if _prompt_matches(
+        prompt,
+        "printability", "printable", "overhang", "wall thickness", "support material",
+        "build orientation", "dfam", "design for additive",
+    ):
+        add("dfam-check")
+    if _prompt_matches(
+        prompt,
+        "engineering drawing", "shop drawing", "manufacturing drawing", "dimensioned sheet",
+        "orthographic views", "title block", "hole callout",
+    ):
+        add("engineering-drawing")
 
     if _prompt_matches(prompt, "g-code", "gcode", "toolpath", "cnc", "milling", "3d print", "slicer"):
         add("gcode")
@@ -364,22 +550,37 @@ def resolve_prompt_skills(
         add("wiring")
 
     if not resolved:
-        add("cad")
+        add("vibecad" if vibecad_mode else "cad")
+    if vibecad_mode:
+        resolved = [s for s in resolved if s in _VIBECAD_COMPAT_SKILLS or s == "vibecad"]
+        if "vibecad" not in resolved:
+            resolved.insert(0, "vibecad")
     return resolved
 
 
-def build_skills_prompt(skill_ids: list[str] | None, *, compact: bool = True) -> str:
+def build_skills_prompt(
+    skill_ids: list[str] | None,
+    *,
+    compact: bool = True,
+    dialect: str = "jake",
+) -> str:
     """Compose skill injections for the design system prompt."""
     if not skill_ids:
         return ""
+    vibe_dialect = str(dialect or "jake").strip().lower() in {"vibecad", "vibe", "vibecade"}
     parts: list[str] = []
     for raw_id in skill_ids:
         skill_id = (raw_id or "").strip().lower()
+        if vibe_dialect and skill_id in _JAKE_ONLY_SKILLS:
+            continue
+        if not vibe_dialect and skill_id == "vibecad":
+            continue
         skill = get_skill(skill_id)
         if not skill:
             continue
         skill_dir = get_skill_dir(skill_id)
-        parts.append(_RENDER3D_ADAPTER.format(skill_id=skill_id))
+        adapter = _VIBECAD_ADAPTER if (vibe_dialect or skill_id == "vibecad") else _RENDER3D_ADAPTER
+        parts.append(adapter.format(skill_id=skill_id))
         body = skill["content"]
         if compact and len(body) > _COMPACT_SKILL_MAX_CHARS:
             body = (
@@ -389,7 +590,8 @@ def build_skills_prompt(skill_ids: list[str] | None, *, compact: bool = True) ->
         parts.append(body)
         if skill_dir:
             for ref_name in _SKILL_EXTRAS.get(skill_id, []):
-                ref = _read_reference(skill_dir, ref_name)
+                ref_max = 8000 if vibe_dialect or skill_id == "vibecad" else _MAX_REFERENCE_CHARS
+                ref = _read_reference(skill_dir, ref_name, max_chars=ref_max)
                 if ref:
                     parts.append(f"\n### {ref_name}\n{ref}")
         parts.append("")

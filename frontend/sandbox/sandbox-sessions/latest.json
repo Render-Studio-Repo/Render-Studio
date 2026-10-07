@@ -1,0 +1,75 @@
+{
+  "sessionId": "43b6cfefdc5e4980",
+  "startedAt": "2026-09-17T16:26:54.047Z",
+  "reason": "remix_import",
+  "openArm": "2.0",
+  "token": "map1",
+  "entries": [
+    {
+      "map_id": "map-6a2a6f297f",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "status": "mapped",
+      "created": false,
+      "after_tip": "remix tree 18 pointers",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-c8af941399",
+      "at": "2026-09-17T16:26:54.197Z",
+      "updated_at": "2026-09-17T16:26:54.197Z",
+      "before_bytes": 4364,
+      "has_before": true
+    },
+    {
+      "map_id": "map-17bb2b268b",
+      "path": "remixes/remix_c63c5bdf8bce/chunks.json",
+      "status": "mapped",
+      "created": false,
+      "after_tip": "8 chunks",
+      "source": "remix_import",
+      "voice_step_ids": [],
+      "ref_id": "ref-341584d672",
+      "at": "2026-09-17T16:26:54.409Z",
+      "updated_at": "2026-09-17T16:26:54.409Z",
+      "before_bytes": 3061,
+      "has_before": true
+    }
+  ],
+  "voiceSteps": [],
+  "refs": [
+    {
+      "ref_id": "ref-openarm-20",
+      "kind": "product",
+      "label": "OpenArm 2.0",
+      "path": "openarm-teleop/rig.schema.json",
+      "note": "Headset avatar → OpenArm proxy; simulation only until URDF calibrated"
+    },
+    {
+      "ref_id": "ref-c8af941399",
+      "kind": "code",
+      "label": "remixes/remix_c63c5bdf8bce/tree.json",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T16:26:54.196Z"
+    },
+    {
+      "ref_id": "ref-341584d672",
+      "kind": "code",
+      "label": "remixes/remix_c63c5bdf8bce/chunks.json",
+      "path": "remixes/remix_c63c5bdf8bce/chunks.json",
+      "note": "first touch · remix_import",
+      "prompt_id": "",
+      "at": "2026-09-17T16:26:54.408Z"
+    },
+    {
+      "ref_id": "ref-b98992dc4b",
+      "kind": "remix",
+      "label": "Remix PROMPT - Quest Controller Calibration Nest",
+      "path": "remixes/remix_c63c5bdf8bce/tree.json",
+      "note": "18 restore pointers · 8 chunks · remix1",
+      "prompt_id": "",
+      "at": "2026-09-17T16:26:54.409Z"
+    }
+  ],
+  "status": "active"
+}

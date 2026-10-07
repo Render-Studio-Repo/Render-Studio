@@ -115,6 +115,12 @@ def migrate_social_features(conn) -> None:
         """
     )
     STORIES_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        from backend.services.calendar_service import migrate_calendar_schema
+
+        migrate_calendar_schema(conn)
+    except Exception:
+        pass
 
 
 def touch_presence(user_id: str) -> dict[str, Any]:
@@ -123,6 +129,12 @@ def touch_presence(user_id: str) -> dict[str, Any]:
         migrate_social_features(conn)
         conn.execute("UPDATE users SET last_seen_at = ? WHERE id = ?", (now, user_id))
         conn.commit()
+    try:
+        from backend.services import supabase_users_store as sbusers
+
+        sbusers.touch_last_seen(user_id, now)
+    except Exception:
+        pass
     return {"ok": True, "last_seen_at": now, "online": True}
 
 
@@ -449,6 +461,8 @@ def build_ics(
     ends_at: datetime,
     organizer_email: str,
     attendee_emails: list[str],
+    reminder_minutes: int = 30,
+    reminder_email: bool = True,
 ) -> str:
     def fmt(dt: datetime) -> str:
         return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -471,6 +485,28 @@ def build_ics(
     for email in attendee_emails:
         if email:
             lines.append(f"ATTENDEE;RSVP=TRUE:mailto:{email}")
+    if reminder_minutes and reminder_minutes > 0:
+        lines.extend(
+            [
+                "BEGIN:VALARM",
+                f"TRIGGER:-PT{int(reminder_minutes)}M",
+                "ACTION:DISPLAY",
+                "DESCRIPTION:Render Studio meeting in 30 minutes",
+                "END:VALARM",
+            ]
+        )
+        if reminder_email:
+            lines.extend(
+                [
+                    "BEGIN:VALARM",
+                    f"TRIGGER:-PT{int(reminder_minutes)}M",
+                    "ACTION:EMAIL",
+                    f"DESCRIPTION:{_ics_escape(title)}",
+                    f"SUMMARY:{_ics_escape(title)}",
+                    f"ATTENDEE:mailto:{organizer_email}",
+                    "END:VALARM",
+                ]
+            )
     lines.extend(["END:VEVENT", "END:VCALENDAR", ""])
     return "\r\n".join(lines)
 
@@ -620,36 +656,6 @@ def disconnect_calendar(user_id: str, provider: str) -> None:
 
 def calendar_oauth_start_url(provider: str, *, user_id: str, state: str) -> str:
     """Build Google/Outlook calendar consent URL (separate from login scopes)."""
-    provider = (provider or "").strip().lower()
-    if provider == "google":
-        if not settings.google_client_id:
-            raise ValueError("Google Calendar is not configured")
-        params = {
-            "client_id": settings.google_client_id,
-            "redirect_uri": settings.google_redirect_uri.replace("/oauth/social/callback", "/oauth/calendar/callback")
-            if "/oauth/social/callback" in (settings.google_redirect_uri or "")
-            else f"{settings.google_redirect_uri.rsplit('/', 1)[0]}/calendar/callback"
-            if settings.google_redirect_uri
-            else "https://render3d.app/oauth/calendar/callback",
-            "response_type": "code",
-            "scope": "openid email profile https://www.googleapis.com/auth/calendar.events",
-            "access_type": "offline",
-            "prompt": "consent",
-            "state": f"calendar:google:{user_id}:{state}",
-        }
-        # Prefer dedicated calendar redirect if configured via same host pattern
-        redirect = "https://render3d.app/oauth/calendar/callback"
-        params["redirect_uri"] = redirect
-        return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
-    if provider == "microsoft":
-        if not settings.microsoft_client_id:
-            raise ValueError("Outlook Calendar is not configured")
-        params = {
-            "client_id": settings.microsoft_client_id,
-            "redirect_uri": "https://render3d.app/oauth/calendar/callback",
-            "response_type": "code",
-            "scope": "openid email profile offline_access Calendars.ReadWrite",
-            "state": f"calendar:microsoft:{user_id}:{state}",
-        }
-        return "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?" + urlencode(params)
-    raise ValueError("Unsupported calendar provider")
+    from backend.services.calendar_service import oauth_start_url
+
+    return oauth_start_url(provider, user_id=user_id, state=state)

@@ -35,6 +35,14 @@ Map total judgment to:
 - `complex`: many parts, repeated systems, multiple materials, several hierarchy levels
 - `ultra-complex`: dense organic/mechanical/architectural structure where fidelity depends on deep hierarchy and repeated microstructure
 
+### A domain plugin may raise these floors
+
+A domain whose identity lives in its surface -- a painted skin, a printed pattern, a finish -- carries
+more identity-defining detail than a generic object at the same structural tier. Such a plugin
+publishes higher floors in its spec augmentation, and the merge applies them RAISE-ONLY: it can lift
+`complexity.tier`, `targetMinDetails` and `minimumSpecDepth`, and can never lower one. `targetMinDetails`
+never drops below the **9** floor whatever a plugin proposes.
+
 ## Quality Contract
 
 Before generating code, define exactly what makes the model good enough:

@@ -10,7 +10,9 @@ Flow:
 
 from __future__ import annotations
 
+import logging
 import secrets
+import sqlite3
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -20,75 +22,205 @@ import httpx
 from backend.config import settings
 from backend.database import get_conn
 
+logger = logging.getLogger("render3d.onshape")
+
 ONSHAPE_AUTH_URL = "https://oauth.onshape.com/oauth/authorize"
 ONSHAPE_TOKEN_URL = "https://oauth.onshape.com/oauth/token"
 ONSHAPE_USER_URL  = "https://cad.onshape.com/api/v6/users/sessioninfo"
+DEFAULT_REDIRECT_URI = "https://render3d.app/oauth/callback"
+CALLBACK_PATH = "/oauth/callback"
+
+# ---------------------------------------------------------------------------
+# Redirect URI
+# ---------------------------------------------------------------------------
+
+def canonical_redirect_uri(raw: str | None = None) -> str:
+    """Onshape matches redirect URLs byte-for-byte and rejects 127.0.0.1.
+
+    Local callbacks must be ``http://localhost:<port>/oauth/callback``.
+    Production stays on the configured https host with no trailing slash.
+    """
+    uri = (raw or settings.onshape_redirect_uri or DEFAULT_REDIRECT_URI).strip()
+    if not uri:
+        uri = DEFAULT_REDIRECT_URI
+    parsed = urllib.parse.urlparse(uri)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or CALLBACK_PATH
+    if path != CALLBACK_PATH:
+        path = CALLBACK_PATH
+    if host in {"127.0.0.1", "::1"}:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if parsed.scheme == "https" and port == 443:
+            return f"http://localhost{CALLBACK_PATH}"
+        if parsed.scheme != "https" and port in {80, 0}:
+            return f"http://localhost{CALLBACK_PATH}"
+        return f"http://localhost:{port}{CALLBACK_PATH}"
+    scheme = parsed.scheme or ("http" if host == "localhost" else "https")
+    if host == "localhost":
+        port = parsed.port
+        if port and not (scheme == "http" and port == 80):
+            return f"http://localhost:{port}{CALLBACK_PATH}"
+        return f"http://localhost{CALLBACK_PATH}"
+    netloc = parsed.netloc
+    return urllib.parse.urlunparse((scheme, netloc, path, "", "", ""))
+
+
+def redirect_uri_for_origin(origin: str | None = None) -> str:
+    """Use localhost when connecting from loopback; otherwise the configured URI.
+
+    Variants like www are not substituted so we never send an unregistered URL.
+    """
+    configured = canonical_redirect_uri()
+    if not origin:
+        return configured
+    req = urllib.parse.urlparse(origin)
+    host = (req.hostname or "").lower()
+    if host in {"127.0.0.1", "::1", "localhost"}:
+        port = req.port
+        if not port:
+            cfg = urllib.parse.urlparse(configured)
+            if (cfg.hostname or "").lower() == "localhost" and cfg.port:
+                port = cfg.port
+            else:
+                try:
+                    port = int(getattr(settings, "port", 0) or 0) or 8001
+                except (TypeError, ValueError):
+                    port = 8001
+        return canonical_redirect_uri(f"http://localhost:{port}{CALLBACK_PATH}")
+    return configured
+
+
+def _ensure_oauth_state_redirect_uri_column(conn) -> None:
+    try:
+        conn.execute("ALTER TABLE oauth_state ADD COLUMN redirect_uri TEXT")
+    except sqlite3.OperationalError:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # State (CSRF) helpers
 # ---------------------------------------------------------------------------
 
-def create_oauth_state(user_id: str | None = None) -> str:
+def create_oauth_state(user_id: str | None = None, redirect_uri: str | None = None) -> str:
     """Generate a random state token and persist it briefly."""
     state = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc).isoformat()
+    uri = canonical_redirect_uri(redirect_uri)
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO oauth_state (state, user_id, created_at) VALUES (?, ?, ?)",
-            (state, user_id, now),
-        )
+        _ensure_oauth_state_redirect_uri_column(conn)
+        try:
+            conn.execute(
+                "INSERT INTO oauth_state (state, user_id, created_at, redirect_uri) VALUES (?, ?, ?, ?)",
+                (state, user_id, now, uri),
+            )
+        except sqlite3.OperationalError:
+            conn.execute(
+                "INSERT INTO oauth_state (state, user_id, created_at) VALUES (?, ?, ?)",
+                (state, user_id, now),
+            )
     return state
 
 
-def consume_oauth_state(state: str) -> str | None:
-    """Verify and delete the state token. Returns user_id (may be None)."""
+def consume_oauth_state(state: str) -> dict[str, Any] | bool:
+    """Verify and delete the state token.
+
+    Returns ``False`` when the state is unknown or expired. Otherwise a dict
+    with ``user_id`` (may be None for login-with-Onshape) and ``redirect_uri``.
+    """
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT user_id, created_at FROM oauth_state WHERE state = ?", (state,)
-        ).fetchone()
+        _ensure_oauth_state_redirect_uri_column(conn)
+        try:
+            row = conn.execute(
+                "SELECT user_id, created_at, redirect_uri FROM oauth_state WHERE state = ?",
+                (state,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            row = conn.execute(
+                "SELECT user_id, created_at FROM oauth_state WHERE state = ?",
+                (state,),
+            ).fetchone()
         if not row:
-            return False  # unknown / already used
+            return False
         conn.execute("DELETE FROM oauth_state WHERE state = ?", (state,))
-    # Expire after 10 minutes
     created = datetime.fromisoformat(row["created_at"])
     if datetime.now(timezone.utc) - created > timedelta(minutes=10):
         return False
-    return row["user_id"]  # may be None for new-user flow
+    stored_uri = ""
+    try:
+        stored_uri = str(row["redirect_uri"] or "")
+    except (KeyError, IndexError, TypeError):
+        stored_uri = ""
+    return {
+        "user_id": row["user_id"],
+        "redirect_uri": canonical_redirect_uri(stored_uri or None),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Authorization URL
 # ---------------------------------------------------------------------------
 
-def build_authorization_url(user_id: str | None = None) -> str:
-    state = create_oauth_state(user_id)
+def build_authorization_url(user_id: str | None = None, origin: str | None = None) -> str:
+    if not (settings.onshape_client_id or "").strip() or not (settings.onshape_client_secret or "").strip():
+        raise RuntimeError("Onshape OAuth is not configured.")
+    redirect_uri = redirect_uri_for_origin(origin)
+    state = create_oauth_state(user_id, redirect_uri)
+    logger.info("onshape authorize redirect_uri=%s user_id=%s", redirect_uri, user_id)
     params = {
         "response_type": "code",
         "client_id":     settings.onshape_client_id,
-        "redirect_uri":  settings.onshape_redirect_uri,
+        "redirect_uri":  redirect_uri,
         "state":         state,
         "scope":         "OAuth2Read OAuth2ReadPII OAuth2Write",
     }
     return f"{ONSHAPE_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 
+def _token_exchange_error(resp: httpx.Response, redirect_uri: str) -> RuntimeError:
+    raw = (resp.text or "").strip()
+    payload: Any = {}
+    if raw:
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = {}
+    detail = raw
+    if isinstance(payload, dict):
+        detail = str(
+            payload.get("message")
+            or payload.get("error_description")
+            or payload.get("error")
+            or raw
+            or f"HTTP {resp.status_code}"
+        )
+    lower = detail.lower()
+    if "redirect" in lower:
+        return RuntimeError(
+            f"Onshape rejected callback {redirect_uri}. Add that exact Redirect URL in "
+            "Onshape → Your account menu → Applications → the Render Studio OAuth app."
+        )
+    return RuntimeError(f"Onshape token exchange failed: {detail[:240]}")
+
+
 # ---------------------------------------------------------------------------
 # Token exchange
 # ---------------------------------------------------------------------------
 
-def exchange_code_for_tokens(code: str) -> dict[str, Any]:
+def exchange_code_for_tokens(code: str, redirect_uri: str | None = None) -> dict[str, Any]:
+    uri = canonical_redirect_uri(redirect_uri)
     resp = httpx.post(
         ONSHAPE_TOKEN_URL,
         data={
             "grant_type":    "authorization_code",
             "code":          code,
-            "redirect_uri":  settings.onshape_redirect_uri,
+            "redirect_uri":  uri,
             "client_id":     settings.onshape_client_id,
             "client_secret": settings.onshape_client_secret,
         },
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.is_success:
+        raise _token_exchange_error(resp, uri)
     return resp.json()
 
 
@@ -195,6 +327,21 @@ def upsert_user_tokens(token_data: dict[str, Any], link_user_id: str | None = No
             """,
             (user_id, access_token, refresh_token, expires_at, onshape_uid, onshape_email, now),
         )
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        ws.oauth_upsert(
+            user_id,
+            "onshape",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            provider_user_id=onshape_uid or None,
+            provider_email=onshape_email or None,
+            extra={"onshape_user_id": onshape_uid, "onshape_email": onshape_email},
+        )
+    except Exception:
+        logger.debug("onshape oauth remote upsert skipped", exc_info=True)
 
     return {"user_id": user_id, "display_name": display_name, "email": onshape_email}
 
@@ -276,7 +423,7 @@ def list_documents(access_token: str, limit: int = 20, offset: int = 0) -> list[
         headers=_auth_headers(access_token),
         # filter=1 = documents owned by the calling user
         params={"filter": 1, "sortColumn": "modifiedAt", "sortOrder": "desc",
-                "limit": min(limit, 20), "offset": offset},
+                "limit": min(max(1, limit), 50), "offset": offset},
         timeout=15,
     )
     if not resp.is_success:
@@ -342,10 +489,12 @@ def list_elements(access_token: str, did: str, wid: str) -> list[dict]:
         # For blobs, only include recognised 3D formats
         if etype == "Blob" and not STEP_3D_RE.search(name):
             continue
+        eid = e["id"]
         result.append({
-            "id":   e["id"],
+            "id":   eid,
             "name": name,
             "type": TYPE_KEY.get(etype, "BLOB"),
+            "thumbnail": thumbnail_api_url(did, wid, eid),
         })
     return result
 
@@ -429,21 +578,82 @@ def download_element_as_step(access_token: str, did: str, wid: str, eid: str,
     return _translate_to_step(access_token, "partstudios", did, wid, eid)
 
 
+ONSHAPE_THUMB_SIZES = ("70x40", "300x170", "300x300", "600x340")
+ONSHAPE_THUMB_HOSTS = {"cad.onshape.com"}
+
+
+def normalize_thumb_size(size: str | None, *, large: bool = False) -> str:
+    raw = str(size or "").strip().lower()
+    if raw in ONSHAPE_THUMB_SIZES:
+        return raw
+    return "300x300" if large else "300x170"
+
+
+def thumbnail_api_url(did: str, wid: str, eid: str | None = None) -> str:
+    path = f"{ONSHAPE_API}/thumbnails/d/{did}/w/{wid}"
+    if eid:
+        path = f"{path}/e/{eid}"
+    return path
+
+
+def is_onshape_thumbnail_url(url: str | None) -> bool:
+    raw = str(url or "").strip()
+    if not raw:
+        return False
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    if host not in ONSHAPE_THUMB_HOSTS:
+        return False
+    return "/thumbnails/" in parsed.path
+
+
+def fetch_thumbnail(
+    access_token: str,
+    *,
+    did: str = "",
+    wid: str = "",
+    eid: str = "",
+    size: str = "300x170",
+    fallback_url: str | None = None,
+) -> tuple[bytes, str] | None:
+    """Proxy an Onshape document or element thumbnail (PNG/JPEG)."""
+    sz = normalize_thumb_size(size)
+    headers = {
+        **_auth_headers(access_token),
+        "Accept": "image/png,image/jpeg,image/*;q=0.8",
+    }
+    candidates: list[str] = []
+    if did and wid:
+        candidates.append(thumbnail_api_url(did, wid, eid or None))
+    if is_onshape_thumbnail_url(fallback_url):
+        candidates.append(str(fallback_url).strip())
+    seen: set[str] = set()
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+        try:
+            resp = httpx.get(
+                url,
+                headers=headers,
+                params={"sz": sz},
+                timeout=10,
+                follow_redirects=True,
+            )
+        except Exception:
+            continue
+        ctype = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if resp.is_success and ctype.startswith("image") and resp.content:
+            return resp.content, ctype
+    return None
+
+
 def get_document_thumbnail(access_token: str, did: str, wid: str, eid: str) -> bytes | None:
     """Fetch a thumbnail PNG for an element (best-effort)."""
-    try:
-        resp = httpx.get(
-            f"{ONSHAPE_API}/thumbnails/d/{did}/w/{wid}/e/{eid}",
-            headers=_auth_headers(access_token),
-            params={"sz": "300x170"},
-            timeout=10,
-            follow_redirects=True,
-        )
-        if resp.is_success and resp.headers.get("content-type", "").startswith("image"):
-            return resp.content
-    except Exception:
-        pass
-    return None
+    result = fetch_thumbnail(access_token, did=did, wid=wid, eid=eid)
+    return result[0] if result else None
 
 
 # ---------------------------------------------------------------------------
@@ -451,17 +661,31 @@ def get_document_thumbnail(access_token: str, did: str, wid: str, eid: str) -> b
 # ---------------------------------------------------------------------------
 
 def get_valid_access_token(user_id: str) -> str | None:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT access_token, refresh_token, expires_at FROM onshape_tokens WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
+    row = None
+    try:
+        from backend.services import supabase_workspace_store as ws
+
+        if ws.live():
+            packed = ws.oauth_get(user_id, "onshape")
+            if packed:
+                row = packed
+    except Exception:
+        logger.debug("onshape oauth remote get skipped", exc_info=True)
+    if row is None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT access_token, refresh_token, expires_at FROM onshape_tokens WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        if row:
+            row = dict(row)
     if not row:
         return None
-    expires_at = datetime.fromisoformat(row["expires_at"])
+    expires_at = datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00"))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
         return row["access_token"]
-    # Token expired — refresh it, keeping tokens on the same Render Studio user.
     try:
         new_tokens = refresh_access_token(row["refresh_token"])
         upsert_user_tokens(

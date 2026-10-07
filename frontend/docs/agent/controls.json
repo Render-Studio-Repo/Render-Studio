@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "controls": [
+    {"key":"robotics.connect_pi","surface":"Robotics Home","label":"Connect Pi","action":"Connect to the saved Raspberry Pi robotics API without enabling teleop or moving hardware.","keywords":["raspberry pi","connect","api","robot bridge","offline"]},
+    {"key":"robotics.open_cameras","surface":"Robotics Home","label":"Open Cameras","action":"Open the unified left wrist, right wrist, and ZED POV camera window.","keywords":["camera","wrist","zed","pov","video","stream"]},
+    {"key":"robotics.training_data","surface":"Robotics Home","label":"Training data","action":"Open robot datasets and synchronized episode artifacts.","keywords":["dataset","lerobot","training","episodes","recording"]},
+    {"key":"robotics.robot_files","surface":"Robotics Home","label":"Robot files","action":"Open the robotics-specific project file explorer.","keywords":["files","explorer","artifacts","project"]},
+    {"key":"robotics.mujoco","surface":"Robotics Home","label":"MuJoCo","action":"Open the simulation view. This does not move physical hardware.","keywords":["mujoco","simulation","sim","cube test"]},
+    {"key":"robotics.preflight","surface":"Robotics Home","label":"Preflight","action":"Run reset, calibration, limits, connection, and guarded-home checks before a physical run.","keywords":["preflight","calibration","limits","hardware","sync"]},
+    {"key":"robotics.home","surface":"Robotics Home","label":"Home robot","action":"Stop motion producers and slowly move both arms to the feedback-checked arms-down home pose after confirmation.","keywords":["home","arms down","reset","safe pose"]},
+    {"key":"robotics.recover_home","surface":"Robotics Home","label":"Recover home","action":"Clear a latched software stop only through the guarded recovery and home sequence after confirmation.","keywords":["recover","kill latch","home","reset"]},
+    {"key":"robotics.kill","surface":"Robotics Home","label":"KILL / DISABLE NOW","action":"Immediately stop teleop, emotes, playback, and motion producers and disable the robot. This is the only immediate physical assistant action.","keywords":["kill","disable","emergency stop","e-stop","teleop","emote"]},
+    {"key":"robotics.hey_ai","surface":"Robotics Home header","label":"Hey AI","action":"Start the shared voice assistant. Robotics reasoning uses the AI prompt model and prefers the selected connected subscription.","keywords":["voice","assistant","hey ai","astra","model","subscription"]},
+    {"key":"robotics.agent_settings","surface":"Robotics Home header","label":"Voice settings","action":"Open voice model, realtime voice, volume, wake name, and context-sharing settings.","keywords":["gear","settings","voice model","volume","wake name"]},
+    {"key":"robotics.render_agent","surface":"Robotics Home header","label":"Render Agent","action":"Open actionable robotics chat with the active project and indexed Robotics Home controls in context.","keywords":["render agent","chat","questions","actions","robotics"]}
+  ]
+}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Docs — Render Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/favicon-32.png?v=20260915-browserdots1" sizes="32x32" />
+  <link rel="stylesheet" href="/studio/styles.css?v=20260908-css-href-logo-ko1-loginlog1-loginfix1-20260915-wristwindow1-webglfb1" />
+  <link rel="stylesheet" href="/site/gitbook-lite.css?v=20260916-gb1" />
+</head>
+<body class="info-page">
+  <div id="app" class="app-info">
+    <header class="toolbar">
+      <div class="brand"><a href="/" class="brand-link"><span class="brand-mark brand-mark--intro"><img class="logo" src="/media/images/render-animations/VR-Animations/render-logo-gear-still.png?v=20260915-logo1" alt="" width="40" height="40" /></span><h1 class="brand-title visually-hidden">Render Studio</h1></a></div>
+      <nav class="toolbar-nav" aria-label="Main">
+        <div class="toolbar-nav-menu" id="toolbar-nav-menu">
+          <a href="/" class="nav-tab">Studio</a>
+<a href="/opensource.html" class="nav-tab">The Office</a>
+          <a href="/api-docs.html" class="nav-tab">API Docs</a>
+          <a href="/results.html" class="nav-tab">Results</a>
+          <a href="/updates.html" class="nav-tab">Updates</a>
+          <a href="/sandbox/index.html" class="nav-tab" role="menuitem">Sandbox</a>
+        </div>
+      </nav>
+    </header>
+    <main class="info-main">
+      <nav class="docs-category-tabs" style="padding:1rem 1.25rem 0">
+        <a class="docs-category-tab" href="/white-paper.html#cast">Cast</a>
+        <a class="docs-category-tab active" href="/api-docs.html">API Docs</a>
+        <a class="docs-category-tab" href="/results.html">Results</a>
+        <a class="docs-category-tab" href="/opensource.html">The Office</a>
+      </nav>
+      <div class="gb">
+        <aside class="gb-side">
+          <strong>API</strong>
+          <a href="#ids">IDs</a>
+          <a href="#ops">agent-ops</a>
+          <a href="#search">Search params</a>
+          <a href="#chat">chat_id / instance</a>
+          <a href="#mcp">MCP</a>
+          <a href="#x">X / tweet</a>
+        </aside>
+        <div class="gb-main">
+          <h3 id="ids">IDs</h3>
+          <table>
+            <tr><th>Field</th><th>Example</th><th>Belongs to</th></tr>
+            <tr><td>instance_id</td><td>501</td><td>Install / marketplace instance</td></tr>
+            <tr><td>group_id</td><td>bus | hello | tool</td><td>Kind of event on that instance</td></tr>
+            <tr><td>chat_id</td><td>UUID or conv-CYCLE-…</td><td>One Cursor/Grok thread</td></tr>
+            <tr><td>cycle_id</td><td>CYCLE-20260916-PM1</td><td>One PM battery</td></tr>
+            <tr><td>prompt_id</td><td>prm_rnd_index_1</td><td>One ops set</td></tr>
+            <tr><td>agent</td><td>vibe-rnd</td><td>Who spoke</td></tr>
+            <tr><td>model</td><td>grok-4.5 or Cursor 4.6</td><td>Which process</td></tr>
+          </table>
+          <p>Assign chat_id at thread start. Join <code>instance_id + group_id + chat_id + agent</code>. Do not mint a second bug-id family.</p>
+          <h3 id="ops">POST /api/ops/agent-ops/tracebacks</h3>
+          <pre>curl -X POST https://render3d.app/api/ops/agent-ops/tracebacks \
+  -H 'Authorization: Bearer $PROMPT_TRACE_API_KEY' \
+  -d '{"prompt_id":"prm_x","category_id":"DATA","traceback_ids":["tb_a"],"result_score":70,"agent":"vibe-rnd"}'</pre>
+          <h3 id="search">Search params</h3>
+          <pre>GET /api/ops/agent-ops/tracebacks?category_id=DATA&amp;limit=40
+GET /api/ops/agent-ops/similar?category_id=DATA
+GET /api/ops/debugger-analytics/search?q=webgl</pre>
+          <h3 id="chat">Chat ownership</h3>
+          <p>This Cursor chat chat_id = transcript folder name. Specialists use conv_id / cycle_id. instance_id stays 501 until other public clones exist (instance_public_factor=0).</p>
+          <h3 id="mcp">MCP</h3>
+          <pre>tools/call grok_status
+tools/call grok_key_index { "query": "tweet" }
+tools/call grok_tweet_for_agent { "agent":"vibe-rnd", "text":"…", "confirm":true }
+tools/call agent_bus_submit { "agent":"vibe-rnd", "cycle_id":"CYCLE-20260916-PM1", "packet":{} }</pre>
+          <h3 id="x">X</h3>
+          <p>plugin-x-x is read-only. App bearer 403/402. Need TWITTER_ACCESS_TOKEN + SECRET to tweet as @winstead_works. Intent URL is not a live tweet.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
