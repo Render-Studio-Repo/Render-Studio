@@ -89,6 +89,17 @@ def _connect() -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_instance_submissions_created
             ON instance_submissions(created_at DESC);
+        CREATE TABLE IF NOT EXISTS instance_announcements (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            action_label TEXT NOT NULL DEFAULT '',
+            action_url TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1
+        );
         """
     )
     columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(instance_submissions)")}
@@ -233,6 +244,62 @@ def submit(payload: dict[str, Any]) -> dict[str, Any]:
             (item_id, iid, token, kind, subject, message, severity, diagnostic, created),
         )
     return {"ok": True, "submission_id": item_id, "created_at": created}
+
+
+def create_announcement(payload: dict[str, Any]) -> dict[str, Any]:
+    kind = str(payload.get("kind") or "whats_new").strip().lower()
+    if kind not in {"update", "suggestion", "whats_new"}:
+        raise ValueError("kind must be update, suggestion, or whats_new")
+    title = _text(payload.get("title"), 120, one_line=True)
+    message = _text(payload.get("message"), 1200)
+    if len(title) < 3 or len(message) < 5:
+        raise ValueError("title and message are required")
+    item = {
+        "id": uuid.uuid4().hex,
+        "kind": kind,
+        "title": title,
+        "message": message,
+        "action_label": _text(payload.get("action_label"), 40, one_line=True),
+        "action_url": _text(payload.get("action_url"), 500, one_line=True),
+        "created_at": _now().isoformat(),
+        "expires_at": _text(payload.get("expires_at"), 40, one_line=True),
+        "active": 1,
+    }
+    if item["action_url"] and not item["action_url"].startswith(("https://render3d.app/", "/")):
+        raise ValueError("action_url must be a Render URL or local path")
+    with _LOCK, _connect() as conn:
+        conn.execute(
+            "INSERT INTO instance_announcements(id,kind,title,message,action_label,action_url,created_at,expires_at,active) VALUES(?,?,?,?,?,?,?,?,?)",
+            tuple(item.values()),
+        )
+    item["active"] = True
+    return item
+
+
+def announcements_for_instance(payload: dict[str, Any]) -> dict[str, Any]:
+    iid, secret = _identity(payload.get("instance_id", ""), payload.get("instance_secret", ""))
+    now = _now().isoformat()
+    with _LOCK, _connect() as conn:
+        _authenticate(conn, iid, secret)
+        rows = conn.execute(
+            "SELECT * FROM instance_announcements WHERE active=1 AND (expires_at='' OR expires_at>?) ORDER BY created_at DESC LIMIT 10",
+            (now,),
+        ).fetchall()
+    return {"ok": True, "announcements": [{**dict(row), "active": bool(row["active"])} for row in rows]}
+
+
+def list_announcements() -> list[dict[str, Any]]:
+    with _LOCK, _connect() as conn:
+        rows = conn.execute("SELECT * FROM instance_announcements ORDER BY created_at DESC LIMIT 100").fetchall()
+    return [{**dict(row), "active": bool(row["active"])} for row in rows]
+
+
+def set_announcement_active(announcement_id: str, active: bool) -> dict[str, Any]:
+    with _LOCK, _connect() as conn:
+        cursor = conn.execute("UPDATE instance_announcements SET active=? WHERE id=?", (int(active), str(announcement_id)))
+    if cursor.rowcount != 1:
+        raise ValueError("Announcement was not found.")
+    return {"ok": True, "id": str(announcement_id), "active": bool(active)}
 
 
 def overview(query: str = "") -> dict[str, Any]:

@@ -88,6 +88,19 @@ class ReleasePublishBody(BaseModel):
     published_at: str = Field(default="", max_length=80)
 
 
+class AnnouncementBody(BaseModel):
+    kind: str = Field(default="whats_new", pattern="^(update|suggestion|whats_new)$")
+    title: str = Field(..., min_length=3, max_length=120)
+    message: str = Field(..., min_length=5, max_length=1200)
+    action_label: str = Field(default="", max_length=40)
+    action_url: str = Field(default="", max_length=500)
+    expires_at: str = Field(default="", max_length=40)
+
+
+class AnnouncementStateBody(BaseModel):
+    active: bool
+
+
 def _central_admin_only(user: dict[str, Any] | None) -> None:
     if not network.is_official_hub() or not user or not platform_roles_service.is_platform_admin(user):
         raise HTTPException(403, "Instance updates are available only to this instance's admins.")
@@ -130,6 +143,12 @@ def instance_heartbeat(body: InstanceReportBody):
 def instance_submission(body: InstanceSubmissionBody):
     _hub_only()
     return _registry_call(registry.submit, body.model_dump())
+
+
+@router.post("/api/instance-network/v1/announcements")
+def instance_announcements(body: InstanceReportBody):
+    _hub_only()
+    return _registry_call(registry.announcements_for_instance, body.model_dump())
 
 
 @router.get("/api/instance-network/v1/releases/latest")
@@ -227,6 +246,12 @@ def local_instance_management(user: dict[str, Any] | None = Depends(get_current_
         "metrics": network.metrics(force=True),
         "feedback": feedback_service.summary(),
     }
+
+
+@router.get("/api/setup/instance-announcements")
+def local_instance_announcements(user: dict[str, Any] | None = Depends(get_current_user_optional)):
+    _instance_admin_only(user)
+    return network.check_announcements()
 
 
 @router.post("/api/setup/instance-network")

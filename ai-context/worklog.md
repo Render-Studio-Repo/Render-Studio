@@ -1,5 +1,11 @@
 # Render Studio public worklog
 
+## 2026-10-06 — Connected instance announcements
+
+- Added authenticated service-wide announcements for updates, suggestions, and What's New messages.
+- Connected instances display the newest active message as a dismissible popup and remember dismissal in that browser.
+- Standalone installations do not request or display Render service announcements.
+
 ## 2026-10-06
 
 ### Connected instance administration and bug inbox

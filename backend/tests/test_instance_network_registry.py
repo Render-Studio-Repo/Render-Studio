@@ -70,6 +70,25 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
         response = self.client.post("/api/instance-network/v1/heartbeat", json=self.identity)
         self.assertEqual(response.status_code, 404)
 
+    def test_connected_instance_receives_active_service_announcement(self) -> None:
+        self.client.post("/api/instance-network/v1/register", json=self.identity)
+        created = registry.create_announcement({
+            "kind": "whats_new",
+            "title": "New robotics tools",
+            "message": "Open Robotics Home to see the latest controls.",
+            "action_label": "View tools",
+            "action_url": "/index.html#robotics",
+        })
+        response = self.client.post("/api/instance-network/v1/announcements", json=self.identity)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["announcements"][0]["id"], created["id"])
+        registry.set_announcement_active(created["id"], False)
+        self.assertEqual(self.client.post("/api/instance-network/v1/announcements", json=self.identity).json()["announcements"], [])
+
+    def test_announcement_requires_registered_instance(self) -> None:
+        response = self.client.post("/api/instance-network/v1/announcements", json=self.identity)
+        self.assertEqual(response.status_code, 404)
+
     def test_submission_is_redacted_idempotent_and_visible_to_admin(self) -> None:
         self.client.post("/api/instance-network/v1/register", json=self.identity)
         report = {

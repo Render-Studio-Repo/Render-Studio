@@ -319,6 +319,8 @@ Instances connected to the Render ecosystem receive admin-only update notices wh
 
 The updater accepts only the exact fetched `origin/master` commit and a fast-forward history. It refuses to run when application source has tracked or untracked changes, or when a release touches projects, databases, backups, logs, credentials, private modules, or hosted super-admin surfaces. Runtime data remains outside Git and stays in place across updates. Changes made only to render3d.app do not publish an instance update.
 
+Connected installations also receive dismissible service announcements from Render. Announcements are authenticated with the installation's existing instance credential and may contain an update notice, suggestion, or What's New message with an optional Render action link. Standalone installations do not request or display service announcements.
+
 ## Verify the public release
 
 Run the dependency-free release checks from a fresh clone:

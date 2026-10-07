@@ -3,3 +3,9 @@
 .instance-update-notice div { display: flex; justify-content: flex-end; gap: 8px; }
 .instance-update-notice button, .instance-update-notice a { border: 1px solid #3b82f6; border-radius: 8px; padding: 7px 10px; background: transparent; color: #dbeafe; font: inherit; text-decoration: none; cursor: pointer; }
 .instance-update-notice a { background: #1d4ed8; color: white; }
+.instance-announcement { border-color: #d4a72c; background: linear-gradient(145deg, #171b20, #111820); }
+.instance-announcement small { color: #d4a72c; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.instance-announcement--suggestion { border-color: #8b5cf6; }
+.instance-announcement--suggestion small { color: #c4b5fd; }
+.instance-announcement--update { border-color: #3b82f6; }
+.instance-announcement--update small { color: #93c5fd; }
