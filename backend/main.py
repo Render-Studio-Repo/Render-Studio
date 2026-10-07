@@ -8258,6 +8258,10 @@ def register(body: RegisterRequest, request: Request, background_tasks: Backgrou
         _notify_management_update("new_user.created")
     except Exception:
         logger.warning("Could not enqueue new user admin alert for user_id=%s", user.get("id"), exc_info=True)
+    try:
+        platform_roles_service.claim_initial_instance_admin(user)
+    except Exception:
+        logger.warning("Could not claim initial instance admin for user_id=%s", user.get("id"), exc_info=True)
     background_tasks.add_task(_send_welcome_email_background, dict(user))
     token = create_access_token(user["id"])
     return _auth_token_response(token, user, request, include_ai=False)
