@@ -7,6 +7,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "instance-update-notice.js"), "utf8");
 test("Studio offers admins a dismissible update review notice", () => {
   assert.match(source, /\/api\/setup\/instance-updates\/check/);
+  assert.match(source, /\/api\/setup\/instance-announcements/);
+  assert.match(source, /dismissed-announcement/);
   assert.match(source, /data-update-later/);
   assert.match(source, /setup-instance\.html#setup-updates-card/);
 });

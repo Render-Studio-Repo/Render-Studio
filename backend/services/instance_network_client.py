@@ -30,6 +30,7 @@ DEFAULT_HUB = "https://render3d.app"
 REGISTER_PATH = "/api/instance-network/v1/register"
 HEARTBEAT_PATH = "/api/instance-network/v1/heartbeat"
 SUBMISSION_PATH = "/api/instance-network/v1/submissions"
+ANNOUNCEMENT_PATH = "/api/instance-network/v1/announcements"
 UPDATE_PATH = "/api/instance-network/v1/releases/latest"
 HEARTBEAT_SECONDS = 300
 METRIC_CACHE_SECONDS = 900
@@ -212,6 +213,15 @@ def check_for_update() -> dict[str, Any]:
             "notes": str(release.get("notes") or "")[:1000],
         },
     }
+
+
+def check_announcements() -> dict[str, Any]:
+    if is_official_hub() or not bool(public_status().get("ecosystem_opt_in")):
+        return {"ok": True, "enabled": False, "announcements": []}
+    result = _post(ANNOUNCEMENT_PATH, _identity_payload(), timeout=5.0)
+    if not result.get("ok"):
+        return {"ok": False, "enabled": True, "announcements": [], "offline": True}
+    return {"ok": True, "enabled": True, "announcements": list(result.get("announcements") or [])[:10]}
 
 
 def apply_update(commit_sha: str) -> dict[str, Any]:
