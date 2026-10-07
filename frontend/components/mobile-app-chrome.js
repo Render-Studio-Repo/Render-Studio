@@ -445,6 +445,7 @@ function initMobileBanner() {
       social: "btn-social-network",
       suggest: "btn-suggestion",
       bug: "btn-report-bug",
+      "instance-bug": "btn-instance-bug",
       activity: "btn-workspace-activity-toggle",
     };
     document.getElementById(map[action] || "")?.click();

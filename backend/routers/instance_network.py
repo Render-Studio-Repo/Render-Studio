@@ -18,7 +18,7 @@ router = APIRouter()
 
 def _allowed(request: Request, user: dict[str, Any] | None) -> bool:
     host = ((request.client.host if request.client else "") or "").strip().lower()
-    return host in {"127.0.0.1", "::1", "localhost"} or bool(user and platform_roles_service.is_super_admin(user))
+    return host in {"127.0.0.1", "::1", "localhost"} or bool(user and platform_roles_service.is_platform_admin(user))
 
 
 class NetworkConfigBody(BaseModel):

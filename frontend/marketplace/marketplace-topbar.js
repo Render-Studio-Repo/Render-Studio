@@ -72,7 +72,7 @@ export function mountMarketplaceTopbar({ host = document.querySelector("header.t
   actions.querySelector('[data-action="suggestions"]').onclick = async () => {
     try {
       if (!feedback) {
-        const { createFeedbackUI } = await import("../components/feedback-ui.js?v=20260915-marketplace3&leakfix78");
+        const { createFeedbackUI } = await import("../components/feedback-ui.js?v=20261006-instance-bug1");
         feedback = createFeedbackUI({});
       }
       feedback.open("suggestion");

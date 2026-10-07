@@ -111,6 +111,19 @@ class InstanceNetworkRegistryTests(unittest.TestCase):
         self.assertIn("status", data["instances"][0])
         self.assertEqual(set(data), {"ok", "privacy", "counts", "instances", "history", "submissions"})
 
+    def test_instance_admin_can_send_separate_instance_bug(self) -> None:
+        self._admin()
+        with patch("backend.routers.instance_network.network.submit", return_value={"ok": True, "submission_id": "bug-1"}) as submit:
+            response = self.client.post("/api/setup/instance-support", json={
+                "kind": "issue",
+                "subject": "Studio instance bug",
+                "message": "Updates fail on this installation",
+                "severity": "normal",
+                "diagnostic": "",
+            })
+        self.assertEqual(response.status_code, 200)
+        submit.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

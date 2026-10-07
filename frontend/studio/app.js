@@ -290,7 +290,7 @@ import {
   mergeGenerationIdentity,
   resolveGenerationIdentity,
 } from "./generation-identity.js?v=20260909-collabpill1";
-import { createFeedbackUI, initManagementNotifications } from "../components/feedback-ui.js?v=20260908-suggest-ui&leakfix78";
+import { createFeedbackUI, initManagementNotifications } from "../components/feedback-ui.js?v=20261006-instance-bug1";
 import { createProjectChatUI } from "../social/project-chat.js?v=20260908-agent-tabs-logo-ko1-logo1-settings-redesign2&vrboard=20260915-spatial-draw4&leakfix22&leakfix60&groupagents1&marketplace-dm1";
 import { createSocialNetworkUI } from "../social/social-network-ui.js?v=20260908-socialpop1-socavat1-mobui1-gpu-recovery3-gpu-recovery4-gpu-recovery5&leakfix58";
 import { createPublicProjectImporter } from "../xr/xr-public-import.js?v=roomfloor1-20260916-vrsharemesh1";
@@ -17409,12 +17409,18 @@ const activityLog = {
 createFeedbackUI({
   suggestionBtn: document.getElementById("btn-suggestion"),
   bugBtn: document.getElementById("btn-report-bug"),
+  instanceBugBtn: document.getElementById("btn-instance-bug"),
   getProjects: () => allProjects,
   getCurrentProjectId: () => projectId,
   getSelectedFile: () => selectedFile,
   getPromptText: () => composer?.getPromptText?.() || "",
   onSubmitted: (request) => {
-    setEditStatus("ok", request?.kind === "bug" ? "Bug report sent to management." : "Suggestion sent to management.");
+    const message = request?.kind === "instance_bug"
+      ? "Instance bug sent to Render management."
+      : request?.kind === "bug"
+        ? "Bug report sent to this instance's management."
+        : "Suggestion sent to management.";
+    setEditStatus("ok", message);
     window.dispatchEvent(new CustomEvent("render3d:feedback-submitted", { detail: request }));
   },
 });

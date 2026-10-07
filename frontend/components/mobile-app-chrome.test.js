@@ -39,6 +39,8 @@ test("phone header pills collapse into Studio sheet next to Tools", () => {
   assert.match(html, /data-mobile-more="agent"/);
   assert.match(html, /data-mobile-more="social"/);
   assert.match(html, /data-mobile-more="activity"/);
+  assert.match(html, /data-mobile-more="instance-bug"/);
+  assert.match(js, /"instance-bug": "btn-instance-bug"/);
   assert.match(js, /setMoreSheetOpen/);
   assert.match(js, /btn-render-agent/);
 });
