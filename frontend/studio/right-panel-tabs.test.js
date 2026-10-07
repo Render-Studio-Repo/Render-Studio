@@ -77,6 +77,7 @@ test("Report Bug, Activity, and Social chrome sit in the header left of the prof
   assert.match(header, /id="btn-social-network"/);
   assert.match(header, /id="btn-suggestion"/);
   assert.match(header, /id="btn-report-bug"/);
+  assert.match(header, /id="btn-instance-bug"/);
   assert.match(header, /id="btn-workspace-activity-toggle"/);
   assert.ok(header.indexOf("btn-project-chat") < header.indexOf("btn-report-bug"));
   assert.ok(header.indexOf("btn-social-network") < header.indexOf("btn-report-bug"));

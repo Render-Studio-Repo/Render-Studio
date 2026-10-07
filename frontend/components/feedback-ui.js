@@ -54,6 +54,7 @@ async function requestJson(path, options = {}) {
 export function createFeedbackUI({
   suggestionBtn,
   bugBtn,
+  instanceBugBtn,
   getProjects = () => [],
   getCurrentProjectId = () => "",
   getSelectedFile = () => "",
@@ -187,7 +188,7 @@ export function createFeedbackUI({
   }
 
   function setKind(kind) {
-    activeKind = kind === "suggestion" ? "suggestion" : "bug";
+    activeKind = kind === "instance" ? "instance" : kind === "suggestion" ? "suggestion" : "bug";
     if (!modal) return;
     modal.querySelectorAll("[data-feedback-kind]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.feedbackKind === activeKind);
@@ -196,18 +197,22 @@ export function createFeedbackUI({
     const sub = modal.querySelector("#feedback-sub");
     const submit = modal.querySelector("#feedback-submit");
     const message = modal.querySelector("#feedback-message");
-    if (title) title.textContent = activeKind === "bug" ? "Report a bug" : "Share a suggestion";
+    if (title) title.textContent = activeKind === "instance" ? "Report an instance bug" : activeKind === "bug" ? "Report a bug" : "Share a suggestion";
     if (sub) {
       sub.textContent =
-        activeKind === "bug"
+        activeKind === "instance"
+          ? "Report installation, updates, connectivity, or Render ecosystem problems. This goes to central Render management with the instance ID."
+          : activeKind === "bug"
           ? "Tell us what broke. Drop screenshots anywhere on the page or into this panel."
           : "Tell us what to improve. Drop reference images anywhere on the page or into this panel.";
     }
-    if (submit) submit.textContent = activeKind === "bug" ? "Send bug report" : "Send suggestion";
+    if (submit) submit.textContent = activeKind === "instance" ? "Send instance bug" : activeKind === "bug" ? "Send bug report" : "Send suggestion";
     if (message && !message.value) {
       message.placeholder =
-        activeKind === "bug" ? "What broke? What did you expect?" : "What should we add or improve?";
+        activeKind === "instance" ? "What is wrong with this Render installation?" : activeKind === "bug" ? "What broke? What did you expect?" : "What should we add or improve?";
     }
+    modal.querySelector("#feedback-dropzone")?.classList.toggle("hidden", activeKind === "instance");
+    modal.querySelector(".feedback-context")?.classList.toggle("hidden", activeKind === "instance");
     modal.classList.toggle("feedback-modal-backdrop--bug", activeKind === "bug");
     modal.classList.toggle("feedback-modal-backdrop--idea", activeKind === "suggestion");
   }
@@ -233,7 +238,7 @@ export function createFeedbackUI({
 
   function open(kind = "bug", { files = [] } = {}) {
     close();
-    activeKind = kind === "suggestion" ? "suggestion" : "bug";
+    activeKind = kind === "instance" ? "instance" : kind === "suggestion" ? "suggestion" : "bug";
     pendingFiles = [];
     document.body.classList.add("feedback-open");
     modal = document.createElement("div");
@@ -392,6 +397,26 @@ export function createFeedbackUI({
     }
     if (submitBtn) submitBtn.disabled = true;
     try {
+      if (activeKind === "instance") {
+        await requestJson("/api/setup/instance-support", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind: "issue",
+            subject: "Studio instance bug",
+            message,
+            severity: "normal",
+            diagnostic: "",
+          }),
+        });
+        onSubmitted?.({ kind: "instance_bug" });
+        if (status) {
+          status.textContent = "Sent to Render management — thank you.";
+          status.className = "feedback-status is-ok";
+        }
+        setTimeout(close, 700);
+        return;
+      }
       const res = await fetch("/api/feedback/requests", {
         method: "POST",
         headers: authHeaders(),
@@ -555,6 +580,7 @@ export function createFeedbackUI({
     open("suggestion");
   });
   bugBtn?.addEventListener("click", () => open("bug"));
+  instanceBugBtn?.addEventListener("click", () => open("instance"));
 
   return { open, close };
 }

@@ -5,6 +5,7 @@
 ### Connected instance administration and bug inbox
 
 - Made the first real account created on a fresh self-hosted installation its local platform administrator; bundled marketplace profile records are excluded from this decision.
+- Kept the standard Report Bug action in the current installation's management queue and added a separate Instance Bug action on desktop and mobile for sending installation/ecosystem problems to central Render management with the instance ID.
 - Added authenticated instance registration, heartbeat, and support/bug submission endpoints for connected public installations.
 - Added a privacy-limited central registry and management inbox that stores hashed instance credentials, aggregate instance metadata, redacted reports, retry deduplication, unread state, and no IP, hostname, project, prompt, or user identity data.
 - Added administrator-only overview and read-state endpoints compatible with the Render management Instances panel.

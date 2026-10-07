@@ -1147,6 +1147,8 @@
           </div>
           <button type="button" id="btn-report-bug" class="workspace-feedback-btn workspace-feedback-btn--bug">Report
             Bug</button>
+          <button type="button" id="btn-instance-bug" class="workspace-feedback-btn workspace-feedback-btn--bug"
+            title="Report an installation or ecosystem problem to Render">Instance Bug</button>
           <div class="workspace-activity-switcher">
             <button type="button" id="btn-workspace-activity-toggle" class="workspace-activity-tab"
               aria-expanded="false" aria-controls="workspace-activity-dropdown">
@@ -6307,6 +6309,7 @@
         <button type="button" data-mobile-more="social">Social</button>
         <button type="button" data-mobile-more="suggest">Suggestions</button>
         <button type="button" data-mobile-more="bug">Report Bug</button>
+        <button type="button" data-mobile-more="instance-bug">Instance Bug</button>
         <button type="button" data-mobile-more="activity">Activity</button>
       </div>
     </div>
@@ -6357,7 +6360,7 @@
   </div>
 
   <script type="module" src="/studio/toolbar-nav.js?v=20260908-layout-acctovl1-acctui1-updtab1-20260916-mobile-taps2"></script>
-  <script type="module" src="/components/mobile-app-chrome.js?v=20260908-iphone4-mobui1-immode1-20260916-mobile-taps2&mesh-session=20260930-1"></script>
+  <script type="module" src="/components/mobile-app-chrome.js?v=20260908-iphone4-mobui1-immode1-20260916-mobile-taps2&mesh-session=20260930-1&instance-bug=20261006-1"></script>
   <script type="module" src="/studio/browser-swipe-guard.js?v=20260908-layout&noswipe=20260916-1&viewport-pinch=20261001-1"></script>
   <script type="module" src="/boot/welcome-modal.js?v=20260908-layout-acctovl1-acctui1"></script>
   <div id="mesh-intro-modal" class="auth-modal mesh-intro-modal hidden" role="dialog" aria-modal="true"
@@ -6487,7 +6490,7 @@
   <!-- overlay harness line 20260908-xr-robotics1; HEIC converter cache: heicpng1 -->
   <script type="module" src="/viewport/local-terminal-boot.js?v=termbridge1&vrrobot=20260927-2"></script>
   <script type="module"
-                            src="/studio/app.js?v=20260929-lerobot-policy-builder1&dataset-folders=20260929-2&xr-input-feedback=20260929-1&xr-discard=20260929-1&native-ab=20260929-1&gripper-resume=20260929-1&robotics-debug=20260929-1&control-debug=20260929-1&robot-overlays=20260929-1&right-save-picker=20260930-1&y-record=20260929-1&right-controller-rec=20260929-3&ab-recorder=20260929-1&controller-input=20260929-3&recent-recordings=20260929-1&step4-bound-policy=20260929-1&policy-label-sync=20260929-1&act-hardware-flow=20260929-1&one-button-hardware=20260929-1&responsive-eval=20260930-1&robotrec1&20260909-vrbtn1&substate1&substate2&claude-tabs=20260928-2&designchat-fallback=20260928-1&voicesample=20260916-1&designchat-refs=20260928-1&designchat-badge=20260928-1&catlists=20260916-1&partthumb=20260916-1&vidclose2=20260916-1&stopshare=20260916-1&sharexfix=20260916-1&noswipe=20260916-1&sharex=20260916-1&camera-wall-auth1&marketplace-dm1&hey-ai-subscription-refresh2&hey-ai-generation-handoff1&hey-ai-spatial1&designchat-machine1&hey-ai-listen-single-generation=20260929-3&discord=20260930-1&hey-ai-render-intro=20260930-1&one-voice-owner=20260930-1&generation-subscription-refresh=20260930-1&steve=20260930-1&mesh-session=20260930-1&designchat-model-target=20260930-2&designchat-project-switch=20260930-1&designchat-single-button=20261001-1&designchat-heic=20261001-1&designchat-retry=20261001-1&designchat-visible=20261001-1&normal-recovery=20260930-1&desktop-xr-hide=20260930-1&generation-dedupe=20260930-2&designchat-queue=20261001-1&designchat-model-sync=20261001-1&designchat-context-popover=20261001-1&designchat-hey-ai=20261006-1&genheadtime=20261001-1&projopen2-hudcard1&projvp1&selbanner1&20260915-pickhud1&20260915-pickesc1&gridpref1&gridauto1&collabpill1&canvasload1&clipkeys1&gpt61sol=20261001-1&modelreasoning=20261001-1&prepared-generation-guard=20261001-1&instance-first-run-ai=20261001-1&bambu-background-inbox=20261001-1&duplicate-lineage=20261002-1&sharexedit1=20261006-1&editautosave=20261006-4&jake-robot-parity=20261006-1&new-part-side=20261006-2&video-ready-close=20261006-1&spaceplay=20261006-2&jake-z-up=20261006-1&prompt-mics=20261006-1"></script>
+                            src="/studio/app.js?v=20260929-lerobot-policy-builder1&dataset-folders=20260929-2&xr-input-feedback=20260929-1&xr-discard=20260929-1&native-ab=20260929-1&gripper-resume=20260929-1&robotics-debug=20260929-1&control-debug=20260929-1&robot-overlays=20260929-1&right-save-picker=20260930-1&y-record=20260929-1&right-controller-rec=20260929-3&ab-recorder=20260929-1&controller-input=20260929-3&recent-recordings=20260929-1&step4-bound-policy=20260929-1&policy-label-sync=20260929-1&act-hardware-flow=20260929-1&one-button-hardware=20260929-1&responsive-eval=20260930-1&robotrec1&20260909-vrbtn1&substate1&substate2&claude-tabs=20260928-2&designchat-fallback=20260928-1&voicesample=20260916-1&designchat-refs=20260928-1&designchat-badge=20260928-1&catlists=20260916-1&partthumb=20260916-1&vidclose2=20260916-1&stopshare=20260916-1&sharexfix=20260916-1&noswipe=20260916-1&sharex=20260916-1&camera-wall-auth1&marketplace-dm1&hey-ai-subscription-refresh2&hey-ai-generation-handoff1&hey-ai-spatial1&designchat-machine1&hey-ai-listen-single-generation=20260929-3&discord=20260930-1&hey-ai-render-intro=20260930-1&one-voice-owner=20260930-1&generation-subscription-refresh=20260930-1&steve=20260930-1&mesh-session=20260930-1&designchat-model-target=20260930-2&designchat-project-switch=20260930-1&designchat-single-button=20261001-1&designchat-heic=20261001-1&designchat-retry=20261001-1&designchat-visible=20261001-1&normal-recovery=20260930-1&desktop-xr-hide=20260930-1&generation-dedupe=20260930-2&designchat-queue=20261001-1&designchat-model-sync=20261001-1&designchat-context-popover=20261001-1&designchat-hey-ai=20261006-1&genheadtime=20261001-1&projopen2-hudcard1&projvp1&selbanner1&20260915-pickhud1&20260915-pickesc1&gridpref1&gridauto1&collabpill1&canvasload1&clipkeys1&gpt61sol=20261001-1&modelreasoning=20261001-1&prepared-generation-guard=20261001-1&instance-first-run-ai=20261001-1&bambu-background-inbox=20261001-1&duplicate-lineage=20261002-1&sharexedit1=20261006-1&editautosave=20261006-4&jake-robot-parity=20261006-1&new-part-side=20261006-2&video-ready-close=20261006-1&spaceplay=20261006-2&jake-z-up=20261006-1&prompt-mics=20261006-1&instance-bug=20261006-1"></script>
   <script type="module" src="/sandbox/studio-window.js?v=20260923-draw-recordings1&singlevoice1&vrrobot=20260927-2"></script>
   <script type="module" src="/studio/engineering-panel.js?v=20260908-layout"></script>
   <script type="module" src="/studio/panel-collapse.js?v=20260908-layout"></script>

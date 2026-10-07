@@ -59,29 +59,6 @@ class InstanceNetworkClientTests(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertNotIn("abc.def.ghi", str(sent))
 
-    def test_self_hosted_feedback_bug_is_forwarded_to_hub(self) -> None:
-        with (
-            patch.object(network, "is_official_hub", return_value=False),
-            patch.object(network, "submit", return_value={"ok": True}) as submit,
-        ):
-            result = network.forward_feedback_bug("The viewport is blank")
-        self.assertTrue(result["ok"])
-        submit.assert_called_once_with(
-            kind="issue",
-            subject="Studio bug report",
-            message="The viewport is blank",
-            severity="normal",
-        )
-
-    def test_official_hub_feedback_stays_in_local_management_queue(self) -> None:
-        with (
-            patch.object(network, "is_official_hub", return_value=True),
-            patch.object(network, "submit") as submit,
-        ):
-            result = network.forward_feedback_bug("Already stored locally")
-        self.assertTrue(result["local_management"])
-        submit.assert_not_called()
-
     def test_update_notifications_are_opt_in(self) -> None:
         with patch.object(network, "is_official_hub", return_value=False):
             self.assertFalse(network.check_for_update()["enabled"])
