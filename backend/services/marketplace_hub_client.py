@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import uuid
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -28,6 +29,32 @@ from backend.services import marketplace_config_service
 from backend.services.marketplace_schema import ensure_schema
 
 logger = logging.getLogger("render3d.marketplace_hub")
+
+HANDLE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$")
+RESERVED_HANDLES = {"admin", "api", "app", "help", "marketplace", "render", "render3d", "settings", "support", "www"}
+
+
+def normalize_instance_handle(value: Any) -> str:
+    handle = re.sub(r"[^a-z0-9-]+", "-", str(value or "").strip().lower()).strip("-")
+    if not HANDLE_RE.fullmatch(handle) or handle in RESERVED_HANDLES:
+        raise ValueError("Handle must be 3-32 lowercase letters, numbers, or single hyphens and cannot be reserved.")
+    return handle
+
+
+def instance_handle_availability(value: Any, *, instance_id: str = "") -> dict[str, Any]:
+    try:
+        handle = normalize_instance_handle(value)
+    except ValueError as exc:
+        return {"ok": True, "handle": str(value or "").strip().lower(), "available": False, "reason": str(exc)}
+    ensure_schema()
+    with get_conn() as conn:
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(marketplace_hub_instances)")}
+        if "public_handle" not in columns:
+            conn.execute("ALTER TABLE marketplace_hub_instances ADD COLUMN public_handle TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_hub_instance_handle ON marketplace_hub_instances(public_handle) WHERE public_handle IS NOT NULL AND public_handle != ''")
+        row = conn.execute("SELECT instance_id FROM marketplace_hub_instances WHERE public_handle=?", (handle,)).fetchone()
+    available = row is None or str(row["instance_id"]) == str(instance_id or "")
+    return {"ok": True, "handle": handle, "available": available, "reason": "" if available else "That instance handle is already taken."}
 
 
 def _now() -> str:
@@ -98,11 +125,23 @@ def register_instance(payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name") or "Render instance")[:80]
     base = str(payload.get("public_base_url") or "")[:300]
     token = str(payload.get("instance_secret") or "").strip()
+    requested_handle = str(payload.get("public_handle") or "").strip()
+    if not requested_handle:
+        base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:23] or "render-instance"
+        requested_handle = f"{base}-{instance_id[:6].lower()}"
+    handle = normalize_instance_handle(requested_handle)
     if len(instance_id) < 8 or len(token) < 20:
         raise ValueError("A stable instance id and secret are required.")
     token_hash = _hash_token(token)
     now = _now()
     with get_conn() as conn:
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(marketplace_hub_instances)")}
+        if "public_handle" not in columns:
+            conn.execute("ALTER TABLE marketplace_hub_instances ADD COLUMN public_handle TEXT")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_hub_instance_handle ON marketplace_hub_instances(public_handle) WHERE public_handle IS NOT NULL AND public_handle != ''")
+        taken = conn.execute("SELECT instance_id FROM marketplace_hub_instances WHERE public_handle=?", (handle,)).fetchone()
+        if taken and str(taken["instance_id"]) != instance_id:
+            raise ValueError("That instance handle is already taken.")
         existing = conn.execute(
             "SELECT token_hash FROM marketplace_hub_instances WHERE instance_id=?",
             (instance_id,),
@@ -111,17 +150,18 @@ def register_instance(payload: dict[str, Any]) -> dict[str, Any]:
             raise PermissionError("Instance identity is already registered.")
         conn.execute(
             """
-            INSERT INTO marketplace_hub_instances (instance_id, name, public_base_url, token_hash, last_seen_at, created_at)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO marketplace_hub_instances (instance_id, name, public_base_url, token_hash, last_seen_at, created_at, public_handle)
+            VALUES (?,?,?,?,?,?,?)
             ON CONFLICT(instance_id) DO UPDATE SET
               name=excluded.name,
               public_base_url=excluded.public_base_url,
-              last_seen_at=excluded.last_seen_at
+              last_seen_at=excluded.last_seen_at,
+              public_handle=excluded.public_handle
             """,
-            (instance_id, name, base, token_hash, now, now),
+            (instance_id, name, base, token_hash, now, now, handle),
         )
         conn.commit()
-    return {"instance_id": instance_id, "publishing": "enabled", "ok": True}
+    return {"instance_id": instance_id, "public_handle": handle, "publishing": "enabled", "ok": True}
 
 
 def upsert_hub_listing(instance_id: str, listing: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +269,7 @@ def enroll_instance(*, public_network: bool = False) -> dict[str, Any]:
         "instance_id": str(cfg.get("instance_id") or ""),
         "instance_secret": str(cfg.get("instance_secret") or ""),
         "name": str(cfg.get("instance_name") or "Render Studio instance")[:80],
+        "public_handle": str(cfg.get("instance_handle") or ""),
         "public_base_url": public_base,
     }
     if hub_is_self():

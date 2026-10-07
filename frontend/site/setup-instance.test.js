@@ -34,4 +34,6 @@ test("instance ecosystem consent is separate from health reporting", () => {
   assert.match(html, /Private projects and project files are never swept or uploaded/);
   assert.match(js, /ecosystem_opt_in/);
   assert.match(js, /publishing remains approval-gated/);
+  assert.match(html, /Public instance handle/);
+  assert.match(js, /instance-handle-availability/);
 });

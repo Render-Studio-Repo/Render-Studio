@@ -105,11 +105,13 @@ function fillInstanceNetwork(data) {
   const publicNetwork = document.getElementById("instance-network-public");
   const ecosystem = document.getElementById("instance-network-ecosystem");
   const id = document.getElementById("instance-network-id");
+  const handle = document.getElementById("instance-network-handle");
   if (name && data.instance_name) name.value = data.instance_name;
   if (reporting) reporting.checked = Boolean(data.reporting_opt_in);
   if (publicNetwork) publicNetwork.checked = Boolean(data.public_network);
   if (ecosystem) ecosystem.checked = Boolean(data.ecosystem_opt_in);
   if (id) id.textContent = data.instance_id ? `Instance id: ${data.instance_id}` : "";
+  if (handle && data.instance_handle) handle.value = data.instance_handle;
   const updates = document.getElementById("instance-update-notifications");
   if (updates) updates.checked = Boolean(data.update_notifications);
 }
@@ -155,6 +157,7 @@ async function chooseLocalSetup() {
       method: "POST",
       body: JSON.stringify({
         instance_name: document.getElementById("instance-network-name")?.value || "Render Studio instance",
+        instance_handle: document.getElementById("instance-network-handle")?.value || "",
         reporting_opt_in: false,
         public_network: false,
         ecosystem_opt_in: false,
@@ -180,6 +183,7 @@ async function chooseRenderEcosystem() {
       method: "POST",
       body: JSON.stringify({
         instance_name: document.getElementById("instance-network-name")?.value || "Render Studio instance",
+        instance_handle: document.getElementById("instance-network-handle")?.value || "",
         reporting_opt_in: false,
         public_network: false,
         ecosystem_opt_in: true,
@@ -274,6 +278,7 @@ document.getElementById("instance-network-form")?.addEventListener("submit", asy
       method: "POST",
       body: JSON.stringify({
         instance_name: document.getElementById("instance-network-name")?.value || "Render Studio instance",
+        instance_handle: document.getElementById("instance-network-handle")?.value || "",
         reporting_opt_in: Boolean(document.getElementById("instance-network-reporting")?.checked),
         public_network: Boolean(document.getElementById("instance-network-public")?.checked),
         ecosystem_opt_in: Boolean(document.getElementById("instance-network-ecosystem")?.checked),
@@ -292,6 +297,24 @@ document.getElementById("instance-network-form")?.addEventListener("submit", asy
     registration.ok || !data.reporting_opt_in ? "ok" : "err");
   } catch (err) {
     setStatus(status, err.message || "Could not save instance settings.", "err");
+  }
+});
+
+document.getElementById("btn-check-instance-handle")?.addEventListener("click", async () => {
+  const input = document.getElementById("instance-network-handle");
+  const status = document.getElementById("instance-handle-status");
+  const handle = String(input?.value || "").trim().toLowerCase();
+  if (!handle) {
+    setStatus(status, "Leave this blank and Render will generate an available handle during connection.");
+    return;
+  }
+  setStatus(status, "Checking availability…", "loading");
+  try {
+    const data = await api(`/api/setup/instance-handle-availability/${encodeURIComponent(handle)}`);
+    if (input && data.handle) input.value = data.handle;
+    setStatus(status, data.available ? `@${data.handle} is available.` : (data.reason || "That handle is unavailable."), data.available ? "ok" : "err");
+  } catch (error) {
+    setStatus(status, error?.message || "Could not check that handle.", "err");
   }
 });
 

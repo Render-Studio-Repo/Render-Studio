@@ -110,6 +110,29 @@ class MarketplaceV2Tests(unittest.TestCase):
         self.assertEqual(registered["publishing"], "enabled")
         self.assertNotIn("token", registered)
 
+    def test_instance_handle_is_unique_and_promotable(self) -> None:
+        first = marketplace_hub_client.register_instance({
+            "instance_id": "instance-1",
+            "instance_secret": "secret-for-instance-1-123456",
+            "name": "Sam Robotics",
+            "public_handle": "sam-robotics",
+        })
+        self.assertEqual(first["public_handle"], "sam-robotics")
+        self.assertFalse(marketplace_hub_client.instance_handle_availability("sam-robotics")["available"])
+        self.assertTrue(marketplace_hub_client.instance_handle_availability("sam-robotics", instance_id="instance-1")["available"])
+        with self.assertRaisesRegex(ValueError, "already taken"):
+            marketplace_hub_client.register_instance({
+                "instance_id": "instance-2",
+                "instance_secret": "secret-for-instance-2-123456",
+                "name": "Another shop",
+                "public_handle": "sam-robotics",
+            })
+
+    def test_reserved_instance_handle_is_unavailable(self) -> None:
+        result = marketplace_hub_client.instance_handle_availability("admin")
+        self.assertFalse(result["available"])
+        self.assertIn("reserved", result["reason"])
+
     def test_hub_credential_is_bound_to_one_instance(self) -> None:
         secret = "secret-for-instance-1-123456"
         marketplace_hub_client.register_instance({

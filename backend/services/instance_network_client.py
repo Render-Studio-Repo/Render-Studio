@@ -85,6 +85,7 @@ def public_status() -> dict[str, Any]:
     return {
         "instance_id": str(cfg.get("instance_id") or ""),
         "instance_name": str(cfg.get("instance_name") or "Render Studio instance"),
+        "instance_handle": str(cfg.get("instance_handle") or ""),
         "reporting_opt_in": reporting_enabled(),
         "reporting_answered": bool(state.get("instance_reporting_answered")) or is_official_hub(),
         "public_network": bool(state.get("instance_public_network")),
@@ -125,12 +126,35 @@ def render_login_status() -> dict[str, Any]:
     return result
 
 
-def configure(*, instance_name: str, reporting_opt_in: bool, public_network: bool, ecosystem_opt_in: bool) -> dict[str, Any]:
+def _suggest_handle(instance_name: str, instance_id: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", str(instance_name or "").lower()).strip("-")[:23] or "render-instance"
+    return f"{base}-{str(instance_id or '')[:6].lower()}".strip("-")
+
+
+def handle_availability(handle: str) -> dict[str, Any]:
+    cfg = _market()
+    try:
+        import httpx
+
+        response = httpx.get(
+            f"{hub_base()}/api/marketplace/hub/v1/instance-handles/{handle}",
+            params={"instance_id": str(cfg.get("instance_id") or "")},
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        return dict(response.json())
+    except Exception:
+        return {"ok": False, "available": False, "offline": True, "reason": "Render could not check that handle right now."}
+
+
+def configure(*, instance_name: str, reporting_opt_in: bool, public_network: bool, ecosystem_opt_in: bool, instance_handle: str = "") -> dict[str, Any]:
     from backend.services import instance_setup_service as setup
     from backend.services import marketplace_config_service as market
 
     name = " ".join(str(instance_name or "").split()).strip()[:80] or "Render Studio instance"
-    market.save({"instance_name": name})
+    cfg = market.ensure_instance_identity()
+    handle = str(instance_handle or "").strip().lower() or _suggest_handle(name, str(cfg.get("instance_id") or ""))
+    market.save({"instance_name": name, "instance_handle": handle})
     setup._save_state({
         "instance_reporting_opt_in": bool(reporting_opt_in),
         "instance_reporting_answered": True,

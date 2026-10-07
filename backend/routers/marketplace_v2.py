@@ -187,6 +187,7 @@ class HubRegisterBody(BaseModel):
     instance_secret: str = Field(..., min_length=20, max_length=200)
     name: str = Field(default="", max_length=80)
     public_base_url: str = Field(default="", max_length=300)
+    public_handle: str = Field(default="", max_length=32)
 
 
 @router.get("/api/marketplace/config")
@@ -667,6 +668,11 @@ def hub_register_instance(body: HubRegisterBody):
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/api/marketplace/hub/v1/instance-handles/{handle}")
+def hub_instance_handle_availability(handle: str, instance_id: str = ""):
+    return marketplace_hub_client.instance_handle_availability(handle, instance_id=instance_id)
 
 
 @router.get("/api/marketplace/og/store/{slug}.png")

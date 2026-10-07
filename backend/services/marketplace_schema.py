@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS marketplace_hub_instances (
     name TEXT NOT NULL DEFAULT '',
     public_base_url TEXT NOT NULL DEFAULT '',
     token_hash TEXT NOT NULL DEFAULT '',
+    public_handle TEXT,
     last_seen_at TEXT,
     created_at TEXT NOT NULL
 );
@@ -176,9 +177,11 @@ def ensure_schema() -> None:
             "ALTER TABLE marketplace_purchases ADD COLUMN refund_status TEXT NOT NULL DEFAULT 'none'",
             "ALTER TABLE marketplace_purchases ADD COLUMN order_id TEXT",
             "ALTER TABLE marketplace_purchases ADD COLUMN shipping_json TEXT NOT NULL DEFAULT '{}'",
+            "ALTER TABLE marketplace_hub_instances ADD COLUMN public_handle TEXT",
         ):
             try:
                 conn.execute(sql)
             except sqlite3.OperationalError:
                 pass
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_hub_instance_handle ON marketplace_hub_instances(public_handle) WHERE public_handle IS NOT NULL AND public_handle != ''")
         conn.commit()
