@@ -2411,6 +2411,7 @@ def _public_project_summaries(
             LEFT JOIN users u ON u.id = pa.created_by
             WHERE pa.is_public = 1
             ORDER BY pa.public_pinned DESC, pa.created_at DESC
+            LIMIT 25
             """
         ).fetchall()
     out: list[dict[str, Any]] = []
@@ -2450,7 +2451,47 @@ def _public_project_summaries(
                 ),
             }
         )
-    return out
+    try:
+        from backend.services import marketplace_config_service, marketplace_hub_client
+
+        local_instance_id = str(marketplace_config_service.ensure_instance_identity().get("instance_id") or "")
+        local_ids = {str(project.get("id") or "") for project in out}
+        for remote in marketplace_hub_client.pull_public_projects(limit=25):
+            if str(remote.get("instance_id") or "") == local_instance_id:
+                continue
+            origin_id = str(remote.get("origin_project_id") or "")
+            if not origin_id or origin_id in local_ids:
+                continue
+            out.append({**remote, "folder_id": PUBLIC_FOLDER_ID, "folder_name": PUBLIC_FOLDER_NAME,
+                        "public": True, "read_only_project": True, "federated_public": True})
+    except Exception:
+        logger.debug("Could not merge hub public projects", exc_info=True)
+    out.sort(key=lambda project: str(project.get("updated_at") or project.get("created_at") or ""), reverse=True)
+    out.sort(key=lambda project: bool(project.get("public_pinned")), reverse=True)
+    return out[:25]
+
+
+def _publish_public_project_to_hub(project: dict[str, Any], *, remove: bool = False) -> None:
+    try:
+        from backend.services import marketplace_config_service, marketplace_hub_client
+
+        cfg = marketplace_config_service.ensure_instance_identity()
+        base = str(getattr(settings, "public_base_url", None) or "https://render3d.app").rstrip("/")
+        project_id = str(project.get("id") or project.get("project_id") or "")
+        payload = {
+            "origin_project_id": project_id,
+            "name": project.get("name") or project_id,
+            "updated_at": project.get("updated_at") or datetime.now(timezone.utc).isoformat(),
+            "published_at": project.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            "owner_name": project.get("owner_name"),
+            "owner_handle": project.get("owner_handle"),
+            "instance_name": cfg.get("instance_name") or "Render Studio instance",
+            "external_url": f"{base}/?project={urllib.parse.quote(project_id)}",
+            "preview_url": f"{base}/api/public/projects/{urllib.parse.quote(project_id)}/thumb",
+        }
+        marketplace_hub_client.publish_public_project(payload, remove=remove)
+    except Exception:
+        logger.debug("Could not publish public project to hub", exc_info=True)
 
 
 def _public_folder_summary(projects: list[dict[str, Any]] | None = None, team_id: str | None = None) -> dict[str, Any]:
@@ -20728,6 +20769,7 @@ def set_project_public(
     live_payload = {**live, **extras}
     if make_public and not was_public:
         background_tasks.add_task(_announce_public_project_to_discord, project_id, _public_origin(request))
+    background_tasks.add_task(_publish_public_project_to_hub, live_payload, remove=not make_public)
     name = str(summary.get("name") or project_id)
     who = str(user.get("display_name") or user.get("email") or "Someone")
     payload = {
@@ -20813,6 +20855,18 @@ def set_project_public_pin(
             )
         except Exception:
             logger.debug("Could not broadcast public pin project_id=%s", project_id, exc_info=True)
+    from backend.services.public_project_federation import public_pin_hub_action
+
+    if public_pin_hub_action(was_public=was_public, pinned=pinned) == "publish":
+        try:
+            live_for_hub = project_store.project_list_summary(path)
+            background_tasks.add_task(
+                _publish_public_project_to_hub,
+                {**live_for_hub, "id": project_id, "owner_name": user.get("display_name")},
+                remove=False,
+            )
+        except Exception:
+            logger.debug("Could not queue initial public pin hub sync project_id=%s", project_id, exc_info=True)
     return {
         "ok": True,
         "project_id": project_id,

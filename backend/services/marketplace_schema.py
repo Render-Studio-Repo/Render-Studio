@@ -155,6 +155,18 @@ CREATE TABLE IF NOT EXISTS marketplace_hub_listings (
     UNIQUE (instance_id, origin_listing_id, kind)
 );
 
+CREATE TABLE IF NOT EXISTS marketplace_hub_public_projects (
+    id TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    origin_project_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    admin_pinned INTEGER NOT NULL DEFAULT 0,
+    marketplace_promoted INTEGER NOT NULL DEFAULT 0,
+    published_at TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE (instance_id, origin_project_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_mkt_cart_user ON marketplace_cart_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_orders_buyer ON marketplace_orders(buyer_user_id, status);
 CREATE INDEX IF NOT EXISTS idx_mkt_orders_seller ON marketplace_orders(seller_user_id, status);
@@ -162,6 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_mkt_tickets_buyer ON marketplace_tickets(buyer_us
 CREATE INDEX IF NOT EXISTS idx_mkt_tickets_seller ON marketplace_tickets(seller_user_id, status);
 CREATE INDEX IF NOT EXISTS idx_mkt_reviews_listing ON marketplace_reviews(listing_id, kind);
 CREATE INDEX IF NOT EXISTS idx_mkt_hub_listings_score ON marketplace_hub_listings(ranking_score DESC);
+CREATE INDEX IF NOT EXISTS idx_mkt_hub_public_projects_order ON marketplace_hub_public_projects(admin_pinned DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mkt_store_slugs_user ON marketplace_store_slugs(user_id);
 """
 

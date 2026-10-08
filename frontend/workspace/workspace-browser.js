@@ -106,6 +106,21 @@ export function formatGenerationElapsed(startedAt, nowMs = Date.now()) {
   return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 }
 
+export function personalProjectPinAction(project, {
+  signedIn = false,
+  canToggle = false,
+  pinnedIds = [],
+} = {}) {
+  const id = String(project?.id || "").trim();
+  const pinned = !!id && normalizePersonalPinIds(pinnedIds).includes(id);
+  const visible = !!signedIn && !!canToggle && (pinned || canPinPersonalProject(project));
+  return {
+    visible,
+    pinned,
+    label: pinned ? "Unpin from projects" : "Pin to projects",
+  };
+}
+
 function refreshGenerationElapsed(root = document, nowMs = Date.now()) {
   root.querySelectorAll?.("[data-generation-started-at]").forEach((el) => {
     const value = formatGenerationElapsed(el.dataset.generationStartedAt, nowMs);
@@ -865,15 +880,15 @@ export function createWorkspaceBrowser({
   }
 
   function isUserPinnedProject(project) {
-    const id = String(project?.id || "").trim();
-    return !!id && personalPinIds().includes(id);
+    return personalProjectPinAction(project, { pinnedIds: personalPinIds() }).pinned;
   }
 
   function canShowPersonalPin(project) {
-    return !!getCurrentUserId?.()
-      && typeof onTogglePersonalPin === "function"
-      && canPinPersonalProject(project)
-      && !isPublicSidebarProject(project);
+    return personalProjectPinAction(project, {
+      signedIn: !!getCurrentUserId?.(),
+      canToggle: typeof onTogglePersonalPin === "function",
+      pinnedIds: personalPinIds(),
+    }).visible;
   }
 
   function toggleHierarchyBodies(key) {
