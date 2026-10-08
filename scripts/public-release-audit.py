@@ -60,17 +60,17 @@ PRIVATE_ADMIN_MARKERS = re.compile(
 )
 
 
-def tracked_paths() -> list[str]:
-    output = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT)
+def tracked_paths(root: Path = ROOT) -> list[str]:
+    output = subprocess.check_output(["git", "ls-files", "-z"], cwd=root)
     return [value.decode("utf-8") for value in output.split(b"\0") if value]
 
 
-def main() -> int:
+def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
-    legacy_dashboard = ROOT / "frontend" / "admin-dashboard.html"
+    legacy_dashboard = root / "frontend" / "admin-dashboard.html"
     if legacy_dashboard.is_file() and b"data-public-instance-management-only" not in legacy_dashboard.read_bytes():
         errors.append("public admin dashboard must redirect to current-instance management")
-    for relative in tracked_paths():
+    for relative in tracked_paths(root):
         path = Path(relative)
         parts = set(path.parts)
         if parts & FORBIDDEN_PARTS or relative.startswith(FORBIDDEN_PREFIXES) or relative in FORBIDDEN_EXACT:
@@ -79,7 +79,7 @@ def main() -> int:
         if path.suffix.lower() in {".bak", ".db", ".pem", ".sqlite"}:
             errors.append(f"forbidden public file type: {relative}")
             continue
-        absolute = ROOT / path
+        absolute = root / path
         if not absolute.exists():
             continue
         if absolute.is_symlink():
@@ -104,6 +104,11 @@ def main() -> int:
             errors.append(f"private admin identity in privilege code: {relative}")
         if relative != "scripts/public-release-audit.py" and PRIVATE_ADMIN_MARKERS.search(raw):
             errors.append(f"private admin repository marker: {relative}")
+    return errors
+
+
+def main() -> int:
+    errors = audit()
     if errors:
         print("PUBLIC_RELEASE_AUDIT blocked:")
         print("\n".join(f"- {error}" for error in errors))

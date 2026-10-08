@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-08T01:38:54.499Z",
+  "updated_at": "2026-10-08T01:42:39.283Z",
   "policy": {
     "source_of_truth": true,
     "preflight": "node scripts/feature-map.mjs preflight --changed <paths>",
@@ -46,7 +46,8 @@
       ],
       "receipt_ids": [
         "RCPT-20261006-PUBLIC-FULL-RELEASE",
-        "RCPT-20261008-013854-RELEASE-PUBLIC-SOURCE"
+        "RCPT-20261008-013854-RELEASE-PUBLIC-SOURCE",
+        "RCPT-20261008-014239-RELEASE-PUBLIC-SOURCE"
       ],
       "checks": [
         {
@@ -54,6 +55,17 @@
           "argv": [
             "python3",
             "scripts/public-release-audit.py"
+          ],
+          "mandatory": true
+        },
+        {
+          "id": "public-release-audit-tests",
+          "argv": [
+            "python3",
+            "-m",
+            "unittest",
+            "scripts.tests.test_public_release_audit",
+            "-v"
           ],
           "mandatory": true
         },

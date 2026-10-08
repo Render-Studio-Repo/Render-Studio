@@ -2,6 +2,7 @@
 # Fail the push if repository invariants or locked feature checks fail.
 # Install: ln -sf ../../scripts/git-hooks/pre-push .git/hooks/pre-push
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+python3 "$root/scripts/public-release-audit.py" || exit $?
 if [ ! -d "$root/ai-context/ops/debugger" ]; then
   echo "ops: ai-context/ops/debugger/ is required on every push. Read ai-context/ops/README.md" >&2
   exit 1

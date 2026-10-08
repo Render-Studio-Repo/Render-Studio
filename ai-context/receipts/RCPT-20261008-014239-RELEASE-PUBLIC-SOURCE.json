@@ -1,0 +1,25 @@
+{
+  "receipt_id": "RCPT-20261008-014239-RELEASE-PUBLIC-SOURCE",
+  "revision_id": "RCPT-20261008-014239-RELEASE-PUBLIC-SOURCE-REV-1",
+  "at": "2026-10-08T01:42:39.283Z",
+  "author": "sam",
+  "status": "confirmed",
+  "summary": "Run the public release boundary audit before every local push and verify its blocking behavior",
+  "feature_ids": [
+    "release.public-source"
+  ],
+  "feature_checks": {
+    "public-release-audit": "passed",
+    "public-release-audit-tests": "3 passed",
+    "public-installer-contract": "4 passed",
+    "public-backend-syntax": "passed",
+    "public-installer-shell-syntax": "passed"
+  },
+  "evidence": [
+    "The tracked pre-push hook invokes the public audit before feature-map verification.",
+    "Behavior tests proved a clean public tree passes and private admin markers and backup paths fail.",
+    "Feature-map verification passed both locked public release features."
+  ],
+  "rollback": "Remove the pre-push audit call and its behavior tests, restore the prior feature-map check list, and revert this receipt.",
+  "token": "rcpt1"
+}
