@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-06T23:40:00.000Z",
+  "updated_at": "2026-10-08T01:38:54.499Z",
   "policy": {
     "source_of_truth": true,
     "preflight": "node scripts/feature-map.mjs preflight --changed <paths>",
@@ -45,7 +45,8 @@
         "supabase/"
       ],
       "receipt_ids": [
-        "RCPT-20261006-PUBLIC-FULL-RELEASE"
+        "RCPT-20261006-PUBLIC-FULL-RELEASE",
+        "RCPT-20261008-013854-RELEASE-PUBLIC-SOURCE"
       ],
       "checks": [
         {

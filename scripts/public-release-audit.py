@@ -21,6 +21,7 @@ FORBIDDEN_PARTS = {
 }
 FORBIDDEN_PREFIXES = (
     "backend/local_private/",
+    "deploy/mac/com.render3d.admin-private-backup",
     "demos/bambu-funding/out/",
     "frontend/_archive/",
     "frontend/sandbox/live/prompts/",
@@ -29,6 +30,7 @@ FORBIDDEN_PREFIXES = (
     "server-configurations/profiles/enterprise-private/",
     "frontend/admin/",
     "frontend/pages/admin-dashboard.html",
+    "scripts/admin-private-backup",
 )
 FORBIDDEN_EXACT = {
     "frontend/admin-instance-network.js",
@@ -50,6 +52,10 @@ PRIVILEGE_FILES = (
 )
 PRIVATE_ADMIN_IDENTITIES = re.compile(
     rb"(?:a1projects@protonmail\.com|a1projects\.usa@gmail\.com|samwins\.stead@gmail\.com|sam@smartcallusa\.com|mtgraytech@gmail\.com)",
+    re.I,
+)
+PRIVATE_ADMIN_MARKERS = re.compile(
+    rb"(?:Render-Studio-Admin-Control|ops\.admin-private-hourly-backup|RCPT-[A-Za-z0-9._-]*ADMIN-PRIVATE)",
     re.I,
 )
 
@@ -96,6 +102,8 @@ def main() -> int:
                     errors.append(f"possible {label}: {relative}")
         if relative in PRIVILEGE_FILES and PRIVATE_ADMIN_IDENTITIES.search(raw):
             errors.append(f"private admin identity in privilege code: {relative}")
+        if relative != "scripts/public-release-audit.py" and PRIVATE_ADMIN_MARKERS.search(raw):
+            errors.append(f"private admin repository marker: {relative}")
     if errors:
         print("PUBLIC_RELEASE_AUDIT blocked:")
         print("\n".join(f"- {error}" for error in errors))
