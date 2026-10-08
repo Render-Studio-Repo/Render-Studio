@@ -182,6 +182,10 @@ class HubListingBody(BaseModel):
     listing: dict[str, Any]
 
 
+class HubPublicProjectBody(BaseModel):
+    project: dict[str, Any]
+
+
 class HubRegisterBody(BaseModel):
     instance_id: str = Field(..., min_length=8, max_length=100)
     instance_secret: str = Field(..., min_length=20, max_length=200)
@@ -645,6 +649,40 @@ def hub_list_listings(
     limit: int = Query(80, ge=1, le=200),
 ):
     return {"listings": marketplace_hub_client.list_hub_listings(q=q, kind=kind, limit=limit)}
+
+
+@router.get("/api/marketplace/hub/v1/public-projects")
+def hub_list_public_projects(limit: int = Query(25, ge=1, le=25)):
+    return {"projects": marketplace_hub_client.list_hub_public_projects(limit=limit)}
+
+
+@router.put("/api/marketplace/hub/v1/public-projects/{project_id}")
+def hub_publish_public_project(project_id: str, body: HubPublicProjectBody, request: Request):
+    instance_id = request.headers.get("x-render-instance-id") or str(body.project.get("instance_id") or "")
+    if not marketplace_hub_client.verify_hub_request(request.headers.get("authorization"), instance_id):
+        raise HTTPException(401, "A hub-issued publishing credential is required")
+    return marketplace_hub_client.upsert_hub_public_project(
+        instance_id, {**body.project, "origin_project_id": project_id}
+    )
+
+
+@router.delete("/api/marketplace/hub/v1/public-projects/{project_id}")
+def hub_remove_public_project(project_id: str, request: Request):
+    instance_id = request.headers.get("x-render-instance-id") or ""
+    if not marketplace_hub_client.verify_hub_request(request.headers.get("authorization"), instance_id):
+        raise HTTPException(401, "A hub-issued publishing credential is required")
+    return marketplace_hub_client.remove_hub_public_project(instance_id, project_id)
+
+
+@router.put("/api/admin/marketplace/public-projects/{project_id}/promotion")
+def admin_promote_public_project(project_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(get_current_user)):
+    _require_admin(user)
+    try:
+        return marketplace_hub_client.set_hub_public_project_promotion(
+            project_id, pinned=bool(body.get("pinned")), marketplace=bool(body.get("marketplace_promoted"))
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.post("/api/marketplace/hub/v1/listings")

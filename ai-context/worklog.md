@@ -1,5 +1,11 @@
 # Render Studio public worklog
 
+## 2026-10-07. Public project federation and independent unpin controls
+
+Public pinning now curates only the origin instance. A new public project is submitted once to Render's hub, while later local pin and unpin changes do not refresh its cross-instance recency. Other instances merge at most 25 recent hub projects into Public. Only hub promotion creates a cross-instance pinned state. Projects pinned both personally and to Public expose independent removal controls, including after a personal project becomes public.
+
+The clean public worktree passed the 7011-file public-release audit, four installer contracts, two project-pin behavior checks, four federation checks, Python compilation, `/api/health`, and `/setup.html`. No private admin path or identity is included. Receipt RCPT-20261008-044546-RELEASE-PUBLIC-SOURCE records the release proof.
+
 ## 2026-10-06 — Public instance handles
 
 - Preserved the generated UUID as the immutable technical identity and added a separate promotable public handle.

@@ -1,0 +1,30 @@
+{
+  "receipt_id": "RCPT-20261008-044546-RELEASE-PUBLIC-SOURCE",
+  "revision_id": "RCPT-20261008-044546-RELEASE-PUBLIC-SOURCE-REV-1",
+  "at": "2026-10-08T04:45:46.598Z",
+  "author": "sam",
+  "status": "confirmed",
+  "summary": "Ship instance-local Public pins, 25-item federated public recents, and independent project unpin controls",
+  "feature_ids": [
+    "release.public-source"
+  ],
+  "feature_checks": {
+    "public_release_audit": "pass",
+    "installer_contracts": "pass",
+    "python_compilation": "pass",
+    "project_pin_behavior": "pass",
+    "public_project_federation": "pass",
+    "backend_health": "pass",
+    "setup_page": "pass"
+  },
+  "evidence": [
+    "PUBLIC_RELEASE_AUDIT passed for 7011 tracked files and found no private admin paths, identities, runtime data, or credentials.",
+    "Four public installer and first-run setup contract tests passed.",
+    "Two project pin behavior tests passed, including removal of a personally pinned project after it becomes public.",
+    "Four public-project federation tests passed, including the 25-item cap and isolation of origin-instance pin state.",
+    "Python compilation passed for the public backend entry point, instance-network modules, marketplace services, and marketplace router.",
+    "FastAPI TestClient returned HTTP 200 with status ok from /api/health and HTTP 200 from /setup.html."
+  ],
+  "rollback": "Revert the public-project hub table and client methods, remove the federation routes and publication hooks, restore the prior personal-pin visibility rule, and restore the previous workspace-browser cache key.",
+  "token": "rcpt1"
+}

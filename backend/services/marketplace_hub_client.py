@@ -236,6 +236,122 @@ def list_hub_listings(*, q: str = "", kind: str | None = None, limit: int = 80) 
     return out
 
 
+def upsert_hub_public_project(instance_id: str, project: dict[str, Any]) -> dict[str, Any]:
+    origin_project_id = str(project.get("origin_project_id") or project.get("id") or "").strip()
+    if not instance_id or not origin_project_id:
+        raise ValueError("Public project identity required")
+    ensure_schema()
+    row_id = f"{instance_id}:{origin_project_id}"
+    now = _now()
+    payload = {**project, "id": row_id, "origin_project_id": origin_project_id, "instance_id": instance_id,
+               "public": True, "read_only_project": True, "from_hub": True}
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO marketplace_hub_public_projects
+              (id, instance_id, origin_project_id, payload_json, published_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(instance_id, origin_project_id) DO UPDATE SET
+              payload_json=excluded.payload_json,
+              published_at=COALESCE(marketplace_hub_public_projects.published_at, excluded.published_at),
+              updated_at=excluded.updated_at
+            """,
+            (row_id, instance_id, origin_project_id, json.dumps(payload, separators=(",", ":")),
+             project.get("published_at") or now, now),
+        )
+        conn.commit()
+    return {"id": row_id, "ok": True}
+
+
+def remove_hub_public_project(instance_id: str, origin_project_id: str) -> dict[str, Any]:
+    ensure_schema()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM marketplace_hub_public_projects WHERE instance_id=? AND origin_project_id=?",
+                     (str(instance_id), str(origin_project_id)))
+        conn.commit()
+    return {"ok": True}
+
+
+def list_hub_public_projects(*, limit: int = 25) -> list[dict[str, Any]]:
+    ensure_schema()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT payload_json, admin_pinned, marketplace_promoted
+               FROM marketplace_hub_public_projects
+               ORDER BY admin_pinned DESC, updated_at DESC LIMIT ?""",
+            (max(1, min(25, int(limit))),),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload["public_pinned"] = bool(row["admin_pinned"])
+        payload["marketplace_promoted"] = bool(row["marketplace_promoted"])
+        out.append(payload)
+    return out
+
+
+def set_hub_public_project_promotion(project_id: str, *, pinned: bool, marketplace: bool) -> dict[str, Any]:
+    ensure_schema()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE marketplace_hub_public_projects SET admin_pinned=?, marketplace_promoted=?, updated_at=? WHERE id=?",
+            (1 if pinned else 0, 1 if marketplace else 0, _now(), str(project_id)),
+        )
+        conn.commit()
+    if cur.rowcount == 0:
+        raise ValueError("Public project not found")
+    return {"ok": True, "id": project_id, "pinned": pinned, "marketplace_promoted": marketplace}
+
+
+def publish_public_project(project: dict[str, Any], *, remove: bool = False) -> dict[str, Any]:
+    cfg = marketplace_config_service.ensure_instance_identity()
+    if not cfg.get("hub_publish_enabled") or cfg.get("mode") == "private":
+        return {"ok": False, "error": "publish_disabled"}
+    instance_id = str(cfg.get("instance_id") or "")
+    origin_project_id = str(project.get("origin_project_id") or project.get("id") or "")
+    if hub_is_self():
+        return remove_hub_public_project(instance_id, origin_project_id) if remove else upsert_hub_public_project(instance_id, project)
+    import httpx
+
+    headers = marketplace_config_service.hub_auth_headers()
+    headers["X-Render-Instance-Id"] = instance_id
+    url = f"{_hub_url()}/api/marketplace/hub/v1/public-projects/{origin_project_id}"
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            res = client.delete(url, headers=headers) if remove else client.put(url, headers=headers, json={"project": project})
+            res.raise_for_status()
+            return res.json()
+    except Exception as exc:
+        logger.info("Hub public project publish failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+def pull_public_projects(*, limit: int = 25) -> list[dict[str, Any]]:
+    cfg = marketplace_config_service.load()
+    if not cfg.get("hub_pull_enabled") or cfg.get("mode") == "private":
+        return []
+    if hub_is_self():
+        return list_hub_public_projects(limit=limit)
+    try:
+        import httpx
+
+        with httpx.Client(timeout=5.0) as client:
+            res = client.get(f"{_hub_url()}/api/marketplace/hub/v1/public-projects",
+                             params={"limit": max(1, min(25, int(limit)))},
+                             headers=marketplace_config_service.hub_auth_headers())
+            res.raise_for_status()
+            data = res.json()
+        return list(data.get("projects") or [])
+    except Exception as exc:
+        logger.info("Hub public projects pull skipped: %s", exc)
+        return []
+
+
 def pull_listings() -> list[dict[str, Any]]:
     cfg = marketplace_config_service.load()
     if not cfg.get("hub_pull_enabled") or cfg.get("mode") == "private":

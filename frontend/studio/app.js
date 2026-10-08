@@ -197,7 +197,7 @@ import { createMeshAnimationRuntime, extractAnimationFromMeshMjs } from "../scri
 import { bakeMeshAnimationClips, meshHasExportableAnimation } from "../scripting/mesh-animation-bake.js?v=20261001-animation-integrity";
 import { createObjectHistoryUI } from "../components/object-history.js?v=20260909-drivehist1";
 import { createWorkspaceActivityUI } from "../workspace/workspace-activity.js?v=20260907-public-live";
-import { createWorkspaceBrowser, projectsInCurrentWorkspace } from "../workspace/workspace-browser.js?v=20260923-draw-recordings1&vrrobot=20260927-2&design-readable=20260927-4&generation-elapsed=20260930-1&filmapply=20261006-2";
+import { createWorkspaceBrowser, projectsInCurrentWorkspace } from "../workspace/workspace-browser.js?v=20260923-draw-recordings1&vrrobot=20260927-2&design-readable=20260927-4&generation-elapsed=20260930-1&filmapply=20261006-2&dual-unpin=20261008-1";
 import {
   consumeOnlineModelsReturn,
   peekOnlineModelsReturn,
