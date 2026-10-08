@@ -19,5 +19,6 @@ Non-negotiables (details in `ai-context/`):
 8. **LOCKED — model upright orientation:** `ensureModelZUp` must stay Jul 16 axis heuristic — never footprint ±90° tipper (tips models left). Rule: `.cursor/rules/model-upright-orientation.mdc`.
 9. **Local server settings** live under `data/server-config/` (gitignored). Public templates live under `server-configurations/`. Never commit local ledgers/secrets; pulling the repo must not overwrite a private server's settings.
 10. **LOCKED — public release boundary:** read `PUBLIC_RELEASE_BOUNDARY.md` before any public push. Never copy the hosted super admin dashboard, aggregate instance management UI, marketplace moderation data, production identities, private profiles, runtime databases, or customer data into this repository. Instance administrators receive only the current-instance dashboard. `scripts/public-release-audit.py` must pass before every push and must never be bypassed.
+11. **LOCKED — repository separation:** the private admin repository is a separate trust boundary. Never add its remote, repository name, backup scripts, launch agents, feature-map entries, receipts, or files here. GitHub must run the public release audit on every pull request and every push to `master`.
 
 Architect Mode work has its own source of truth: `TODO/quest-book/` (chapters, decisions, safe-edit zones, smoke checklist).

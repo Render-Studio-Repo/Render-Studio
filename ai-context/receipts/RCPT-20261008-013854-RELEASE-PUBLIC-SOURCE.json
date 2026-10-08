@@ -1,0 +1,25 @@
+{
+  "receipt_id": "RCPT-20261008-013854-RELEASE-PUBLIC-SOURCE",
+  "revision_id": "RCPT-20261008-013854-RELEASE-PUBLIC-SOURCE-REV-1",
+  "at": "2026-10-08T01:38:54.499Z",
+  "author": "sam",
+  "status": "confirmed",
+  "summary": "Enforce the public and private admin repository boundary in local instructions, release audit, and GitHub checks",
+  "feature_ids": [
+    "release.public-source"
+  ],
+  "feature_checks": {
+    "public-release-audit": "passed",
+    "private-marker-negative-probe": "passed",
+    "public-installer-contract": "passed",
+    "public-backend-syntax": "passed",
+    "public-installer-shell-syntax": "passed"
+  },
+  "evidence": [
+    "python3 scripts/public-release-audit.py passed for the public tree.",
+    "A staged synthetic private-repository marker was rejected by the audit with exit code 2, then removed.",
+    "Feature-map verification passed both locked public release features, four installer behavior tests, backend syntax, and installer shell syntax."
+  ],
+  "rollback": "Revert the public boundary instruction, audit marker rules, GitHub workflow, feature-map receipt entry, and this receipt.",
+  "token": "rcpt1"
+}
